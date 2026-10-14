@@ -7,7 +7,18 @@ import PocketUI
 /// `CoreClient`.
 struct RootSplitView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: SidebarItem? = .chats
+    @State private var selection: SidebarItem? = Self.initialSelection
+
+    /// `-PocketInitialTab <name>` (e.g. "Models") picks the sidebar's
+    /// starting selection - useful for QA screenshots of a tab that
+    /// isn't the default, without relying on scripted sidebar clicks.
+    private static var initialSelection: SidebarItem? {
+        if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "-PocketInitialTab"),
+           ProcessInfo.processInfo.arguments.count > index + 1 {
+            return SidebarItem(rawValue: ProcessInfo.processInfo.arguments[index + 1])
+        }
+        return .chats
+    }
 
     enum SidebarItem: String, Identifiable, CaseIterable {
         case chats = "Chats"
