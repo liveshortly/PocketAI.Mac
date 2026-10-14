@@ -38,6 +38,8 @@ struct RootSplitView: View {
             switch selection {
             case .chats, .none:
                 MacChatsView()
+            case .models:
+                MacModelsView()
             case .some(let item):
                 Text(item.rawValue).font(.pocket(.title))
             }
