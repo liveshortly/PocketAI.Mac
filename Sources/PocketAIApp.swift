@@ -1,11 +1,19 @@
 import SwiftUI
-import PocketKit
 
 @main
 struct PocketAIApp: App {
+    @State private var model = AppModel()
+
     var body: some Scene {
         WindowGroup {
-            Text(ping())
+            RootSplitView()
+                .environment(model)
         }
+
+        MenuBarExtra("PocketAI", systemImage: model.serverRunning ? "bolt.horizontal.fill" : "bolt.horizontal") {
+            MenuBarContent()
+                .environment(model)
+        }
+        .menuBarExtraStyle(.window)
     }
 }
