@@ -16,7 +16,28 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.getpocketai.pocketai</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pocketai</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_pocketai._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PocketAI lets your paired iPhone use this Mac's models.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PocketAI uses the microphone for voice input.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>PocketAI transcribes your voice on-device for voice input.</string>
 </dict>
 </plist>

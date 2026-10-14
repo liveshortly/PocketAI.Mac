@@ -20,6 +20,16 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.getpocketai.pocketai
         CODE_SIGN_STYLE: Automatic
         CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_ENTITLEMENTS: Entitlements/PocketAI.entitlements
     info:
       path: Sources/Info.plist
-      properties: {}
+      properties:
+        NSLocalNetworkUsageDescription: "PocketAI lets your paired iPhone use this Mac's models."
+        NSBonjourServices:
+          - _pocketai._tcp
+        NSMicrophoneUsageDescription: "PocketAI uses the microphone for voice input."
+        NSSpeechRecognitionUsageDescription: "PocketAI transcribes your voice on-device for voice input."
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - pocketai
+            CFBundleURLName: app.getpocketai.pocketai
