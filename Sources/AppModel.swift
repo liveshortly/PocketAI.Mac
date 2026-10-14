@@ -12,7 +12,13 @@ public final class AppModel {
         if ProcessInfo.processInfo.arguments.contains("-PocketPreviewCore") {
             core = PreviewCore()
         } else {
-            core = LiveCore()
+            let hooks = LivePlatformHooks()
+            let config = CoreConfig(appSupportDir: hooks.appSupportDir(), platform: .macOs)
+            do {
+                core = try LiveCore(config: config, platform: hooks)
+            } catch {
+                fatalError("PocketCore.open failed: \(error)")
+            }
         }
     }
 }
