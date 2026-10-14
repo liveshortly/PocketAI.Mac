@@ -1,4 +1,5 @@
 import SwiftUI
+import PocketKit
 import PocketUI
 
 /// Mac shell per 02-design-system.md: NavigationSplitView sidebar + content.
@@ -60,18 +61,65 @@ struct RootSplitView: View {
     }
 }
 
+/// MAC-08: menu bar popover. Model switcher isn't wired - there's no
+/// "current default model" concept exposed by `CoreClient` yet - so this
+/// covers Pulse, server + LAN toggle, connected devices, Open PocketAI,
+/// and Stop everything (with confirmation).
 struct MenuBarContent: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+    @State private var showStopConfirm = false
+
+    private var status: ServerStatus { model.serverStatus }
 
     var body: some View {
-        @Bindable var model = model
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
-            Text("PocketAI").font(.pocket(.headline))
-            Toggle("Serve on LAN", isOn: $model.serverRunning)
+            HStack(spacing: PocketSpacing.s8) {
+                PocketMarkView(state: status.running ? .working(tokPerSec: nil) : .idle, size: 24)
+                Text("PocketAI").font(.pocket(.headline))
+            }
+
+            Toggle("Server running", isOn: Binding(
+                get: { status.running },
+                set: { on in on ? model.startServer(lan: status.lanEnabled) : model.stopServer() }
+            ))
+            Toggle("Serve on local network", isOn: Binding(
+                get: { status.lanEnabled },
+                set: { lan in if status.running { model.startServer(lan: lan) } }
+            ))
+            .disabled(!status.running)
+
+            if status.running {
+                Text("\(status.connectedDevices) connected device\(status.connectedDevices == 1 ? "" : "s")")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textSecondary)
+            }
+
+            Divider()
+
+            Button("Open PocketAI") {
+                NSApp.activate(ignoringOtherApps: true)
+                for window in NSApp.windows where window.canBecomeKey {
+                    window.makeKeyAndOrderFront(nil)
+                    break
+                }
+            }
+            Button("Stop Everything") { showStopConfirm = true }
             Divider()
             Button("Quit") { NSApplication.shared.terminate(nil) }
         }
         .padding(PocketSpacing.s16)
-        .frame(width: 220)
+        .frame(width: 240)
+        .confirmationDialog(
+            "Stop everything?",
+            isPresented: $showStopConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Stop Everything", role: .destructive) { model.stopEverything() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Stops any in-progress replies and turns off the server.")
+        }
+        .task { model.refreshServerStatus() }
     }
 }

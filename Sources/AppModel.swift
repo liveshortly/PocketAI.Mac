@@ -6,7 +6,7 @@ import PocketKit
 @MainActor
 public final class AppModel {
     public let core: CoreClient
-    public var serverRunning = false
+    public private(set) var serverStatus = ServerStatus(running: false, lanEnabled: false, port: 0, connectedDevices: 0)
 
     public init() {
         if ProcessInfo.processInfo.arguments.contains("-PocketPreviewCore") {
@@ -20,5 +20,24 @@ public final class AppModel {
                 fatalError("PocketCore.open failed: \(error)")
             }
         }
+        serverStatus = core.serverStatus()
+    }
+
+    public func refreshServerStatus() {
+        serverStatus = core.serverStatus()
+    }
+
+    public func startServer(lan: Bool) {
+        serverStatus = (try? core.serverStart(cfg: ServerConfig(lanEnabled: lan, port: 0))) ?? serverStatus
+    }
+
+    public func stopServer() {
+        try? core.serverStop()
+        refreshServerStatus()
+    }
+
+    public func stopEverything() {
+        core.stopEverything()
+        refreshServerStatus()
     }
 }

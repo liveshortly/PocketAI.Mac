@@ -10,7 +10,7 @@ struct PocketAIApp: App {
                 .environment(model)
         }
 
-        MenuBarExtra("PocketAI", systemImage: model.serverRunning ? "bolt.horizontal.fill" : "bolt.horizontal") {
+        MenuBarExtra("PocketAI", systemImage: model.serverStatus.running ? "bolt.horizontal.fill" : "bolt.horizontal") {
             MenuBarContent()
                 .environment(model)
         }
