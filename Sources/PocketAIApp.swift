@@ -15,5 +15,10 @@ struct PocketAIApp: App {
                 .environment(model)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
     }
 }
