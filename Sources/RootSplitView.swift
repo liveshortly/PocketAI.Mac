@@ -37,44 +37,11 @@ struct RootSplitView: View {
         } detail: {
             switch selection {
             case .chats, .none:
-                ChatsDetail()
+                MacChatsView()
             case .some(let item):
                 Text(item.rawValue).font(.pocket(.title))
             }
         }
-    }
-}
-
-private struct ChatsDetail: View {
-    @Environment(AppModel.self) private var model
-    @State private var streamed = ""
-    @State private var isStreaming = false
-
-    var body: some View {
-        VStack(spacing: PocketSpacing.s24) {
-            PocketMarkView(state: isStreaming ? .working(tokPerSec: 60) : .idle, size: 64)
-            Text(streamed.isEmpty ? "Click to stream a mock reply" : streamed)
-                .font(.pocket(.body))
-                .foregroundStyle(PocketColor.textPrimary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(PocketColor.bgCanvas)
-        .contentShape(Rectangle())
-        .onTapGesture { Task { await stream() } }
-    }
-
-    private func stream() async {
-        guard !isStreaming else { return }
-        isStreaming = true
-        streamed = ""
-        do {
-            for try await chunk in model.core.mockGenerate(seed: 0, tokensPerSec: 60) {
-                streamed += chunk
-            }
-        } catch {
-            streamed = "Error: \(error)"
-        }
-        isStreaming = false
     }
 }
 
