@@ -42,6 +42,7 @@ struct MacChatsView: View {
 
             if let selectedId {
                 MacChatDetailView(conversationId: selectedId)
+                    .id(selectedId)
             } else {
                 EmptyState(
                     title: "Start a chat",
@@ -52,6 +53,18 @@ struct MacChatsView: View {
         }
         .task { reload() }
         .onChange(of: searchText) { reload() }
+        .onChange(of: model.pendingCommand) { _, command in
+            switch command {
+            case .newChat:
+                newChat()
+                model.pendingCommand = nil
+            case .openConversation(let id):
+                selectedId = id
+                model.pendingCommand = nil
+            case .focusComposer, .stopGeneration, .none:
+                break
+            }
+        }
     }
 
     private func reload() {
@@ -104,6 +117,8 @@ private struct MacChatDetailView: View {
     @State private var composerText = ""
     @State private var isGenerating = false
     @State private var errorText: String?
+    @State private var sendTask: Task<Void, Never>?
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -129,7 +144,8 @@ private struct MacChatDetailView: View {
 
             Composer(
                 text: $composerText, modelChipLabel: nil, isFocused: false, isGenerating: isGenerating,
-                onAttach: { _ in }, onMic: {}, onSend: { send() }, onStop: { isGenerating = false }
+                onAttach: { _ in }, onMic: {}, onSend: { send() }, onStop: { stopGeneration() },
+                externalFocus: $composerFocused
             )
             .padding(PocketSpacing.s16)
         }
@@ -139,6 +155,18 @@ private struct MacChatDetailView: View {
             if let firstMessage = pendingFirstMessages.removeValue(forKey: conversationId) {
                 composerText = firstMessage
                 send()
+            }
+        }
+        .onChange(of: model.pendingCommand) { _, command in
+            switch command {
+            case .focusComposer:
+                composerFocused = true
+                model.pendingCommand = nil
+            case .stopGeneration:
+                stopGeneration()
+                model.pendingCommand = nil
+            case .newChat, .openConversation, .none:
+                break
             }
         }
     }
@@ -171,10 +199,11 @@ private struct MacChatDetailView: View {
         composerText = ""
         errorText = nil
         isGenerating = true
-        Task {
+        sendTask = Task {
             var partialText = ""
             do {
                 for try await event in model.core.sendMessage(conversationId: conversationId, input: UserInput(parts: [.text(text: text)])) {
+                    if Task.isCancelled { return }
                     switch event {
                     case .delta(let delta):
                         partialText += delta.text
@@ -184,10 +213,18 @@ private struct MacChatDetailView: View {
                     }
                 }
             } catch {
-                errorText = "Something went wrong: \(error.localizedDescription)"
+                if !Task.isCancelled {
+                    errorText = "Something went wrong: \(error.localizedDescription)"
+                }
             }
             isGenerating = false
         }
+    }
+
+    private func stopGeneration() {
+        sendTask?.cancel()
+        sendTask = nil
+        isGenerating = false
     }
 
     private func upsertStreamingPlaceholder(text: String) {

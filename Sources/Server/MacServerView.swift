@@ -12,10 +12,11 @@ import PocketUI
 struct MacServerView: View {
     @Environment(AppModel.self) private var model
 
-    @State private var status = ServerStatus(running: false, lanEnabled: false, port: 0, connectedDevices: 0)
     @State private var hasKey = false
     @State private var revealedKey: String?
     @State private var showRotateConfirm = false
+
+    private var status: ServerStatus { model.serverStatus }
 
     var body: some View {
         Form {
@@ -87,16 +88,15 @@ struct MacServerView: View {
     }
 
     private func reload() {
-        status = model.core.serverStatus()
+        model.refreshServerStatus()
         hasKey = model.core.hasLocalApiKey()
     }
 
     private func toggleServer(_ on: Bool, lan: Bool? = nil) {
         if on {
-            status = (try? model.core.serverStart(cfg: ServerConfig(lanEnabled: lan ?? status.lanEnabled, port: 0))) ?? status
+            model.startServer(lan: lan ?? status.lanEnabled)
         } else {
-            try? model.core.serverStop()
-            status = model.core.serverStatus()
+            model.stopServer()
         }
     }
 
