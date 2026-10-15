@@ -6,7 +6,14 @@ import PocketKit
 @MainActor
 public final class AppModel {
     public let core: CoreClient
+    public let hooks: PlatformHooks
     public private(set) var serverStatus = ServerStatus(running: false, lanEnabled: false, port: 0, connectedDevices: 0)
+
+    /// MAC-05: onboarding gate, same `UserDefaults` pattern as the iPhone app.
+    public var hasOnboarded: Bool {
+        didSet { UserDefaults.standard.set(hasOnboarded, forKey: Self.onboardedKey) }
+    }
+    private static let onboardedKey = "app.getpocketai.hasOnboarded"
 
     /// MAC-02: a tiny command bus so `.commands`/keyboard shortcuts at the
     /// `App` scene level can reach into whatever's showing in the
@@ -22,10 +29,12 @@ public final class AppModel {
     public var pendingCommand: Command?
 
     public init() {
+        hasOnboarded = UserDefaults.standard.bool(forKey: Self.onboardedKey)
+        let hooks = LivePlatformHooks()
+        self.hooks = hooks
         if ProcessInfo.processInfo.arguments.contains("-PocketPreviewCore") {
             core = PreviewCore()
         } else {
-            let hooks = LivePlatformHooks()
             let config = CoreConfig(appSupportDir: hooks.appSupportDir(), platform: .macOs)
             do {
                 core = try LiveCore(config: config, platform: hooks)

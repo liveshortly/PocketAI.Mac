@@ -41,6 +41,16 @@ struct RootSplitView: View {
     }
 
     var body: some View {
+        if !model.hasOnboarded {
+            MacOnboardingFlow(core: model.core, deviceProfile: model.hooks.deviceProfile()) {
+                model.hasOnboarded = true
+            }
+        } else {
+            shell
+        }
+    }
+
+    private var shell: some View {
         NavigationSplitView {
             List(SidebarItem.allCases, selection: $selection) { item in
                 Label(item.rawValue, systemImage: item.icon).tag(item)
