@@ -54,6 +54,8 @@ struct RootSplitView: View {
                 MacModelsView()
             case .server:
                 MacServerView()
+            case .devices:
+                MacDevicesView()
             case .some(let item):
                 Text(item.rawValue).font(.pocket(.title))
             }
