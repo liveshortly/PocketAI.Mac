@@ -8,6 +8,19 @@ public final class AppModel {
     public let core: CoreClient
     public private(set) var serverStatus = ServerStatus(running: false, lanEnabled: false, port: 0, connectedDevices: 0)
 
+    /// MAC-02: a tiny command bus so `.commands`/keyboard shortcuts at the
+    /// `App` scene level can reach into whatever's showing in the
+    /// `NavigationSplitView` detail pane without each view needing its own
+    /// notification wiring. Views observe this via `onChange` and reset it
+    /// to `nil` once handled, so the same shortcut can fire again.
+    public enum Command: Equatable {
+        case newChat
+        case focusComposer
+        case stopGeneration
+        case openConversation(String)
+    }
+    public var pendingCommand: Command?
+
     public init() {
         if ProcessInfo.processInfo.arguments.contains("-PocketPreviewCore") {
             core = PreviewCore()
