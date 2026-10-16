@@ -5,13 +5,14 @@ import PocketUI
 
 /// MAC-07: Devices + pairing (M-DEV, M-PAIR). "Pair iPhone" shows a QR
 /// code with a countdown; an incoming request polls in as an Allow/Deny
-/// sheet; paired peers list with revoke.
+/// sheet; paired peers list with revoke (confirm).
 struct MacDevicesView: View {
     @Environment(AppModel.self) private var model
 
     @State private var peers: [Peer] = []
     @State private var showPairingSheet = false
     @State private var pendingRequest: PairingRequest?
+    @State private var pendingRevokePeer: Peer?
     @State private var pollTask: Task<Void, Never>?
 
     var body: some View {
@@ -24,7 +25,7 @@ struct MacDevicesView: View {
                         DeviceRow(
                             name: peer.name, isConnected: true, lastSeenText: "",
                             route: peer.addrs.first, icon: "iphone",
-                            onRevoke: { revoke(peer) }
+                            onRevoke: { pendingRevokePeer = peer }
                         )
                     }
                 }
@@ -54,6 +55,23 @@ struct MacDevicesView: View {
                     pendingRequest = nil
                 }
             )
+        }
+        .confirmationDialog(
+            "Revoke “\(pendingRevokePeer?.name ?? "iPhone")”?",
+            isPresented: Binding(get: { pendingRevokePeer != nil }, set: { if !$0 { pendingRevokePeer = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Revoke", role: .destructive) {
+                if let peer = pendingRevokePeer {
+                    revoke(peer)
+                }
+                pendingRevokePeer = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRevokePeer = nil
+            }
+        } message: {
+            Text("This will immediately disconnect the phone from using this Mac's models.")
         }
     }
 

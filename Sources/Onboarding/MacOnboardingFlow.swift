@@ -14,6 +14,7 @@ struct MacOnboardingFlow: View {
     let core: CoreClient
     let deviceProfile: DeviceProfile
     let onFinished: () -> Void
+    var onOpenDevices: (() -> Void)? = nil
 
     @State private var step: Step = .welcome
     @State private var selectedModelId: String?
@@ -47,7 +48,16 @@ struct MacOnboardingFlow: View {
                     onReady: { step = .pairMac }
                 )
             case .pairMac:
-                MacOnboardingPairCardView(onSkip: { step = .ready }, onOpenDevices: { step = .ready })
+                MacOnboardingPairCardView(
+                    onSkip: { step = .ready },
+                    onOpenDevices: {
+                        if let onOpenDevices {
+                            onOpenDevices()
+                        } else {
+                            step = .ready
+                        }
+                    }
+                )
             case .ready:
                 MacOnboardingReadyView(onStart: onFinished)
             }

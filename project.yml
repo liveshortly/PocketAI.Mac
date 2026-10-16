@@ -10,6 +10,9 @@ targets:
     platform: macOS
     deploymentTarget: "15.0"
     sources: [Sources]
+    scheme:
+      testTargets:
+        - PocketAITests
     dependencies:
       - package: PocketCore
         product: PocketKit
@@ -17,6 +20,8 @@ targets:
         product: PocketUI
       - package: PocketCore
         product: PocketMLX
+      - package: PocketCore
+        product: PocketImageGen
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.getpocketai.app
@@ -35,3 +40,23 @@ targets:
           - CFBundleURLSchemes:
               - pocketai
             CFBundleURLName: app.getpocketai.pocketai
+
+  PocketAITests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources: [Tests]
+    dependencies:
+      - target: PocketAI
+      - package: PocketCore
+        product: PocketKit
+      - package: PocketCore
+        product: PocketUI
+      - package: PocketCore
+        product: PocketImageGen
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.getpocketai.app.tests
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGNING_ALLOWED: NO
+        TEST_TARGET_NAME: PocketAI

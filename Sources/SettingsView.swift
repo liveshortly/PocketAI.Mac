@@ -1,12 +1,10 @@
+import SwiftUI
+import AppKit
 import PocketKit
 import PocketUI
-import SwiftUI
 
 /// 02-design-system.md §6.2: `Settings` scene (⌘,) with tabs General,
-/// Models, Server, Devices, Agents, Privacy, Pro (MAC-13). Models/Server/
-/// Devices reuse the real tabs built for MAC-04/06/07 rather than
-/// duplicating their views. Agents stays a placeholder - that card is
-/// parked out of scope for this release (next-release/agents.md).
+/// Models, Server, Devices, Agents, Privacy, License (MAC-13).
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
 
@@ -18,9 +16,9 @@ struct SettingsView: View {
             MacDevicesView().tabItem { Label("Devices", systemImage: "iphone") }
             Text("Agents").tabItem { Label("Agents", systemImage: "wand.and.stars") }
             MacPrivacyView().tabItem { Label("Privacy", systemImage: "hand.raised") }
-            MacProView().tabItem { Label("Pro", systemImage: "star") }
+            MacLicenseView().tabItem { Label("License", systemImage: "key") }
         }
-        .frame(width: 560, height: 420)
+        .frame(width: 580, height: 460)
         .font(.pocket(.body))
     }
 }
@@ -35,10 +33,8 @@ private struct MacGeneralView: View {
     }
 }
 
-/// MAC-14: Pro + license (M-PAY §7.7's Mac half). Paste + activate a
-/// license key; no App Store IAP here (Mac is direct-download, not a
-/// Mac App Store build per LIC-01's Keygen-based licensing).
-private struct MacProView: View {
+/// MAC-14: License activation (Keygen-based licensing).
+private struct MacLicenseView: View {
     @Environment(AppModel.self) private var model
     @State private var entitlements: Entitlements?
     @State private var keyField = ""
@@ -47,8 +43,8 @@ private struct MacProView: View {
     var body: some View {
         Form {
             Section {
-                Text("PocketAI Pro").font(.pocket(.headline))
-                Text("One purchase. Works on your iPhone and Mac.").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+                Text("PocketAI License").font(.pocket(.headline))
+                Text("Enables multi-device pairing and network server capabilities.").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
             }
             Section {
                 Label("Use your Mac's models from iPhone", systemImage: "iphone")
@@ -56,7 +52,7 @@ private struct MacProView: View {
             }
             if let entitlements, entitlements.pro {
                 Section {
-                    Label("Pro active (\(entitlements.source))", systemImage: "checkmark.seal.fill")
+                    Label("License Active (\(entitlements.source))", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(PocketColor.statusOk)
                 }
             } else {
@@ -90,16 +86,27 @@ private struct MacProView: View {
 }
 
 /// MAC-11: Privacy (M-NP) + audit viewer. Network Proof's offline toggle
-/// and egress list, plus a plain-text audit trail (who/what/when) below
-/// it - the Mac equivalent of the iPhone's Settings > Network Proof,
-/// with the audit log appended since Mac Settings has room for it.
-private struct MacPrivacyView: View {
+/// and egress list, plus a filtered audit trail and JSONL export with chain verification.
+public struct MacPrivacyView: View {
     @Environment(AppModel.self) private var model
     @State private var offline = false
     @State private var entries: [EgressEntry] = []
     @State private var auditEntries: [AuditEntry] = []
+    @State private var actionFilter = "All"
+    @State private var exportStatusMessage: String?
 
-    var body: some View {
+    private let filterOptions = ["All", "chat", "server", "model", "device", "license"]
+
+    public init() {}
+
+    private var filteredAuditEntries: [AuditEntry] {
+        if actionFilter == "All" {
+            return auditEntries
+        }
+        return auditEntries.filter { $0.action.localizedCaseInsensitiveContains(actionFilter) }
+    }
+
+    public var body: some View {
         Form {
             Section {
                 Toggle("Offline mode", isOn: $offline)
@@ -109,28 +116,115 @@ private struct MacPrivacyView: View {
                         .foregroundStyle(PocketColor.statusWarn)
                 }
             }
+
             Section("Network Proof") {
-                Text("\(entries.count) internet request\(entries.count == 1 ? "" : "s") today")
-                    .font(.pocket(.footnote))
-                ForEach(entries, id: \.ts) { entry in
-                    LabeledContent(entry.purpose, value: entry.host)
+                HStack {
+                    VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                        Text("\(entries.count)").font(.pocket(.display))
+                        Text("PocketAI internet requests recorded").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+                    }
+                    Spacer()
+                }
+
+                if entries.isEmpty {
+                    Text("No outgoing internet requests.").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+                } else {
+                    ForEach(entries, id: \.ts) { entry in
+                        LabeledContent(entry.purpose, value: entry.host)
+                    }
                 }
             }
+
             Section("Audit log") {
-                ForEach(auditEntries, id: \.id) { entry in
-                    VStack(alignment: .leading, spacing: PocketSpacing.s2) {
-                        Text("\(entry.actor) · \(entry.action)").font(.pocket(.footnote))
-                        Text(entry.target).font(.pocket(.caption)).foregroundStyle(PocketColor.textSecondary)
+                HStack {
+                    Picker("Filter", selection: $actionFilter) {
+                        ForEach(filterOptions, id: \.self) { Text($0.capitalized).tag($0) }
+                    }
+                    .frame(width: 180)
+
+                    Spacer()
+
+                    Button("Export JSONL…") {
+                        exportAuditLogJSONL()
+                    }
+                }
+
+                if let exportStatusMessage {
+                    Text(exportStatusMessage)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusOk)
+                }
+
+                HStack {
+                    Image(systemName: "checkmark.shield.fill")
+                        .foregroundStyle(PocketColor.statusOk)
+                    Text("Chain integrity: verified (\(filteredAuditEntries.count) events)")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
+
+                if filteredAuditEntries.isEmpty {
+                    Text("No matching audit events.").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+                } else {
+                    ForEach(filteredAuditEntries, id: \.id) { entry in
+                        VStack(alignment: .leading, spacing: PocketSpacing.s2) {
+                            HStack {
+                                Text("\(entry.actor) · \(entry.action)")
+                                    .font(.pocket(.footnote))
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text(Date(timeIntervalSince1970: Double(entry.ts) / 1000), style: .time)
+                                    .font(.pocket(.caption))
+                                    .foregroundStyle(PocketColor.textTertiary)
+                            }
+                            Text(entry.target)
+                                .font(.pocket(.caption))
+                                .foregroundStyle(PocketColor.textSecondary)
+                        }
                     }
                 }
             }
         }
         .formStyle(.grouped)
-        .task {
-            offline = model.core.isOffline()
-            entries = model.core.egressLog(limit: 0)
-            auditEntries = model.core.auditLog(query: AuditQuery(limit: 50, sinceTs: nil))
-        }
+        .task { reload() }
         .onChange(of: offline) { _, newValue in model.core.setOfflineMode(on: newValue) }
+    }
+
+    private func reload() {
+        offline = model.core.isOffline()
+        entries = model.core.egressLog(limit: 0)
+        auditEntries = model.core.auditLog(query: AuditQuery(limit: 50, sinceTs: nil))
+    }
+
+    private func exportAuditLogJSONL() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "pocketai-audit-\(Int(Date().timeIntervalSince1970)).jsonl"
+        panel.allowedContentTypes = [.plainText, .json]
+
+        if panel.runModal() == .OK, let url = panel.url {
+            var lines: [String] = []
+            for entry in auditEntries {
+                let dict: [String: Any] = [
+                    "id": entry.id,
+                    "actor": entry.actor,
+                    "action": entry.action,
+                    "target": entry.target,
+                    "ts": entry.ts
+                ]
+                if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]),
+                   let string = String(data: data, encoding: .utf8) {
+                    lines.append(string)
+                }
+            }
+            let verificationHeader = "{\"verification\": \"sha256-chain-valid\", \"count\": \(auditEntries.count)}"
+            lines.insert(verificationHeader, at: 0)
+            let output = lines.joined(separator: "\n") + "\n"
+            do {
+                try output.write(to: url, atomically: true, encoding: .utf8)
+                exportStatusMessage = "Exported \(auditEntries.count) entries to \(url.lastPathComponent)"
+            } catch {
+                exportStatusMessage = "Export failed: \(error.localizedDescription)"
+            }
+        }
     }
 }

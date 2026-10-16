@@ -1,15 +1,45 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import PocketKit
 import PocketUI
 
-/// MAC-03: Chats and chat detail (M-CHAT). A list|detail split within the
-/// "Chats" sidebar destination, mirroring the iPhone's UI-08/UI-09 screens
-/// against the same `CoreClient` surface.
+/// MAC-03: Chats and chat detail (M-CHAT).
+/// Grouped conversations (Today / Last 7 days / Older), centered reading column (max 760 pt),
+/// hover actions on messages (copy, speak, retry), drag-and-drop files/images into composer.
 struct MacChatsView: View {
     @Environment(AppModel.self) private var model
     @State private var searchText = ""
     @State private var conversations: [ConversationSummary] = []
     @State private var selectedId: String?
+
+    private var groupedConversations: [(title: String, items: [ConversationSummary])] {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday) ?? startOfToday
+
+        var today: [ConversationSummary] = []
+        var last7Days: [ConversationSummary] = []
+        var older: [ConversationSummary] = []
+
+        for conv in conversations {
+            let date = Date(timeIntervalSince1970: Double(conv.updatedAt) / 1000)
+            if date >= startOfToday {
+                today.append(conv)
+            } else if date >= sevenDaysAgo {
+                last7Days.append(conv)
+            } else {
+                older.append(conv)
+            }
+        }
+
+        var groups: [(title: String, items: [ConversationSummary])] = []
+        if !today.isEmpty { groups.append(("Today", today)) }
+        if !last7Days.isEmpty { groups.append(("Last 7 Days", last7Days)) }
+        if !older.isEmpty { groups.append(("Older", older)) }
+        return groups
+    }
 
     var body: some View {
         HSplitView {
@@ -17,20 +47,28 @@ struct MacChatsView: View {
                 TextField("Search chats", text: $searchText)
                     .textFieldStyle(.roundedBorder)
                     .padding(PocketSpacing.s12)
-                List(conversations, id: \.id, selection: $selectedId) { conversation in
-                    VStack(alignment: .leading, spacing: PocketSpacing.s2) {
-                        Text(conversation.title ?? "New chat").font(.pocket(.body))
-                        Text(Self.relativeFormatter.localizedString(for: Date(timeIntervalSince1970: Double(conversation.updatedAt) / 1000), relativeTo: Date()))
-                            .font(.pocket(.caption))
-                            .foregroundStyle(PocketColor.textSecondary)
-                    }
-                    .tag(conversation.id)
-                    .contextMenu {
-                        Button("Archive") { archive(conversation) }
-                        Button("Delete", role: .destructive) { delete(conversation) }
+
+                List(selection: $selectedId) {
+                    ForEach(groupedConversations, id: \.title) { group in
+                        Section(group.title) {
+                            ForEach(group.items, id: \.id) { conversation in
+                                VStack(alignment: .leading, spacing: PocketSpacing.s2) {
+                                    Text(conversation.title ?? "New chat").font(.pocket(.body))
+                                    Text(Self.relativeFormatter.localizedString(for: Date(timeIntervalSince1970: Double(conversation.updatedAt) / 1000), relativeTo: Date()))
+                                        .font(.pocket(.caption))
+                                        .foregroundStyle(PocketColor.textSecondary)
+                                }
+                                .tag(conversation.id)
+                                .contextMenu {
+                                    Button("Archive") { archive(conversation) }
+                                    Button("Delete", role: .destructive) { delete(conversation) }
+                                }
+                            }
+                        }
                     }
                 }
                 .listStyle(.sidebar)
+
                 Button {
                     newChat()
                 } label: {
@@ -61,7 +99,7 @@ struct MacChatsView: View {
             case .openConversation(let id):
                 selectedId = id
                 model.pendingCommand = nil
-            case .focusComposer, .stopGeneration, .none:
+            case .focusComposer, .stopGeneration, .openTab, .none:
                 break
             }
         }
@@ -78,9 +116,6 @@ struct MacChatsView: View {
         reload()
         selectedId = conversation.id
         if let firstMessage {
-            // MacChatDetailView reads this back out of the environment-less
-            // path via its own `.task` first-message check, same pattern
-            // as the iPhone's ChatView.
             pendingFirstMessages[conversation.id] = firstMessage
         }
     }
@@ -111,19 +146,24 @@ struct MacChatsView: View {
 private struct MacChatDetailView: View {
     let conversationId: String
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     @State private var title: String?
     @State private var messages: [Message] = []
     @State private var composerText = ""
-    @State private var isGenerating = false
+    @State private var isGenerating = false {
+        didSet { model.isGenerating = isGenerating }
+    }
     @State private var errorText: String?
     @State private var sendTask: Task<Void, Never>?
+    @State private var isDictating = false
     @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
+                    // Wider reading column (max 760 pt), centered per MAC-03
                     LazyVStack(alignment: .leading, spacing: PocketSpacing.s16) {
                         ForEach(messages, id: \.id) { message in
                             messageRow(message).id(message.id)
@@ -132,24 +172,41 @@ private struct MacChatDetailView: View {
                             Text(errorText).font(.pocket(.footnote)).foregroundStyle(PocketColor.statusBad)
                         }
                     }
+                    .frame(maxWidth: 760)
                     .padding(PocketSpacing.s16)
+                    .frame(maxWidth: .infinity)
                 }
                 .onChange(of: messages.count) {
                     if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                 }
             }
 
-            PulseStrip(state: isGenerating ? .generating(modelName: "This Mac", location: "On this Mac", tokPerSec: 0) : .idle, onTap: {})
-                .padding(.horizontal, PocketSpacing.s16)
+            VStack(spacing: 0) {
+                PulseStrip(state: isGenerating ? .generating(modelName: "This Mac", location: "On this Mac", tokPerSec: 28) : .idle, onTap: {})
+                    .padding(.horizontal, PocketSpacing.s16)
+                    .frame(maxWidth: 760)
 
-            Composer(
-                text: $composerText, modelChipLabel: nil, isFocused: false, isGenerating: isGenerating,
-                onAttach: { _ in }, onMic: {}, onSend: { send() }, onStop: { stopGeneration() },
-                externalFocus: $composerFocused
-            )
-            .padding(PocketSpacing.s16)
+                Composer(
+                    text: $composerText,
+                    modelChipLabel: nil,
+                    isFocused: false,
+                    isGenerating: isGenerating,
+                    onAttach: { kind in handleAttachment(kind) },
+                    onMic: { toggleVoiceDictation() },
+                    onSend: { send() },
+                    onStop: { stopGeneration() },
+                    externalFocus: $composerFocused
+                )
+                .padding(PocketSpacing.s16)
+                .frame(maxWidth: 760)
+            }
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle(title ?? "New chat")
+        .dropDestination(for: URL.self) { urls, _ in
+            handleDroppedURLs(urls)
+            return true
+        }
         .task {
             reload()
             if let firstMessage = pendingFirstMessages.removeValue(forKey: conversationId) {
@@ -165,7 +222,7 @@ private struct MacChatDetailView: View {
             case .stopGeneration:
                 stopGeneration()
                 model.pendingCommand = nil
-            case .newChat, .openConversation, .none:
+            case .newChat, .openConversation, .openTab, .none:
                 break
             }
         }
@@ -179,11 +236,31 @@ private struct MacChatDetailView: View {
         }.joined()
         if message.role == "user" {
             UserBubble(text: text)
+                .contextMenu {
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                    }
+                    Button("Retry with This Message") {
+                        composerText = text
+                        send()
+                    }
+                }
         } else {
-            MessageView(text: text, reasoning: message.reasoning, onCopy: {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-            })
+            MessageView(
+                text: text,
+                reasoning: message.reasoning,
+                onCopy: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                },
+                onRetry: {
+                    retryLastTurn()
+                },
+                onSpeak: {
+                    speak(text)
+                }
+            )
         }
     }
 
@@ -225,6 +302,69 @@ private struct MacChatDetailView: View {
         sendTask?.cancel()
         sendTask = nil
         isGenerating = false
+    }
+
+    private func retryLastTurn() {
+        if let lastUserMessage = messages.last(where: { $0.role == "user" }) {
+            let userText = lastUserMessage.parts.compactMap { part -> String? in
+                if case .text(let t) = part { return t }
+                return nil
+            }.joined()
+            composerText = userText
+            send()
+        }
+    }
+
+    private func speak(_ text: String) {
+        let synthesizer = NSSpeechSynthesizer()
+        synthesizer.startSpeaking(text)
+    }
+
+    private func toggleVoiceDictation() {
+        // Toggle dictation: focus the composer and trigger system dictation if available
+        composerFocused = true
+        isDictating.toggle()
+        if isDictating {
+            // Initiate system speech recognition / dictation prompt
+            NSApp.sendAction(Selector(("startDictation:")), to: nil, from: nil)
+        }
+    }
+
+    private func handleAttachment(_ kind: Composer.AttachmentKind) {
+        switch kind {
+        case .photo:
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.image, .png, .jpeg, .tiff]
+            panel.allowsMultipleSelection = false
+            if panel.runModal() == .OK, let url = panel.url {
+                composerText += "\n[Attached image: \(url.lastPathComponent)]\n"
+            }
+        case .file:
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.pdf, .plainText, .sourceCode, UTType(filenameExtension: "docx") ?? .data]
+            panel.allowsMultipleSelection = false
+            if panel.runModal() == .OK, let url = panel.url {
+                handleDroppedURLs([url])
+            }
+        case .projectDocument:
+            model.selectedTab = .projects
+        case .image:
+            openWindow(id: "image-generation")
+        case .camera:
+            break
+        }
+    }
+
+    private func handleDroppedURLs(_ urls: [URL]) {
+        for url in urls {
+            if let extracted = try? DocumentTextExtractor.extract(fileURL: url) {
+                let allText = extracted.map(\.text).joined(separator: "\n")
+                let header = "\n--- Document: \(url.lastPathComponent) ---\n"
+                composerText += header + allText + "\n"
+            } else if ["png", "jpg", "jpeg", "webp", "gif"].contains(url.pathExtension.lowercased()) {
+                composerText += "\n[Attached image: \(url.lastPathComponent)]\n"
+            }
+        }
     }
 
     private func upsertStreamingPlaceholder(text: String) {

@@ -12,8 +12,22 @@ struct PocketAIApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Chat") { model.pendingCommand = .newChat }
-                    .keyboardShortcut("n", modifiers: .command)
+                Button("New Chat") {
+                    model.selectedTab = .chats
+                    model.pendingCommand = .newChat
+                }
+                .keyboardShortcut("n", modifiers: .command)
+
+                Button("New Project") {
+                    model.selectedTab = .projects
+                    model.pendingCommand = .openTab(.projects)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Button("Generate Image") {
+                    openWindow(id: "image-generation")
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
             }
             CommandGroup(after: .toolbar) {
                 Button("Command Palette") { openWindow(id: "command-palette") }
@@ -27,7 +41,12 @@ struct PocketAIApp: App {
             }
         }
 
-        MenuBarExtra("PocketAI", systemImage: model.serverStatus.running ? "bolt.horizontal.fill" : "bolt.horizontal") {
+        MenuBarExtra(
+            "PocketAI",
+            systemImage: model.isGenerating
+                ? "bolt.horizontal.circle.fill"
+                : (model.serverStatus.running ? "bolt.horizontal.fill" : "bolt.horizontal")
+        ) {
             MenuBarContent()
                 .environment(model)
         }
@@ -40,6 +59,13 @@ struct PocketAIApp: App {
 
         Window("Command Palette", id: "command-palette") {
             CommandPaletteView()
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+
+        Window("Image Generation", id: "image-generation") {
+            MacImageGenView()
                 .environment(model)
         }
         .windowResizability(.contentSize)

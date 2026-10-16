@@ -2,10 +2,7 @@ import SwiftUI
 import PocketKit
 import PocketUI
 
-/// MAC-02: ⌘K command palette - fuzzy search over chats, models, and a
-/// handful of fixed actions. A separate `Window` scene (not a sheet) so
-/// it can be summoned from anywhere, including when no PocketAI window
-/// is currently key.
+/// MAC-02: ⌘K command palette - fuzzy search over chats, models, and actions.
 struct CommandPaletteView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -47,7 +44,33 @@ struct CommandPaletteView: View {
 
     private var actions: [Item] {
         [
-            .action("New Chat") { model.pendingCommand = .newChat },
+            .action("New Chat") {
+                model.selectedTab = .chats
+                model.pendingCommand = .newChat
+            },
+            .action("Open Projects") {
+                model.selectedTab = .projects
+                model.pendingCommand = .openTab(.projects)
+            },
+            .action("Open Models") {
+                model.selectedTab = .models
+                model.pendingCommand = .openTab(.models)
+            },
+            .action("Open Server") {
+                model.selectedTab = .server
+                model.pendingCommand = .openTab(.server)
+            },
+            .action("Open Devices") {
+                model.selectedTab = .devices
+                model.pendingCommand = .openTab(.devices)
+            },
+            .action("Open Privacy") {
+                model.selectedTab = .privacy
+                model.pendingCommand = .openTab(.privacy)
+            },
+            .action("Generate Image") {
+                openWindow(id: "image-generation")
+            },
             .action("Stop Everything") { model.stopEverything() },
             .action(model.serverStatus.running ? "Stop Server" : "Start Server") {
                 model.serverStatus.running ? model.stopServer() : model.startServer(lan: model.serverStatus.lanEnabled)
@@ -86,6 +109,10 @@ struct CommandPaletteView: View {
             }
         }
         .frame(width: 480, height: 360)
+        .onKeyPress(.escape) {
+            dismiss()
+            return .handled
+        }
         .task {
             conversations = model.core.conversations(query: ConversationQuery(search: nil, archived: false, limit: 20, offset: 0))
             catalog = model.core.catalog(filter: CatalogFilter(modality: nil, curatedOnly: true, installedOnly: false))
@@ -94,18 +121,22 @@ struct CommandPaletteView: View {
 
     private func activate(_ item: Item) {
         switch item {
-        case .conversation(let c): model.pendingCommand = .openConversation(c.id)
-        case .model: break // Models screen isn't addressable by id from here yet; selecting just closes the palette.
-        case .action(_, let perform): perform()
+        case .conversation(let c):
+            model.selectedTab = .chats
+            model.pendingCommand = .openConversation(c.id)
+        case .model:
+            model.selectedTab = .models
+            model.pendingCommand = .openTab(.models)
+        case .action(_, let perform):
+            perform()
         }
         dismiss()
     }
 }
 
 /// Subsequence match, case-insensitive: every character of `query` must
-/// appear in `text`, in order, not necessarily adjacent - e.g. "ntc" or
-/// "rust" both match "Explain this Rust borrow checker error".
-private func fuzzyMatch(query: String, in text: String) -> Bool {
+/// appear in `text`, in order, not necessarily adjacent.
+public func fuzzyMatch(query: String, in text: String) -> Bool {
     var remaining = Substring(query.lowercased())
     guard let first = remaining.first else { return true }
     var needle = first
