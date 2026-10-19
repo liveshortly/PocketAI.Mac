@@ -3,6 +3,7 @@ import AppKit
 import PocketKit
 import PocketMLX
 import Speech
+import SQLite3
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -25,6 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NetSelfTestRunner.shared.runIfNeeded()
             }
+        } else if args.contains("-PocketRemoteGenSelfTest") {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                RemoteGenSelfTestRunner.shared.runIfNeeded()
+            }
         }
     }
 }
@@ -43,6 +50,7 @@ struct PocketAIApp: App {
                     AudioSelfTestRunner.shared.runIfNeeded()
                     SpeechSelfTestRunner.shared.runIfNeeded()
                     NetSelfTestRunner.shared.runIfNeeded(core: model.core)
+                    RemoteGenSelfTestRunner.shared.runIfNeeded(core: model.core)
                 }
         }
         .defaultSize(width: 1100, height: 740)
@@ -377,4 +385,144 @@ private final class NetSelfTestRunner: @unchecked Sendable {
         }
     }
 }
+
+private final class RemoteGenSelfTestRunner: @unchecked Sendable {
+    static let shared = RemoteGenSelfTestRunner()
+    private let lock = NSLock()
+    private var hasRun = false
+
+    func runIfNeeded(core: CoreClient? = nil) {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-PocketRemoteGenSelfTest") else {
+            return
+        }
+        lock.lock()
+        if hasRun {
+            lock.unlock()
+            return
+        }
+        hasRun = true
+        lock.unlock()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            Task {
+                // Watchdog to enforce ~90s overall bound
+                Task {
+                    try? await Task.sleep(nanoseconds: 90_000_000_000)
+                    FileHandle.standardError.write(Data("REMOTE_GEN_ERROR=timed out after 90s\n".utf8))
+                    exit(1)
+                }
+
+                do {
+                    let liveCore: LiveCore
+                    if let c = core as? LiveCore {
+                        liveCore = c
+                    } else {
+                        let hooks = LivePlatformHooks()
+                        let config = CoreConfig(appSupportDir: hooks.appSupportDir(), platform: .macOs)
+                        liveCore = try LiveCore(config: config, platform: hooks)
+                        liveCore.registerEngine(RoutingEngine())
+                    }
+
+                    // Enable Pro entitlement for pairing and LAN server features
+                    liveCore.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "remote_gen_selftest"))
+
+                    // Ensure staged model is registered in sqlite models table
+                    let hooks = LivePlatformHooks()
+                    let dbPath = (hooks.appSupportDir() as NSString).appendingPathComponent("pocket.sqlite")
+                    var db: OpaquePointer?
+                    if sqlite3_open(dbPath, &db) == SQLITE_OK, let db {
+                        let sql = """
+                        INSERT OR IGNORE INTO models (id, repo, revision, format, parameter_size, quantization, context_length, input_modalities, state, installed_at)
+                        VALUES ('mlx-community/Qwen2.5-0.5B-Instruct-4bit@main', 'mlx-community/Qwen2.5-0.5B-Instruct-4bit', 'main', 'mlx_safetensors', '0.5B', '4bit', 32768, 'text', 'installed', 0);
+                        """
+                        sqlite3_exec(db, sql, nil, nil, nil)
+                        sqlite3_close(db)
+                    }
+
+                    // 2. serverStart(ServerConfig(lanEnabled:false, port:0))
+                    let serverStatus = try liveCore.serverStart(cfg: ServerConfig(lanEnabled: false, port: 0))
+                    guard serverStatus.running && serverStatus.port > 0 else {
+                        throw PocketError.Internal(message: "Server failed to start or port is 0")
+                    }
+
+                    // 3. Build PeerClient
+                    let offer = try liveCore.pairingOffer()
+                    let endpoint = PeerEndpoint(host: "127.0.0.1", port: serverStatus.port, fingerprint: offer.certFingerprint)
+                    let client = PeerClient(endpoint: endpoint, token: offer.secret)
+                    _ = await client.measureRTT()
+
+                    // 4. RemoteEngine generate
+                    let engine = RemoteEngine(client: client)
+                    let req = GenerateRequest(
+                        requestId: UUID().uuidString,
+                        messages: [ChatMessage(role: "user", parts: [.text(text: "Reply with: PocketAI remote works.")])],
+                        tools: [],
+                        params: SamplingParams(
+                            temperature: 0.0,
+                            topP: 1.0,
+                            topK: 0,
+                            minP: 0.0,
+                            maxTokens: 24,
+                            stop: [],
+                            seed: 42,
+                            repetitionPenalty: 0.0
+                        ),
+                        reasoning: .off
+                    )
+
+                    final class RemoteCollectorSink: TokenSink, @unchecked Sendable {
+                        private let lock = NSLock()
+                        var text = ""
+                        var completed = false
+                        var stats: GenerateStats?
+                        var error: PocketError?
+
+                        func onDelta(delta: GenerateDelta) {
+                            lock.lock()
+                            text += delta.text
+                            lock.unlock()
+                        }
+
+                        func onDone(stats: GenerateStats) {
+                            lock.lock()
+                            completed = true
+                            self.stats = stats
+                            lock.unlock()
+                        }
+
+                        func onError(err: PocketError) {
+                            lock.lock()
+                            error = err
+                            lock.unlock()
+                        }
+                    }
+
+                    let sink = RemoteCollectorSink()
+                    let stats = try engine.generate(
+                        handle: "mlx-community/Qwen2.5-0.5B-Instruct-4bit@main",
+                        req: req,
+                        sink: sink
+                    )
+
+                    if let err = sink.error {
+                        FileHandle.standardError.write(Data("REMOTE_GEN_ERROR=\(err)\n".utf8))
+                        exit(1)
+                    }
+
+                    let tokens = stats.completionTokens
+                    let text = sink.text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    FileHandle.standardError.write(Data("REMOTE_GEN_TOKENS=\(tokens)\n".utf8))
+                    FileHandle.standardError.write(Data("REMOTE_GEN_TEXT=\(text)\n".utf8))
+                    exit(0)
+                } catch {
+                    FileHandle.standardError.write(Data("REMOTE_GEN_ERROR=\(error)\n".utf8))
+                    exit(1)
+                }
+            }
+        }
+    }
+}
+
 
