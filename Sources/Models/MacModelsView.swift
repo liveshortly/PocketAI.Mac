@@ -15,7 +15,7 @@ struct MacModelsView: View {
     @State private var segment = Segment.browse
     @State private var viewMode = ViewMode.cards
     @State private var searchText = ""
-    @State private var fitsOnly = true
+    @State private var fitsOnly = false
     @State private var catalog: [CatalogEntry] = []
     @State private var detail: CatalogEntry?
     @State private var pendingDelete: CatalogEntry?
@@ -247,11 +247,15 @@ struct MacModelsView: View {
                 }
 
                 // Grouped sections
-                ForEach(groupedSections, id: \.title) { section in
+                ForEach(groupedSections) { section in
                     VStack(alignment: .leading, spacing: PocketSpacing.s12) {
-                        Text(section.title.uppercased())
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(PocketColor.textTertiary)
+                        HStack(spacing: PocketSpacing.s8) {
+                            Image(systemName: section.icon)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(section.title.uppercased())
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(PocketColor.textTertiary)
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: PocketSpacing.s12)], spacing: PocketSpacing.s12) {
                             ForEach(section.entries, id: \.manifest.id) { entry in
@@ -529,8 +533,10 @@ struct MacModelsView: View {
         }
     }
 
-    private struct ModelSection {
+    private struct ModelSection: Identifiable {
+        var id: String { title }
         let title: String
+        let icon: String
         let entries: [CatalogEntry]
     }
 
@@ -541,28 +547,39 @@ struct MacModelsView: View {
         }
         if segment == .installed {
             entries = entries.filter { $0.state == .installed || $0.state == .downloading || $0.state == .paused }
-            return entries.isEmpty ? [] : [ModelSection(title: "Installed on this Mac", entries: entries)]
+            return entries.isEmpty ? [] : [ModelSection(title: "Installed on this Mac", icon: "internaldrive", entries: entries)]
         }
         if fitsOnly {
             entries = entries.filter { $0.fit.verdict == .runsWell || $0.fit.verdict == .runsSlow }
         }
         var sections: [ModelSection] = []
-        let recommended = entries.filter { $0.manifest.tags.contains("recommended") }
-        if !recommended.isEmpty { sections.append(ModelSection(title: "Recommended for this Mac", entries: recommended)) }
-        let vision = entries.filter { $0.manifest.modalities.contains(.vision) }
-        if !vision.isEmpty { sections.append(ModelSection(title: "Vision & Multimodal", entries: vision)) }
-        let voice = entries.filter { $0.manifest.modalities.contains(.speechToText) || $0.manifest.modalities.contains(.textToSpeech) }
-        if !voice.isEmpty { sections.append(ModelSection(title: "Voice & Audio", entries: voice)) }
-        let images = entries.filter { $0.manifest.modalities.contains(.image) }
-        if !images.isEmpty { sections.append(ModelSection(title: "Image Generation", entries: images)) }
-        let rest = entries.filter {
-            !$0.manifest.tags.contains("recommended")
+
+        let text = entries.filter {
+            $0.manifest.modalities.contains(.text)
                 && !$0.manifest.modalities.contains(.vision)
-                && !$0.manifest.modalities.contains(.speechToText)
-                && !$0.manifest.modalities.contains(.textToSpeech)
                 && !$0.manifest.modalities.contains(.image)
         }
-        if !rest.isEmpty { sections.append(ModelSection(title: "Fast & Small", entries: rest)) }
+        if !text.isEmpty {
+            sections.append(ModelSection(title: "Text", icon: "text.bubble", entries: text))
+        }
+
+        let vision = entries.filter { $0.manifest.modalities.contains(.vision) }
+        if !vision.isEmpty {
+            sections.append(ModelSection(title: "Vision", icon: "eye", entries: vision))
+        }
+
+        let image = entries.filter { $0.manifest.modalities.contains(.image) }
+        if !image.isEmpty {
+            sections.append(ModelSection(title: "Image generation", icon: "photo", entries: image))
+        }
+
+        let voice = entries.filter {
+            $0.manifest.modalities.contains(.speechToText) || $0.manifest.modalities.contains(.textToSpeech)
+        }
+        if !voice.isEmpty {
+            sections.append(ModelSection(title: "Voice", icon: "waveform", entries: voice))
+        }
+
         return sections
     }
 
