@@ -13,6 +13,7 @@ targets:
     scheme:
       testTargets:
         - PocketAITests
+        - PocketAIUITests
     dependencies:
       - package: PocketCore
         product: PocketKit
@@ -61,4 +62,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.getpocketai.app.tests
         CODE_SIGN_STYLE: Automatic
         CODE_SIGNING_ALLOWED: NO
+        TEST_TARGET_NAME: PocketAI
+
+  PocketAIUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources: [UITests]
+    dependencies:
+      - target: PocketAI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.getpocketai.app.uitests
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGNING_ALLOWED: YES
+        CODE_SIGN_IDENTITY: "-"
+        GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: PocketAI
