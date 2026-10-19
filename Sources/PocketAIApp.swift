@@ -32,6 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 RemoteGenSelfTestRunner.shared.runIfNeeded()
             }
+        } else if args.contains("-PocketSendSelfTest") {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                SendSelfTestRunner.shared.runIfNeeded()
+            }
         }
     }
 }
@@ -51,6 +57,7 @@ struct PocketAIApp: App {
                     SpeechSelfTestRunner.shared.runIfNeeded()
                     NetSelfTestRunner.shared.runIfNeeded(core: model.core)
                     RemoteGenSelfTestRunner.shared.runIfNeeded(core: model.core)
+                    SendSelfTestRunner.shared.runIfNeeded(core: model.core)
                 }
         }
         .defaultSize(width: 1100, height: 740)
@@ -524,5 +531,180 @@ private final class RemoteGenSelfTestRunner: @unchecked Sendable {
         }
     }
 }
+
+extension LiveCore {
+    func send(conversationId: String, input: UserInput, sink: ChatSink) throws -> Message {
+        try rawCore.send(conversationId: conversationId, input: input, sink: sink)
+    }
+}
+
+private final class SendSelfTestSink: ChatSink, @unchecked Sendable {
+    private let lock = NSLock()
+    var text = ""
+    var completed = false
+    var error: PocketError?
+    var savedMessage: Message?
+
+    func onDelta(delta: GenerateDelta) {
+        lock.lock()
+        text += delta.text
+        lock.unlock()
+    }
+
+    func onDone(stats: GenerateStats) {
+        lock.lock()
+        completed = true
+        lock.unlock()
+    }
+
+    func onError(err: PocketError) {
+        lock.lock()
+        error = err
+        lock.unlock()
+    }
+
+    func onMessageSaved(message: Message) {
+        lock.lock()
+        savedMessage = message
+        lock.unlock()
+    }
+
+    func accumulatedText() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return text
+    }
+}
+
+private final class SendSelfTestRunner: @unchecked Sendable {
+    static let shared = SendSelfTestRunner()
+    private let lock = NSLock()
+    private var hasRun = false
+
+    func runIfNeeded(core: CoreClient? = nil) {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-PocketSendSelfTest") else {
+            return
+        }
+        lock.lock()
+        if hasRun {
+            lock.unlock()
+            return
+        }
+        hasRun = true
+        lock.unlock()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            Task {
+                // Watchdog to enforce ~120s overall bound
+                Task {
+                    try? await Task.sleep(nanoseconds: 120_000_000_000)
+                    FileHandle.standardError.write(Data("SEND_ERROR=timed out after 120s\n".utf8))
+                    exit(1)
+                }
+
+                do {
+                    let hooks = LivePlatformHooks()
+                    let defaultAppSupport = (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+                        .appendingPathComponent("com.getpocketai.app").path) ?? hooks.appSupportDir()
+                    let appSupportDir = defaultAppSupport
+
+                    // Ensure Models directory exists and symlink if needed
+                    let modelsDir = URL(fileURLWithPath: appSupportDir).appendingPathComponent("Models")
+                    try? FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+                    if hooks.appSupportDir() != appSupportDir {
+                        let hooksModels = URL(fileURLWithPath: hooks.appSupportDir()).appendingPathComponent("Models")
+                        if FileManager.default.fileExists(atPath: modelsDir.path) && !FileManager.default.fileExists(atPath: hooksModels.path) {
+                            try? FileManager.default.createSymbolicLink(at: hooksModels, withDestinationURL: modelsDir)
+                        }
+                    }
+
+                    // Ensure staged model is registered in sqlite models table
+                    let dbPath = (appSupportDir as NSString).appendingPathComponent("pocket.sqlite")
+                    var db: OpaquePointer?
+                    if sqlite3_open(dbPath, &db) == SQLITE_OK, let db {
+                        let manifestJson = """
+                        {"id":"mlx-community/Qwen2.5-0.5B-Instruct-4bit@main","display_name":"Qwen2.5 0.5B","family":"qwen2","params_b":0.5,"quant":"4bit","format":"mlx","modalities":["text"],"context_length":2048,"files":[],"license":{"spdx":"apache-2.0","commercial_ok":true,"url":""},"hf_repo":"mlx-community/Qwen2.5-0.5B-Instruct-4bit","hf_revision":"main","min_ram_bytes":0,"est_runtime_bytes":600000000,"tags":[],"curated":true}
+                        """.replacingOccurrences(of: "'", with: "''")
+                        let sql = """
+                        INSERT OR REPLACE INTO models (id, manifest_json, state, bytes_done, installed_at, pinned_engine)
+                        VALUES ('mlx-community/Qwen2.5-0.5B-Instruct-4bit@main', '\(manifestJson)', 'installed', 278064920, 0, 'mlx');
+                        """
+                        sqlite3_exec(db, sql, nil, nil, nil)
+                        let legacySql = """
+                        INSERT OR IGNORE INTO models (id, repo, revision, format, parameter_size, quantization, context_length, input_modalities, state, installed_at)
+                        VALUES ('mlx-community/Qwen2.5-0.5B-Instruct-4bit@main', 'mlx-community/Qwen2.5-0.5B-Instruct-4bit', 'main', 'mlx_safetensors', '0.5B', '4bit', 32768, 'text', 'installed', 0);
+                        """
+                        sqlite3_exec(db, legacySql, nil, nil, nil)
+                        sqlite3_close(db)
+                    }
+
+                    // 1. Build a LiveCore that can see the staged model, register RoutingEngine(), set Pro entitlement
+                    let liveCore: LiveCore
+                    if let c = core as? LiveCore {
+                        liveCore = c
+                    } else {
+                        let config = CoreConfig(appSupportDir: appSupportDir, platform: .macOs)
+                        liveCore = try LiveCore(config: config, platform: hooks)
+                        liveCore.registerEngine(RoutingEngine())
+                    }
+                    liveCore.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "send_selftest"))
+
+                    // 2. Create a conversation; select the staged Qwen as the model
+                    let modelId = "mlx-community/Qwen2.5-0.5B-Instruct-4bit@main"
+                    let conversation = try liveCore.createConversation(
+                        NewConversation(
+                            title: "ENG-08 Multi-Turn Test",
+                            projectId: nil,
+                            modelId: modelId
+                        )
+                    )
+
+                    // 3. TURN 1: send(conversationId:, input: <user text "My name is Rohit. Remember it.">, sink:)
+                    let sink1 = SendSelfTestSink()
+                    let input1 = UserInput(parts: [.text(text: "My name is Rohit. Remember it.")])
+                    let msg1 = try liveCore.send(conversationId: conversation.id, input: input1, sink: sink1)
+                    if let err = sink1.error {
+                        throw err
+                    }
+                    var turn1Text = sink1.accumulatedText().trimmingCharacters(in: .whitespacesAndNewlines)
+                    if turn1Text.isEmpty {
+                        turn1Text = msg1.parts.compactMap { part -> String? in
+                            if case .text(let t) = part { return t }
+                            return nil
+                        }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+
+                    // 4. TURN 2: send(conversationId:, input: <user text "What is my name? Answer with just the name.">, sink:)
+                    let sink2 = SendSelfTestSink()
+                    let input2 = UserInput(parts: [.text(text: "What is my name? Answer with just the name.")])
+                    let msg2 = try liveCore.send(conversationId: conversation.id, input: input2, sink: sink2)
+                    if let err = sink2.error {
+                        throw err
+                    }
+                    var turn2Text = sink2.accumulatedText().trimmingCharacters(in: .whitespacesAndNewlines)
+                    if turn2Text.isEmpty {
+                        turn2Text = msg2.parts.compactMap { part -> String? in
+                            if case .text(let t) = part { return t }
+                            return nil
+                        }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+
+                    // 5. Print SEND_TURN1=<assistant text>, SEND_TURN2=<assistant text> then exit(0); on error SEND_ERROR=<err> + exit(1)
+                    let cleanTurn1 = turn1Text.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+                    let cleanTurn2 = turn2Text.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+
+                    FileHandle.standardError.write(Data("SEND_TURN1=\(cleanTurn1)\n".utf8))
+                    FileHandle.standardError.write(Data("SEND_TURN2=\(cleanTurn2)\n".utf8))
+                    exit(0)
+                } catch {
+                    FileHandle.standardError.write(Data("SEND_ERROR=\(error)\n".utf8))
+                    exit(1)
+                }
+            }
+        }
+    }
+}
+
 
 
