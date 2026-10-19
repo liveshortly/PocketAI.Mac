@@ -3,16 +3,17 @@ import AppKit
 import PocketKit
 import PocketUI
 
-/// MAC-04: Models (M-MOD). Table-style list + detail inspector,
-/// memory policy slider (50–85 %) with live budget readout, and "Reveal in Finder" for model folder.
+/// MAC-04: Models (M-MOD). Card/Table hybrid view with curated sections,
+/// hero "Recommended for this Mac" card, memory budget gauge bar,
+/// clear download progress, and tidy model detail inspector.
 struct MacModelsView: View {
     @Environment(AppModel.self) private var model
 
-    private enum Segment: String, CaseIterable { case installed = "Installed", browse = "Browse" }
-    private enum ViewMode: String, CaseIterable { case table = "Table", cards = "Cards" }
+    private enum Segment: String, CaseIterable { case browse = "Browse Catalog", installed = "Installed" }
+    private enum ViewMode: String, CaseIterable { case cards = "Cards", table = "Table" }
 
     @State private var segment = Segment.browse
-    @State private var viewMode = ViewMode.table
+    @State private var viewMode = ViewMode.cards
     @State private var searchText = ""
     @State private var fitsOnly = true
     @State private var catalog: [CatalogEntry] = []
@@ -33,58 +34,29 @@ struct MacModelsView: View {
         return "\(formatBytes(budget)) of \(formatBytes(total))"
     }
 
+    private var installedCount: Int {
+        catalog.filter { $0.state == .installed || $0.state == .downloading || $0.state == .paused }.count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Controls bar
-            HStack(spacing: PocketSpacing.s16) {
-                Picker("", selection: $segment) {
-                    ForEach(Segment.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 200)
-
-                Picker("", selection: $viewMode) {
-                    ForEach(ViewMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 140)
-
-                if segment == .browse {
-                    Toggle("Fits only", isOn: $fitsOnly)
-                        .font(.pocket(.footnote))
-                }
-
-                Spacer()
-
-                Button("Reveal in Finder") {
-                    revealModelFolder()
-                }
-                .font(.pocket(.footnote))
-            }
-            .padding(.horizontal, PocketSpacing.gutterMac)
-            .padding(.vertical, PocketSpacing.s8)
-
-            // Memory policy slider (50–85 %) per MAC-04
-            HStack(spacing: PocketSpacing.s12) {
-                Text("Memory Budget (\(Int(memoryPolicyPercent))% · \(memoryBudgetFormatted))")
-                    .font(.pocket(.caption))
-                    .foregroundStyle(PocketColor.textSecondary)
-
-                Slider(value: $memoryPolicyPercent, in: 50...85, step: 5)
-                    .frame(width: 160)
-
-                Spacer()
-            }
-            .padding(.horizontal, PocketSpacing.gutterMac)
-            .padding(.bottom, PocketSpacing.s8)
+            // Controls & Filter Bar
+            controlsBar
 
             Divider()
 
-            // Main display: Table or Cards
-            if viewMode == .table {
-                tableView
+            // Memory Budget Gauge
+            memoryBudgetBar
+
+            Divider()
+
+            // Main Content Area
+            if segment == .installed && filteredEntries.isEmpty {
+                emptyInstalledView
+            } else if viewMode == .cards {
+                cardsScrollView
             } else {
-                cardsView
+                tableView
             }
         }
         .background(PocketColor.bgCanvas)
@@ -104,7 +76,7 @@ struct MacModelsView: View {
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
+            Button("Delete Model", role: .destructive) {
                 if let entry = pendingDelete {
                     try? model.core.deleteModel(modelId: entry.manifest.id)
                     reload()
@@ -114,9 +86,142 @@ struct MacModelsView: View {
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: {
             if let entry = pendingDelete {
-                Text("Frees \(formatBytes(entry.manifest.estRuntimeBytes)).")
+                Text("This will free \(formatBytes(entry.manifest.estRuntimeBytes)) on your Mac.")
             }
         }
+    }
+
+    private var controlsBar: some View {
+        HStack(spacing: PocketSpacing.s16) {
+            // Segment picker: Browse vs Installed
+            Picker("", selection: $segment) {
+                Text("Browse").tag(Segment.browse)
+                Text("Installed (\(installedCount))").tag(Segment.installed)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+
+            // View mode: Cards vs Table
+            Picker("", selection: $viewMode) {
+                Label("Cards", systemImage: "square.grid.2x2").tag(ViewMode.cards)
+                Label("Table", systemImage: "list.bullet").tag(ViewMode.table)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 130)
+
+            if segment == .browse {
+                Toggle("Fits this Mac", isOn: $fitsOnly)
+                    .font(.pocket(.callout))
+                    .toggleStyle(.checkbox)
+            }
+
+            Spacer()
+
+            // Search field
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(PocketColor.textTertiary)
+                TextField("Search models…", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.pocket(.callout))
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(PocketColor.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(PocketColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(PocketColor.lineHairline, lineWidth: 0.5)
+            )
+            .frame(width: 200)
+
+            Button {
+                revealModelFolder()
+            } label: {
+                Label("Model Folder", systemImage: "folder")
+                    .font(.pocket(.footnote))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("Reveal models directory in Finder")
+        }
+        .padding(.horizontal, PocketSpacing.gutterMac)
+        .padding(.vertical, PocketSpacing.s12)
+        .background(PocketColor.bgRaised)
+    }
+
+    private var memoryBudgetBar: some View {
+        HStack(spacing: PocketSpacing.s16) {
+            Image(systemName: "memorychip")
+                .font(.system(size: 14))
+                .foregroundStyle(PocketColor.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("Memory Budget for Models:")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+
+                    Text("\(Int(memoryPolicyPercent))% · \(memoryBudgetFormatted)")
+                        .font(.pocket(.metric))
+                        .foregroundStyle(PocketColor.textPrimary)
+                }
+
+                // Progress gauge
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(PocketColor.bgSunken)
+                            .frame(height: 5)
+
+                        Capsule()
+                            .fill(PocketColor.accent)
+                            .frame(width: geo.size.width * CGFloat(memoryPolicyPercent / 100.0), height: 5)
+                    }
+                }
+                .frame(height: 5)
+            }
+
+            Slider(value: $memoryPolicyPercent, in: 50...85, step: 5)
+                .frame(width: 140)
+
+            Spacer()
+        }
+        .padding(.horizontal, PocketSpacing.gutterMac)
+        .padding(.vertical, PocketSpacing.s8)
+        .background(PocketColor.bgCanvas)
+    }
+
+    private var emptyInstalledView: some View {
+        VStack(spacing: PocketSpacing.s16) {
+            Spacer()
+            PocketMarkView(state: .idle, size: 56)
+            Text("No models installed yet")
+                .font(.pocket(.title))
+                .fontWeight(.semibold)
+                .foregroundStyle(PocketColor.textPrimary)
+
+            Text("Download optimized models from the catalog to run locally on your Mac's Apple Silicon.")
+                .font(.pocket(.body))
+                .foregroundStyle(PocketColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+
+            Button("Browse Curated Catalog") {
+                segment = .browse
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(PocketColor.accent)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var filteredEntries: [CatalogEntry] {
@@ -133,6 +238,249 @@ struct MacModelsView: View {
         return entries
     }
 
+    private var cardsScrollView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: PocketSpacing.s24) {
+                // Hero card for Recommended model (in Browse mode)
+                if segment == .browse && searchText.isEmpty, let hero = recommendedHeroEntry {
+                    heroModelCard(hero)
+                }
+
+                // Grouped sections
+                ForEach(groupedSections, id: \.title) { section in
+                    VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+                        Text(section.title.uppercased())
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(PocketColor.textTertiary)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: PocketSpacing.s12)], spacing: PocketSpacing.s12) {
+                            ForEach(section.entries, id: \.manifest.id) { entry in
+                                modelCard(entry)
+                            }
+                        }
+                    }
+                }
+
+                // Hugging Face hub results if searching
+                if segment == .browse, !searchText.isEmpty {
+                    VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+                        Divider()
+                        HStack {
+                            Text("HUGGING FACE HUB")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(PocketColor.textTertiary)
+                            Spacer()
+                            Button {
+                                Task { await searchHub() }
+                            } label: {
+                                Label("Search Hub for “\(searchText)”", systemImage: "magnifyingglass")
+                                    .font(.pocket(.caption))
+                            }
+                        }
+
+                        if let hubSearchError {
+                            Text(hubSearchError).font(.pocket(.caption)).foregroundStyle(PocketColor.statusBad)
+                        }
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: PocketSpacing.s12)], spacing: PocketSpacing.s12) {
+                            ForEach(hubResults, id: \.manifest.id) { entry in
+                                modelCard(entry)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(PocketSpacing.gutterMac)
+        }
+    }
+
+    private var recommendedHeroEntry: CatalogEntry? {
+        catalog.first { $0.manifest.tags.contains("recommended") && $0.fit.verdict == .runsWell }
+    }
+
+    private func heroModelCard(_ entry: CatalogEntry) -> some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+            HStack {
+                HStack(spacing: PocketSpacing.s8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("RECOMMENDED FOR THIS MAC")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(PocketColor.accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(PocketColor.accentSoft)
+                .clipShape(Capsule())
+
+                Spacer()
+
+                FitBadge(kind: fitKind(entry.fit.verdict), reason: entry.fit.reason)
+            }
+
+            HStack(alignment: .center, spacing: PocketSpacing.s16) {
+                PocketMarkView(state: .working(tokPerSec: 28), size: 40)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.manifest.displayName)
+                        .font(.pocket(.title))
+                        .fontWeight(.bold)
+                        .foregroundStyle(PocketColor.textPrimary)
+
+                    Text("\(entry.manifest.family) · \(entry.manifest.quant) · Apple Silicon Metal Optimized")
+                        .font(.pocket(.callout))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: PocketSpacing.s4) {
+                    if let speed = entry.fit.estTokensPerSec {
+                        HStack(spacing: 4) {
+                            Text("\(Int(speed))")
+                                .font(.pocket(.title))
+                                .fontWeight(.bold)
+                                .foregroundStyle(PocketColor.accent)
+                            Text("tok/s")
+                                .font(.pocket(.caption))
+                                .foregroundStyle(PocketColor.textSecondary)
+                        }
+                    }
+
+                    Text(formatBytes(entry.manifest.estRuntimeBytes))
+                        .font(.pocket(.metric))
+                        .foregroundStyle(PocketColor.textTertiary)
+                }
+
+                Button(primaryActionLabel(for: entry)) {
+                    performPrimaryAction(for: entry)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(PocketColor.accent)
+                .controlSize(.large)
+            }
+        }
+        .padding(PocketSpacing.s20)
+        .background(PocketColor.bgRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(PocketColor.accent.opacity(0.4), lineWidth: 1.5)
+        )
+        .shadow(color: PocketColor.accent.opacity(0.06), radius: 12, y: 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detail = entry
+        }
+    }
+
+    private func modelCard(_ entry: CatalogEntry) -> some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+            // Header
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.manifest.displayName)
+                        .font(.pocket(.headline))
+                        .foregroundStyle(PocketColor.textPrimary)
+                        .lineLimit(1)
+
+                    Text("\(entry.manifest.family) · \(entry.manifest.quant)")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
+
+                Spacer()
+
+                FitBadge(kind: fitKind(entry.fit.verdict), reason: entry.fit.reason)
+            }
+
+            // Specs row
+            HStack(spacing: PocketSpacing.s12) {
+                Label(formatBytes(entry.manifest.estRuntimeBytes), systemImage: "internaldrive")
+                    .font(.pocket(.metric))
+                    .foregroundStyle(PocketColor.textSecondary)
+
+                if let speed = entry.fit.estTokensPerSec {
+                    Label("\(Int(speed)) tok/s", systemImage: "bolt")
+                        .font(.pocket(.metric))
+                        .foregroundStyle(PocketColor.accent)
+                }
+
+                Spacer()
+
+                Text(entry.manifest.license.spdx)
+                    .font(.pocket(.caption))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(PocketColor.bgSunken)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+
+            // Download progress if active
+            if entry.state == .downloading || entry.state == .paused {
+                DownloadProgress(
+                    state: entry.state == .paused
+                        ? .paused(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(entry.manifest.estRuntimeBytes))
+                        : .downloading(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(entry.manifest.estRuntimeBytes), bytesPerSecond: 18_000_000),
+                    onPauseResume: { performPrimaryAction(for: entry) },
+                    onCancel: { try? model.core.cancelDownload(modelId: entry.manifest.id); reload() }
+                )
+            }
+
+            Divider()
+
+            // Footer actions
+            HStack {
+                Button("Details") {
+                    detail = entry
+                }
+                .buttonStyle(.plain)
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textSecondary)
+
+                Spacer()
+
+                if entry.state == .installed {
+                    Button(role: .destructive) {
+                        pendingDelete = entry
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12))
+                            .foregroundStyle(PocketColor.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete model")
+                }
+
+                if entry.state == .installed {
+                    Button(primaryActionLabel(for: entry)) {
+                        performPrimaryAction(for: entry)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button(primaryActionLabel(for: entry)) {
+                        performPrimaryAction(for: entry)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(PocketSpacing.s16)
+        .background(PocketColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(PocketColor.lineHairline, lineWidth: 0.8)
+        )
+        .shadow(color: Color.black.opacity(0.03), radius: 6, y: 2)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detail = entry
+        }
+    }
+
     private var tableView: some View {
         Table(filteredEntries) {
             TableColumn("Name") { entry in
@@ -145,80 +493,40 @@ struct MacModelsView: View {
                 FitBadge(kind: fitKind(entry.fit.verdict), reason: entry.fit.reason)
             }
             TableColumn("Size") { entry in
-                Text(formatBytes(entry.manifest.estRuntimeBytes)).font(.pocket(.mono))
+                Text(formatBytes(entry.manifest.estRuntimeBytes)).font(.pocket(.metric))
             }
             TableColumn("Speed") { entry in
                 if let speed = entry.fit.estTokensPerSec {
-                    Text("\(Int(speed)) tok/s").font(.pocket(.mono))
+                    Text("\(Int(speed)) tok/s").font(.pocket(.metric)).foregroundStyle(PocketColor.accent)
                 } else {
                     Text("—").foregroundStyle(PocketColor.textTertiary)
                 }
             }
-            TableColumn("Engine") { entry in
+            TableColumn("Format") { entry in
                 Text("\(entry.manifest.format)").font(.pocket(.caption))
             }
             TableColumn("License") { entry in
                 Text(entry.manifest.license.spdx).font(.pocket(.caption))
             }
-            TableColumn("Status") { entry in
+            TableColumn("Action") { entry in
                 HStack {
-                    Text("\(entry.state)").font(.pocket(.caption))
-                    Spacer()
                     Button(primaryActionLabel(for: entry)) {
                         performPrimaryAction(for: entry)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                }
-            }
-        }
-        .searchable(text: $searchText, prompt: "Search models")
-    }
 
-    private var cardsView: some View {
-        List {
-            ForEach(groupedSections, id: \.title) { section in
-                Section(section.title) {
-                    ForEach(section.entries, id: \.manifest.id) { entry in
-                        ModelRow(
-                            data: rowData(for: entry),
-                            primaryActionLabel: primaryActionLabel(for: entry),
-                            onPrimaryAction: { performPrimaryAction(for: entry) }
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture { detail = entry }
-                    }
-                }
-            }
-            if segment == .browse, !searchText.isEmpty {
-                Section {
-                    if model.core.isOffline() {
-                        Label("Offline mode is on — turn it off in Settings to search Hugging Face.", systemImage: "airplane")
-                            .font(.pocket(.footnote))
-                            .foregroundStyle(PocketColor.textSecondary)
-                    } else {
-                        Button {
-                            Task { await searchHub() }
+                    if entry.state == .installed {
+                        Button(role: .destructive) {
+                            pendingDelete = entry
                         } label: {
-                            Label("Search Hugging Face for \"\(searchText)\"", systemImage: "magnifyingglass")
+                            Image(systemName: "trash")
                         }
-                    }
-                    if let hubSearchError {
-                        Text(hubSearchError).font(.pocket(.caption)).foregroundStyle(PocketColor.statusBad)
-                    }
-                    ForEach(hubResults, id: \.manifest.id) { entry in
-                        ModelRow(
-                            data: rowData(for: entry),
-                            primaryActionLabel: primaryActionLabel(for: entry),
-                            onPrimaryAction: { performPrimaryAction(for: entry) }
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture { detail = entry }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
-        .searchable(text: $searchText, prompt: "Search models")
     }
 
     private struct ModelSection {
@@ -233,7 +541,7 @@ struct MacModelsView: View {
         }
         if segment == .installed {
             entries = entries.filter { $0.state == .installed || $0.state == .downloading || $0.state == .paused }
-            return entries.isEmpty ? [] : [ModelSection(title: "Installed", entries: entries)]
+            return entries.isEmpty ? [] : [ModelSection(title: "Installed on this Mac", entries: entries)]
         }
         if fitsOnly {
             entries = entries.filter { $0.fit.verdict == .runsWell || $0.fit.verdict == .runsSlow }
@@ -242,11 +550,11 @@ struct MacModelsView: View {
         let recommended = entries.filter { $0.manifest.tags.contains("recommended") }
         if !recommended.isEmpty { sections.append(ModelSection(title: "Recommended for this Mac", entries: recommended)) }
         let vision = entries.filter { $0.manifest.modalities.contains(.vision) }
-        if !vision.isEmpty { sections.append(ModelSection(title: "Vision", entries: vision)) }
+        if !vision.isEmpty { sections.append(ModelSection(title: "Vision & Multimodal", entries: vision)) }
         let voice = entries.filter { $0.manifest.modalities.contains(.speechToText) || $0.manifest.modalities.contains(.textToSpeech) }
-        if !voice.isEmpty { sections.append(ModelSection(title: "Voice", entries: voice)) }
+        if !voice.isEmpty { sections.append(ModelSection(title: "Voice & Audio", entries: voice)) }
         let images = entries.filter { $0.manifest.modalities.contains(.image) }
-        if !images.isEmpty { sections.append(ModelSection(title: "Images", entries: images)) }
+        if !images.isEmpty { sections.append(ModelSection(title: "Image Generation", entries: images)) }
         let rest = entries.filter {
             !$0.manifest.tags.contains("recommended")
                 && !$0.manifest.modalities.contains(.vision)
@@ -254,7 +562,7 @@ struct MacModelsView: View {
                 && !$0.manifest.modalities.contains(.textToSpeech)
                 && !$0.manifest.modalities.contains(.image)
         }
-        if !rest.isEmpty { sections.append(ModelSection(title: "Fast & small", entries: rest)) }
+        if !rest.isEmpty { sections.append(ModelSection(title: "Fast & Small", entries: rest)) }
         return sections
     }
 
@@ -270,7 +578,7 @@ struct MacModelsView: View {
             hubResults = try model.core.searchHub(query: searchText, format: .mlxSafetensors)
         } catch {
             hubResults = []
-            hubSearchError = "Search failed: \(error)"
+            hubSearchError = "Search failed: \(error.localizedDescription)"
         }
     }
 
@@ -279,27 +587,15 @@ struct MacModelsView: View {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir)
     }
 
-    private func rowData(for entry: CatalogEntry) -> ModelRowData {
-        ModelRowData(
-            name: entry.manifest.displayName,
-            familyParamsQuant: "\(entry.manifest.family) · \(entry.manifest.quant)",
-            fitKind: fitKind(entry.fit.verdict),
-            fitReason: entry.fit.reason,
-            sizeOnDisk: formatBytes(entry.manifest.estRuntimeBytes),
-            speedText: entry.fit.estTokensPerSec.map { "\(Int($0)) tok/s" },
-            speedIsMeasured: entry.fit.measuredTokensPerSec != nil,
-            licenseLabel: entry.manifest.license.spdx
-        )
-    }
-
     private func primaryActionLabel(for entry: CatalogEntry) -> String {
         switch entry.state {
-        case .installed: return "Open"
+        case .installed: return "Open in Chat"
         case .downloading: return "Pause"
         case .paused: return "Resume"
         case .verifying: return "Checking…"
         case .failed: return "Retry"
-        case .available, .queued: return entry.fit.verdict == .willNotFit ? "Won't fit" : "Download \(formatBytes(entry.manifest.estRuntimeBytes))"
+        case .available, .queued:
+            return entry.fit.verdict == .willNotFit ? "Won't fit" : "Download \(formatBytes(entry.manifest.estRuntimeBytes))"
         }
     }
 
@@ -309,6 +605,7 @@ struct MacModelsView: View {
         case .paused: try? model.core.resumeDownload(modelId: entry.manifest.id)
         case .available, .queued, .failed: try? model.core.startDownload(modelId: entry.manifest.id)
         case .installed:
+            model.currentModelId = entry.manifest.id
             model.selectedTab = .chats
             model.pendingCommand = .newChat
         case .verifying:
@@ -332,27 +629,50 @@ private struct ModelDetailSheet: View {
     let primaryActionLabel: String
     let onPrimaryAction: () -> Void
     let onDelete: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: PocketSpacing.s16) {
+                PocketMarkView(state: .idle, size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.manifest.displayName)
+                        .font(.pocket(.title))
+                        .fontWeight(.bold)
+                    Text(entry.manifest.family)
+                        .font(.pocket(.callout))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
+                Spacer()
+                FitBadge(kind: fitKind, reason: entry.fit.reason)
+            }
+            .padding(PocketSpacing.s20)
+            .background(PocketColor.bgRaised)
+
+            Divider()
+
+            // Details List
             List {
-                Section {
-                    Text(entry.manifest.displayName).font(.pocket(.title))
-                    Text(entry.manifest.family).font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
-                    FitBadge(kind: fitKind, reason: entry.fit.reason)
+                Section("Specifications") {
+                    LabeledContent("Quantization", value: entry.manifest.quant)
+                    LabeledContent("Context Window", value: "\(entry.manifest.contextLength) tokens")
+                    LabeledContent("Size on Disk", value: formatBytes(entry.manifest.estRuntimeBytes))
+                    LabeledContent("Runtime Engine", value: "\(entry.manifest.format)")
+                    if let speed = entry.fit.estTokensPerSec {
+                        LabeledContent("Estimated Speed", value: "\(Int(speed)) tok/s")
+                    }
                 }
-                Section("Specs") {
-                    LabeledContent("Quant", value: entry.manifest.quant)
-                    LabeledContent("Context", value: "\(entry.manifest.contextLength)")
-                    LabeledContent("Size", value: formatBytes(entry.manifest.estRuntimeBytes))
-                    LabeledContent("Format", value: "\(entry.manifest.format)")
+
+                Section("License & Distribution") {
+                    LabeledContent("SPDX Identifier", value: entry.manifest.license.spdx)
+                    if let url = URL(string: entry.manifest.license.url) {
+                        Link("View License Document", destination: url)
+                    }
                 }
-                Section("License") {
-                    Text(entry.manifest.license.spdx)
-                    Link(entry.manifest.license.url, destination: URL(string: entry.manifest.license.url) ?? URL(string: "https://huggingface.co")!)
-                }
+
                 if entry.state == .downloading || entry.state == .paused {
-                    Section {
+                    Section("Download Status") {
                         DownloadProgress(
                             state: entry.state == .paused
                                 ? .paused(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(entry.manifest.estRuntimeBytes))
@@ -362,15 +682,37 @@ private struct ModelDetailSheet: View {
                         )
                     }
                 }
-                Section {
-                    Button(primaryActionLabel, action: onPrimaryAction)
-                    if let onDelete {
-                        Button("Delete", role: .destructive, action: onDelete)
-                    }
-                }
             }
+            .formStyle(.grouped)
+
+            Divider()
+
+            // Footer Actions
+            HStack {
+                if let onDelete {
+                    Button("Delete Model", role: .destructive, action: onDelete)
+                        .buttonStyle(.bordered)
+                        .tint(PocketColor.statusBad)
+                }
+
+                Spacer()
+
+                Button("Done") {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+
+                Button(primaryActionLabel) {
+                    onPrimaryAction()
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(PocketColor.accent)
+            }
+            .padding(PocketSpacing.s16)
+            .background(PocketColor.bgCanvas)
         }
-        .frame(minWidth: 420, minHeight: 480)
+        .frame(minWidth: 460, minHeight: 480)
     }
 
     private var fitKind: FitBadgeKind {

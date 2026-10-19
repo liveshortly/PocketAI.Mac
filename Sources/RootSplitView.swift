@@ -3,12 +3,14 @@ import AppKit
 import PocketKit
 import PocketUI
 
-/// Mac shell per 02-design-system.md: NavigationSplitView sidebar + content.
-/// Sidebar items: Chats, Projects, Models, Devices, Server, Privacy.
-/// Pinned PulseStrip at the bottom of the sidebar.
-/// Window toolbar with new chat, model chip, Pulse mini, and sidebar toggle per MAC-02.
+/// Mac shell per 02-design-system.md §6.2: NavigationSplitView sidebar + content.
+/// Sidebar items: Chats, Projects, Models, Server, Devices, Privacy.
+/// Grouped sidebar sections, native translucent chrome, pinned Pulse status footer,
+/// and a unified toolbar with model switcher popover.
 struct RootSplitView: View {
     @Environment(AppModel.self) private var model
+    @State private var isModelPopoverPresented = false
+    @State private var isPulseSheetPresented = false
 
     var body: some View {
         if !model.hasOnboarded {
@@ -29,12 +31,85 @@ struct RootSplitView: View {
     private var shell: some View {
         @Bindable var m = model
         return NavigationSplitView {
-            List(AppModel.SidebarItem.allCases, selection: $m.selectedTab) { item in
-                Label(item.rawValue, systemImage: item.icon).tag(item)
+            List(selection: $m.selectedTab) {
+                Section("WORKSPACE") {
+                    Label {
+                        Text("Chats")
+                            .font(.pocket(.body))
+                    } icon: {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .tag(AppModel.SidebarItem.chats)
+
+                    Label {
+                        Text("Projects")
+                            .font(.pocket(.body))
+                    } icon: {
+                        Image(systemName: "folder")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .tag(AppModel.SidebarItem.projects)
+                }
+
+                Section("SYSTEM") {
+                    Label {
+                        Text("Models")
+                            .font(.pocket(.body))
+                    } icon: {
+                        Image(systemName: "cpu")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .tag(AppModel.SidebarItem.models)
+
+                    Label {
+                        HStack {
+                            Text("Server")
+                                .font(.pocket(.body))
+                            Spacer()
+                            if model.serverStatus.running {
+                                Circle()
+                                    .fill(PocketColor.statusOk)
+                                    .frame(width: 7, height: 7)
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "server.rack")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .tag(AppModel.SidebarItem.server)
+
+                    Label {
+                        Text("Devices")
+                            .font(.pocket(.body))
+                    } icon: {
+                        Image(systemName: "iphone")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .tag(AppModel.SidebarItem.devices)
+
+                    Label {
+                        HStack {
+                            Text("Privacy")
+                                .font(.pocket(.body))
+                            Spacer()
+                            if model.core.isOffline() {
+                                Image(systemName: "airplane")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(PocketColor.statusWarn)
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "hand.raised")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .tag(AppModel.SidebarItem.privacy)
+                }
             }
+            .listStyle(.sidebar)
             .navigationTitle("PocketAI")
             .safeAreaInset(edge: .bottom) {
-                sidebarPulse
+                sidebarStatusFooter
             }
         } detail: {
             switch model.selectedTab {
@@ -52,51 +127,30 @@ struct RootSplitView: View {
                 MacPrivacyView()
             }
         }
+        .frame(minWidth: 960, minHeight: 640)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
-                } label: {
-                    Image(systemName: "sidebar.leading")
-                }
-                .help("Toggle Sidebar")
+            ToolbarItem(placement: .principal) {
+                modelSwitcherButton
             }
 
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.selectedTab = .chats
-                    model.pendingCommand = .newChat
-                } label: {
-                    Label("New Chat", systemImage: "square.and.pencil")
-                }
-                .help("New Chat (⌘N)")
-            }
-
-            ToolbarItem(placement: .status) {
-                HStack(spacing: PocketSpacing.s8) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if model.selectedTab == .chats {
                     Button {
-                        model.selectedTab = .models
+                        model.selectedTab = .chats
+                        model.pendingCommand = .newChat
                     } label: {
-                        HStack(spacing: PocketSpacing.s4) {
-                            PocketMarkView(state: model.isGenerating ? .working(tokPerSec: 28) : .idle, size: 14)
-                            Text("Qwen3 4B")
-                                .font(.pocket(.caption))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8))
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(PocketColor.bgSurface)
-                        .clipShape(Capsule())
+                        Label("New Chat", systemImage: "square.and.pencil")
                     }
-                    .buttonStyle(.plain)
-                    .help("Active Model")
+                    .help("New Chat (⌘N)")
 
-                    if model.isGenerating {
-                        Text("28 tok/s")
-                            .font(.pocket(.metric))
-                            .foregroundStyle(PocketColor.accent)
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            model.showChatInspector.toggle()
+                        }
+                    } label: {
+                        Label("Conversation Details", systemImage: "sidebar.trailing")
                     }
+                    .help("Conversation Inspector (⌥⌘I)")
                 }
             }
         }
@@ -105,24 +159,160 @@ struct RootSplitView: View {
             case .openTab(let tab):
                 model.selectedTab = tab
                 model.pendingCommand = nil
+            case .toggleInspector:
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                    model.showChatInspector.toggle()
+                }
+                model.pendingCommand = nil
             case .newChat, .focusComposer, .stopGeneration, .openConversation, .none:
                 break
             }
         }
+        .sheet(isPresented: $isPulseSheetPresented) {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Pulse System Status")
+                        .font(.pocket(.headline))
+                        .foregroundStyle(PocketColor.textPrimary)
+                    Spacer()
+                    Button("Done") {
+                        isPulseSheetPresented = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, PocketSpacing.s16)
+                .padding(.vertical, PocketSpacing.s12)
+                .background(PocketColor.bgSurface)
+
+                Divider()
+
+                PulseDetailSheet(
+                    ramUsedBytes: 2_400_000_000,
+                    ramBudgetBytes: 11_200_000_000,
+                    ramTotalBytes: Int64(model.hooks.deviceProfile().totalRamBytes),
+                    thermalLabel: "Nominal",
+                    loadedModels: [
+                        LoadedModelSummary(
+                            id: model.currentModelId,
+                            name: model.currentModelDisplayName,
+                            residentBytes: 2_400_000_000,
+                            onEject: {}
+                        )
+                    ],
+                    lastReply: LastReplyStats(ttftMs: 120, tokens: 142, tokPerSec: 28, isMeasured: true),
+                    egressCountToday: model.core.egressLog(limit: 0).count
+                )
+            }
+            .frame(width: 440, height: 480)
+        }
     }
 
-    private var sidebarPulse: some View {
-        VStack(spacing: 0) {
-            Divider()
-            PulseStrip(
-                state: model.isGenerating
-                    ? .generating(modelName: "This Mac", location: "On this Mac", tokPerSec: 28)
-                    : (model.core.isOffline() ? .offlineMode : .idle),
-                onTap: {}
+    private var modelSwitcherButton: some View {
+        Button {
+            isModelPopoverPresented.toggle()
+        } label: {
+            HStack(spacing: PocketSpacing.s8) {
+                PocketMarkView(state: model.isGenerating ? .working(tokPerSec: 28) : .idle, size: 14)
+
+                Text(model.currentModelDisplayName)
+                    .font(.pocket(.caption))
+                    .fontWeight(.medium)
+                    .foregroundStyle(PocketColor.textPrimary)
+
+                if model.isGenerating {
+                    Text("\(model.activeTokPerSec) tok/s")
+                        .font(.pocket(.metric))
+                        .foregroundStyle(PocketColor.accent)
+                }
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
+            .padding(.horizontal, PocketSpacing.s8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(PocketColor.bgRaised.opacity(0.9))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(PocketColor.lineHairline, lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Active Model Switcher")
+        .popover(isPresented: $isModelPopoverPresented, arrowEdge: .bottom) {
+            ModelSwitcherPopoverView()
+                .environment(model)
+        }
+    }
+
+    private var sidebarStatusFooter: some View {
+        Button {
+            isPulseSheetPresented = true
+        } label: {
+            HStack(spacing: PocketSpacing.s8) {
+                PocketMarkView(
+                    state: model.isGenerating ? .working(tokPerSec: 28) : .idle,
+                    size: 16
+                )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    if model.isGenerating {
+                        HStack(spacing: PocketSpacing.s4) {
+                            Text("Generating")
+                                .font(.pocket(.caption))
+                                .fontWeight(.medium)
+                                .foregroundStyle(PocketColor.accent)
+                            Text("· \(model.activeTokPerSec) tok/s")
+                                .font(.pocket(.metric))
+                                .foregroundStyle(PocketColor.accent)
+                        }
+                    } else if model.core.isOffline() {
+                        Text("Offline Mode Active")
+                            .font(.pocket(.caption))
+                            .fontWeight(.medium)
+                            .foregroundStyle(PocketColor.statusWarn)
+                    } else if model.serverStatus.running {
+                        HStack(spacing: PocketSpacing.s4) {
+                            Text("Server Active")
+                                .font(.pocket(.caption))
+                                .fontWeight(.medium)
+                                .foregroundStyle(PocketColor.statusOk)
+                            Text(":\(model.serverStatus.port)")
+                                .font(.pocket(.metric))
+                                .foregroundStyle(PocketColor.textSecondary)
+                        }
+                    } else {
+                        Text("Ready · On this Mac")
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textSecondary)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
+            .padding(.horizontal, PocketSpacing.s12)
+            .padding(.vertical, PocketSpacing.s8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(PocketColor.bgRaised.opacity(0.85))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(PocketColor.lineHairline, lineWidth: 0.5)
             )
             .padding(PocketSpacing.s8)
         }
-        .background(PocketColor.bgCanvas)
+        .buttonStyle(.plain)
+        .help("System Status & Hardware Pulse")
     }
 }
 
@@ -154,6 +344,10 @@ struct MenuBarContent: View {
                         Text("Server Active · :\(status.port)")
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.statusOk)
+                    } else {
+                        Text("Ready · On-Device")
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textSecondary)
                     }
                 }
             }
@@ -165,11 +359,11 @@ struct MenuBarContent: View {
                     Menu {
                         ForEach(installedModels, id: \.manifest.id) { entry in
                             Button(entry.manifest.displayName) {
-                                // Select model
+                                model.currentModelId = entry.manifest.id
                             }
                         }
                     } label: {
-                        Text(installedModels.first?.manifest.displayName ?? "Select Model")
+                        Text(model.currentModelDisplayName)
                             .font(.pocket(.body))
                     }
                 }

@@ -14,11 +14,10 @@ struct SettingsView: View {
             MacModelsView().tabItem { Label("Models", systemImage: "cpu") }
             MacServerView().tabItem { Label("Server", systemImage: "server.rack") }
             MacDevicesView().tabItem { Label("Devices", systemImage: "iphone") }
-            Text("Agents").tabItem { Label("Agents", systemImage: "wand.and.stars") }
             MacPrivacyView().tabItem { Label("Privacy", systemImage: "hand.raised") }
             MacLicenseView().tabItem { Label("License", systemImage: "key") }
         }
-        .frame(width: 580, height: 460)
+        .frame(width: 620, height: 500)
         .font(.pocket(.body))
     }
 }
@@ -26,8 +25,16 @@ struct SettingsView: View {
 private struct MacGeneralView: View {
     var body: some View {
         Form {
-            LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
-            Link("How PocketAI protects your data", destination: URL(string: "https://getpocketai.app/privacy")!)
+            Section("About PocketAI") {
+                LabeledContent("App Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                LabeledContent("Platform", value: "macOS (Apple Silicon Optimized)")
+                LabeledContent("Build Target", value: "Native SwiftUI + Metal/MLX")
+            }
+
+            Section("Documentation & Privacy") {
+                Link("How PocketAI Protects Your Privacy", destination: URL(string: "https://getpocketai.app/privacy")!)
+                Link("GitHub Repository & Release Notes", destination: URL(string: "https://github.com/getpocketai")!)
+            }
         }
         .formStyle(.grouped)
     }
@@ -43,31 +50,47 @@ private struct MacLicenseView: View {
     var body: some View {
         Form {
             Section {
-                Text("PocketAI License").font(.pocket(.headline))
-                Text("Enables multi-device pairing and network server capabilities.").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+                VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                    Text("PocketAI Pro License")
+                        .font(.pocket(.headline))
+                    Text("Enables multi-device pairing, network model serving, and high-throughput generation.")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
             }
-            Section {
-                Label("Use your Mac's models from iPhone", systemImage: "iphone")
-                Label("Serve models to other apps on your network", systemImage: "network")
+
+            Section("Pro Features") {
+                Label("Use your Mac's models from iPhone over Wi-Fi", systemImage: "iphone")
+                Label("Serve OpenAI-compatible models to network apps", systemImage: "network")
+                Label("Unlimited local inference and document grounding", systemImage: "bolt.fill")
             }
+
             if let entitlements, entitlements.pro {
                 Section {
-                    Label("License Active (\(entitlements.source))", systemImage: "checkmark.seal.fill")
-                        .foregroundStyle(PocketColor.statusOk)
+                    HStack(spacing: PocketSpacing.s8) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(PocketColor.statusOk)
+                        Text("License Active (\(entitlements.source))")
+                            .font(.pocket(.headline))
+                            .foregroundStyle(PocketColor.statusOk)
+                    }
                 }
             } else {
                 Section("Have a license key?") {
-                    TextField("License key", text: $keyField)
-                    Button("Activate") { activate() }
-                        .disabled(keyField.isEmpty)
+                    TextField("Enter license key (e.g. PKT-XXXX-XXXX)", text: $keyField)
+                    Button("Activate License") { activate() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(PocketColor.accent)
+                        .disabled(keyField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if let errorText {
                         Text(errorText).font(.pocket(.footnote)).foregroundStyle(PocketColor.statusBad)
                     }
                 }
             }
+
             Section {
-                Text("Everything on-device stays free. No subscription.")
-                    .font(.pocket(.footnote))
+                Text("Everything on-device stays 100% free forever. No recurring subscription.")
+                    .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
             }
         }
@@ -107,35 +130,170 @@ public struct MacPrivacyView: View {
     }
 
     public var body: some View {
-        Form {
-            Section {
-                Toggle("Offline mode", isOn: $offline)
-                if offline {
-                    Label("Offline mode — PocketAI internet requests paused", systemImage: "airplane")
-                        .font(.pocket(.footnote))
-                        .foregroundStyle(PocketColor.statusWarn)
+        ScrollView {
+            VStack(alignment: .leading, spacing: PocketSpacing.s20) {
+                // Offline Mode Banner / Toggle Card
+                offlineModeCard
+
+                // Network Proof Hero Section
+                networkProofCard
+
+                // Audit Log Section
+                auditLogSection
+            }
+            .padding(PocketSpacing.gutterMac)
+            .frame(maxWidth: 800)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .background(PocketColor.bgCanvas)
+        .task { reload() }
+        .onChange(of: offline) { _, newValue in model.core.setOfflineMode(on: newValue) }
+    }
+
+    private var offlineModeCard: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+            HStack {
+                HStack(spacing: PocketSpacing.s12) {
+                    Image(systemName: "airplane")
+                        .font(.system(size: 20))
+                        .foregroundStyle(offline ? PocketColor.statusWarn : PocketColor.textSecondary)
+                        .frame(width: 36, height: 36)
+                        .background(offline ? PocketColor.statusWarn.opacity(0.15) : PocketColor.bgSunken)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Offline Mode")
+                            .font(.pocket(.headline))
+                            .foregroundStyle(PocketColor.textPrimary)
+
+                        Text("Completely block all outgoing internet requests from PocketAI.")
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textSecondary)
+                    }
                 }
+
+                Spacer()
+
+                Toggle("", isOn: $offline)
+                    .labelsHidden()
+                    .tint(PocketColor.accent)
             }
 
-            Section("Network Proof") {
-                HStack {
-                    VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                        Text("\(entries.count)").font(.pocket(.display))
-                        Text("PocketAI internet requests recorded").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+            if offline {
+                HStack(spacing: PocketSpacing.s8) {
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .foregroundStyle(PocketColor.statusWarn)
+                    Text("Offline mode active — model downloads and catalog updates are paused.")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusWarn)
+                }
+                .padding(PocketSpacing.s8)
+                .background(PocketColor.statusWarn.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+        .padding(PocketSpacing.s16)
+        .background(PocketColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(offline ? PocketColor.statusWarn.opacity(0.4) : PocketColor.lineHairline, lineWidth: 0.8)
+        )
+    }
+
+    private var networkProofCard: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+            Text("NETWORK PROOF")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(PocketColor.textTertiary)
+
+            VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+                HStack(alignment: .bottom, spacing: PocketSpacing.s12) {
+                    Text("\(entries.count)")
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .foregroundStyle(entries.isEmpty ? PocketColor.statusOk : PocketColor.textPrimary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Outbound connections recorded")
+                            .font(.pocket(.headline))
+                            .foregroundStyle(PocketColor.textPrimary)
+                        Text("Prompt text and model weights are never sent to external servers.")
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textSecondary)
                     }
+                    .padding(.bottom, 6)
+
                     Spacer()
                 }
 
+                Divider()
+
                 if entries.isEmpty {
-                    Text("No outgoing internet requests.").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+                    HStack(spacing: PocketSpacing.s12) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(PocketColor.statusOk)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Zero Outbound Internet Connections")
+                                .font(.pocket(.headline))
+                                .foregroundStyle(PocketColor.statusOk)
+                            Text("All model inference has occurred strictly on-device.")
+                                .font(.pocket(.caption))
+                                .foregroundStyle(PocketColor.textSecondary)
+                        }
+                    }
+                    .padding(.vertical, PocketSpacing.s8)
                 } else {
-                    ForEach(entries, id: \.ts) { entry in
-                        LabeledContent(entry.purpose, value: entry.host)
+                    VStack(spacing: PocketSpacing.s8) {
+                        ForEach(entries, id: \.ts) { entry in
+                            HStack {
+                                HStack(spacing: PocketSpacing.s8) {
+                                    Circle()
+                                        .fill(PocketColor.statusInfo)
+                                        .frame(width: 6, height: 6)
+                                    Text(entry.purpose)
+                                        .font(.pocket(.callout))
+                                        .foregroundStyle(PocketColor.textPrimary)
+                                }
+                                Spacer()
+                                Text(entry.host)
+                                    .font(.pocket(.mono))
+                                    .foregroundStyle(PocketColor.textSecondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
                     }
                 }
             }
+            .padding(PocketSpacing.s16)
+            .background(PocketColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(PocketColor.lineHairline, lineWidth: 0.8)
+            )
+        }
+    }
 
-            Section("Audit log") {
+    private var auditLogSection: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+            HStack {
+                Text("AUDIT LOG & CHAIN INTEGRITY")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(PocketColor.textTertiary)
+
+                Spacer()
+
+                HStack(spacing: PocketSpacing.s8) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .foregroundStyle(PocketColor.statusOk)
+                    Text("Verified (\(filteredAuditEntries.count) events)")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusOk)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: PocketSpacing.s12) {
                 HStack {
                     Picker("Filter", selection: $actionFilter) {
                         ForEach(filterOptions, id: \.self) { Text($0.capitalized).tag($0) }
@@ -144,9 +302,14 @@ public struct MacPrivacyView: View {
 
                     Spacer()
 
-                    Button("Export JSONL…") {
+                    Button {
                         exportAuditLogJSONL()
+                    } label: {
+                        Label("Export JSONL…", systemImage: "arrow.down.doc")
+                            .font(.pocket(.footnote))
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
 
                 if let exportStatusMessage {
@@ -155,39 +318,56 @@ public struct MacPrivacyView: View {
                         .foregroundStyle(PocketColor.statusOk)
                 }
 
-                HStack {
-                    Image(systemName: "checkmark.shield.fill")
-                        .foregroundStyle(PocketColor.statusOk)
-                    Text("Chain integrity: verified (\(filteredAuditEntries.count) events)")
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.textSecondary)
-                }
+                Divider()
 
                 if filteredAuditEntries.isEmpty {
-                    Text("No matching audit events.").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+                    Text("No matching audit events.")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textSecondary)
+                        .padding(.vertical, PocketSpacing.s8)
                 } else {
-                    ForEach(filteredAuditEntries, id: \.id) { entry in
-                        VStack(alignment: .leading, spacing: PocketSpacing.s2) {
-                            HStack {
-                                Text("\(entry.actor) · \(entry.action)")
-                                    .font(.pocket(.footnote))
-                                    .fontWeight(.medium)
+                    VStack(spacing: PocketSpacing.s8) {
+                        ForEach(filteredAuditEntries, id: \.id) { entry in
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(entry.actor)
+                                            .font(.pocket(.caption))
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(PocketColor.bgSunken)
+                                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+                                        Text(entry.action)
+                                            .font(.pocket(.callout))
+                                            .fontWeight(.medium)
+                                    }
+
+                                    Text(entry.target)
+                                        .font(.pocket(.caption))
+                                        .foregroundStyle(PocketColor.textSecondary)
+                                }
+
                                 Spacer()
+
                                 Text(Date(timeIntervalSince1970: Double(entry.ts) / 1000), style: .time)
                                     .font(.pocket(.caption))
                                     .foregroundStyle(PocketColor.textTertiary)
                             }
-                            Text(entry.target)
-                                .font(.pocket(.caption))
-                                .foregroundStyle(PocketColor.textSecondary)
+                            .padding(.vertical, 3)
+                            Divider()
                         }
                     }
                 }
             }
+            .padding(PocketSpacing.s16)
+            .background(PocketColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(PocketColor.lineHairline, lineWidth: 0.8)
+            )
         }
-        .formStyle(.grouped)
-        .task { reload() }
-        .onChange(of: offline) { _, newValue in model.core.setOfflineMode(on: newValue) }
     }
 
     private func reload() {

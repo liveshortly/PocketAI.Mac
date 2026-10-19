@@ -10,6 +10,7 @@ struct PocketAIApp: App {
             RootSplitView()
                 .environment(model)
         }
+        .defaultSize(width: 1100, height: 740)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Chat") {
@@ -34,6 +35,10 @@ struct PocketAIApp: App {
                     .keyboardShortcut("k", modifiers: .command)
                 Button("Focus Composer") { model.pendingCommand = .focusComposer }
                     .keyboardShortcut("l", modifiers: .command)
+                Button("Toggle Inspector") {
+                    model.showChatInspector.toggle()
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
                 Button("Stop Generation") { model.pendingCommand = .stopGeneration }
                     .keyboardShortcut(".", modifiers: .command)
                 Button("Stop Everything") { model.stopEverything() }

@@ -48,6 +48,17 @@ public final class AppModel {
     }
     private static let onboardedKey = "app.getpocketai.hasOnboarded"
 
+    public var currentModelId: String = "mlx-community/Qwen3-4B-Instruct-2507-4bit@50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b"
+    public var currentModelDisplayName: String {
+        let catalog = core.catalog(filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
+        if let entry = catalog.first(where: { $0.manifest.id == currentModelId }) {
+            return entry.manifest.displayName
+        }
+        return "Qwen3 4B"
+    }
+    public var showChatInspector: Bool = false
+    public var activeTokPerSec: Int = 28
+
     /// MAC-02: command bus so `.commands`/keyboard shortcuts reach across
     /// the app cleanly.
     public enum Command: Equatable {
@@ -56,6 +67,7 @@ public final class AppModel {
         case stopGeneration
         case openConversation(String)
         case openTab(SidebarItem)
+        case toggleInspector
     }
     public var pendingCommand: Command?
 
@@ -67,6 +79,10 @@ public final class AppModel {
             hasOnboarded = true
         } else {
             hasOnboarded = UserDefaults.standard.bool(forKey: Self.onboardedKey)
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-PocketShowInspector") {
+            showChatInspector = true
         }
 
         let hooks = LivePlatformHooks()
