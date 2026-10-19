@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import PocketKit
 import PocketUI
 
@@ -58,6 +59,26 @@ struct MacServerView: View {
                                     .foregroundStyle(PocketColor.textSecondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("TLS Certificate")
+                                    .font(.pocket(.body))
+                                    .foregroundStyle(PocketColor.textPrimary)
+                                Text("Self-signed certificate for secure LAN connections and custom clients.")
+                                    .font(.pocket(.caption))
+                                    .foregroundStyle(PocketColor.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Button("Export Certificate…") {
+                                exportCertificate()
+                            }
+                            .buttonStyle(.bordered)
                         }
                     }
                     .padding(PocketSpacing.s16)
@@ -437,5 +458,21 @@ struct MacServerView: View {
     private func generateKey() {
         revealedKey = model.core.generateLocalApiKey()
         hasKey = true
+    }
+
+    private func exportCertificate() {
+        let panel = NSSavePanel()
+        panel.title = "Export Certificate"
+        panel.nameFieldStringValue = "pocketai-host.pem"
+        if let pemType = UTType(filenameExtension: "pem") {
+            panel.allowedContentTypes = [pemType, .plainText]
+        } else {
+            panel.allowedContentTypes = [.plainText]
+        }
+
+        if panel.runModal() == .OK, let url = panel.url {
+            let pem = model.core.hostCertPem()
+            try? pem.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 }
