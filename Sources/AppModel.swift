@@ -102,6 +102,13 @@ public final class AppModel {
             }
         }
         serverStatus = core.serverStatus()
+        // Demo/testing: auto-start the LAN server so a paired iPhone can reach
+        // this Mac without a manual toggle.
+        if ProcessInfo.processInfo.arguments.contains("-PocketStartServer") {
+            // Loopback (127.0.0.1) needs no Local Network permission; LAN does.
+            let lan = ProcessInfo.processInfo.arguments.contains("-PocketServerLAN")
+            startServer(lan: lan)
+        }
     }
 
     public func refreshServerStatus() {
