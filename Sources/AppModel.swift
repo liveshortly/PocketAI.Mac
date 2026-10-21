@@ -101,6 +101,11 @@ public final class AppModel {
                 fatalError("PocketCore.open failed: \(error)")
             }
         }
+        // Demo/testing: grant Pro so pairing + LAN serving (both Pro-gated) work
+        // without an activated license. Real deployment activates a Keygen key.
+        if ProcessInfo.processInfo.arguments.contains("-PocketDemoPro") {
+            core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "demo"))
+        }
         serverStatus = core.serverStatus()
         // Demo/testing: auto-start the LAN server so a paired iPhone can reach
         // this Mac without a manual toggle.
