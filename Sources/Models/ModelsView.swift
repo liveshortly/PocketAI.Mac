@@ -63,6 +63,9 @@ struct ModelsView: View {
         }
         .background(PocketColor.bgCanvas)
         .task { startRefreshing() }
+        .onChange(of: app.commandSerial) { _, _ in
+            if app.pendingCommand == .refresh { reload() }
+        }
         .onDisappear { refreshTask?.cancel() }
         .confirmationDialog(
             "Delete \(confirmDelete?.manifest.displayName ?? "model")? The files are removed from this Mac.",

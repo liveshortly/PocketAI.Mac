@@ -49,9 +49,16 @@ struct SidebarView: View {
             reloadSessions()
         }
         .onChange(of: app.commandSerial) { _, _ in
-            if app.pendingCommand == .newLiveSession {
+            switch app.pendingCommand {
+            case .newLiveSession:
                 app.selection = .newSession
                 app.clearCommand()
+            case .refresh:
+                // Re-fetch both lists; a session or chat can land after load.
+                lastSessionLoad = nil
+                reloadAll()
+            default:
+                break
             }
         }
         .onReceive(

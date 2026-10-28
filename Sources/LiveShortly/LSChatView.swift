@@ -207,6 +207,20 @@ struct LSChatView: View {
                                 && item.id == session.items.last?.id,
                             myHandle: app.liveShortly.handle)
                     }
+                    // A standing "working" row for the whole time the agent is
+                    // busy. Hanging the indicator off the last tool run left a
+                    // dead gap between sending and the agent's first step.
+                    if session.isLive, session.agentBusy {
+                        HStack(spacing: PocketSpacing.s8) {
+                            HUDLabel("◆ assistant", tint: LSColor.accent)
+                            PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                            Text("working")
+                                .font(.pocket(.caption))
+                                .foregroundStyle(PocketColor.textTertiary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id("working")
+                    }
                     if let error = session.errorText {
                         HStack(alignment: .top, spacing: PocketSpacing.s8) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -232,6 +246,9 @@ struct LSChatView: View {
                 .frame(maxWidth: .infinity)
             }
             .onChange(of: session.items.count) { _, _ in
+                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("tail", anchor: .bottom) }
+            }
+            .onChange(of: session.agentBusy) { _, _ in
                 withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("tail", anchor: .bottom) }
             }
         }

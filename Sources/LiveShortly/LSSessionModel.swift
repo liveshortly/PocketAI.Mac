@@ -47,8 +47,16 @@ final class LSSessionModel {
         let now = Date()
         let names = typers.filter { $0.value > now }.keys.sorted()
         guard !names.isEmpty else { return nil }
-        return names.count == 1
-            ? "\(names[0]) is typing…" : "\(names.joined(separator: ", ")) are typing…"
+        switch names.count {
+        case 1:
+            return "\(names[0]) is typing…"
+        case 2:
+            return "\(names[0]) and \(names[1]) are typing…"
+        case 3:
+            return "\(names[0]), \(names[1]) and \(names[2]) are typing…"
+        default:
+            return "\(names[0]), \(names[1]) and \(names.count - 2) others are typing…"
+        }
     }
 
     /// The newest unanswered permission or input probe, if the session is live.

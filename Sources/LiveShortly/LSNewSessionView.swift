@@ -20,6 +20,11 @@ struct LSNewSessionView: View {
 
     private var host: LSHost? { hosts.first { $0.id == hostID } }
 
+    private func hostLabel(_ host: LSHost) -> String {
+        let base = "\(host.name) · \(host.os) \(host.arch)"
+        return host.isOnline ? base : base + " · offline"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -103,7 +108,7 @@ struct LSNewSessionView: View {
                     })
                 ) {
                     ForEach(hosts, id: \.id) { host in
-                        Text("\(host.name) · \(host.os) \(host.arch)").tag(host.id)
+                        Text(hostLabel(host)).tag(host.id)
                     }
                 }
                 .labelsHidden()
@@ -112,7 +117,11 @@ struct LSNewSessionView: View {
                 field("Agent") {
                     Picker("", selection: Binding(
                         get: { agent ?? host.agents.first ?? "" },
-                        set: { agent = $0 })
+                        set: { newAgent in
+                            agent = newAgent
+                            // A model from the previous agent means nothing here.
+                            model = nil
+                        })
                     ) {
                         ForEach(host.agents, id: \.self) { Text($0).tag($0) }
                     }
@@ -127,17 +136,33 @@ struct LSNewSessionView: View {
                     }
                     .labelsHidden()
                 }
-                if let models = host.models, !models.isEmpty {
+                let choices = host.models(forAgent: agent ?? host.agents.first ?? "")
+                if !choices.isEmpty {
                     field("Model") {
                         Picker("", selection: Binding(
                             get: { model ?? "" },
                             set: { model = $0.isEmpty ? nil : $0 })
                         ) {
                             Text("Default").tag("")
-                            ForEach(models, id: \.self) { Text($0).tag($0) }
+                            ForEach(choices, id: \.self) { Text($0).tag($0) }
                         }
                         .labelsHidden()
                     }
+                }
+                if !host.isOnline {
+                    HStack(spacing: PocketSpacing.s8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(PocketColor.statusWarn)
+                        Text(
+                            "This machine hasn't checked in recently. Starting a session "
+                            + "may produce one with no agent attached."
+                        )
+                        .font(.pocket(.caption))
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(PocketSpacing.s8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .hudPanel(PocketColor.statusWarn.opacity(0.10))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Skip permission prompts", isOn: $bypass)

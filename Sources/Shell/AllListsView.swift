@@ -86,6 +86,9 @@ struct AllChatsView: View {
         .task { reload() }
         .onChange(of: query) { _, _ in reload() }
         .onChange(of: includeArchived) { _, _ in reload() }
+        .onChange(of: app.commandSerial) { _, _ in
+            if app.pendingCommand == .refresh { reload() }
+        }
         .confirmationDialog(
             "Delete “\(confirmDelete?.title ?? "chat")”? This cannot be undone.",
             isPresented: Binding(
@@ -195,6 +198,9 @@ struct AllSessionsView: View {
         }
         .background(PocketColor.bgCanvas)
         .task { await reload() }
+        .onChange(of: app.commandSerial) { _, _ in
+            if app.pendingCommand == .refresh { Task { await reload() } }
+        }
     }
 
     private var filtered: [LSSession] {

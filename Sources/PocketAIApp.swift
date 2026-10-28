@@ -50,6 +50,10 @@ struct AppCommands: Commands {
         CommandGroup(after: .toolbar) {
             Button("Command Palette…") { app.showCommandPalette = true }
                 .keyboardShortcut("k", modifiers: .command)
+            // Re-fetch whatever this window is showing. Paired devices and new
+            // sessions can land after a screen has loaded.
+            Button("Refresh") { app.post(.refresh) }
+                .keyboardShortcut("r", modifiers: .command)
             Divider()
         }
         CommandMenu("Chat") {

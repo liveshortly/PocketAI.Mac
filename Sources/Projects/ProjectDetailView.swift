@@ -37,6 +37,9 @@ struct ProjectDetailView: View {
         }
         .background(PocketColor.bgCanvas)
         .task(id: projectId) { reload() }
+        .onChange(of: app.commandSerial) { _, _ in
+            if app.pendingCommand == .refresh { reload() }
+        }
         .sheet(isPresented: $showRename) {
             RenameSheet(title: project?.name ?? "") { newName in
                 try? app.core.renameProject(id: projectId, name: newName)

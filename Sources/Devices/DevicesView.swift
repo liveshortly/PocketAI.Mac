@@ -63,6 +63,9 @@ struct DevicesView: View {
         }
         .background(PocketColor.bgCanvas)
         .task { reload() }
+        .onChange(of: app.commandSerial) { _, _ in
+            if app.pendingCommand == .refresh { reload() }
+        }
         .confirmationDialog(
             "Revoke \(confirmRevoke?.name ?? "device")? It loses access to this Mac's models.",
             isPresented: Binding(
@@ -125,12 +128,8 @@ struct DevicesView: View {
                     .foregroundStyle(PocketColor.textTertiary)
             }
             Spacer(minLength: 0)
-            if device.revokedAt != nil {
-                HUDChip(text: "REVOKED", tint: PocketColor.statusBad)
-            } else {
-                Button("Revoke") { confirmRevoke = device }
-                    .buttonStyle(.hud)
-            }
+            Button("Revoke") { confirmRevoke = device }
+                .buttonStyle(.hud)
         }
         .padding(PocketSpacing.s8)
     }
@@ -182,7 +181,9 @@ struct DevicesView: View {
     }
 
     private func reload() {
-        devices = app.core.devices()
+        // A revoked device is not a device any more; listing it only invites
+        // confusion about whether it still has access.
+        devices = app.core.devices().filter { $0.revokedAt == nil }
         peers = app.core.peers()
         app.refreshServerStatus()
     }

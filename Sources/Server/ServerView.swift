@@ -49,6 +49,9 @@ struct ServerView: View {
             startRefreshing()
         }
         .onDisappear { refreshTask?.cancel() }
+        .onChange(of: app.commandSerial) { _, _ in
+            if app.pendingCommand == .refresh { app.refreshServerStatus() }
+        }
     }
 
     private var statusCard: some View {

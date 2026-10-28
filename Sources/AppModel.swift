@@ -94,6 +94,7 @@ public final class AppModel {
     /// Menu items and keyboard shortcuts post commands here; the focused view
     /// consumes them. Keeps `.commands` free of view-layer plumbing.
     public enum Command: Equatable {
+        case refresh
         case newChat
         case focusComposer
         case stopGeneration
