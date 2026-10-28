@@ -62,8 +62,10 @@ struct RootView: View {
             ProjectDetailView(projectId: id)
                 .id(id)
         case .session(let id):
-            LSSessionView(account: app.liveShortly, sessionID: id)
+            LSChatView(sessionID: id)
                 .id(id)
+        case .newSession:
+            LSNewSessionView()
         case .models:
             ModelsView()
         case .devices:

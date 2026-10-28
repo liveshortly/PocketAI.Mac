@@ -14,7 +14,6 @@ struct SidebarView: View {
     @State private var renaming: ConversationSummary?
     @State private var confirmDelete: ConversationSummary?
     @State private var newProject = false
-    @State private var newSession = false
     @State private var lastSessionLoad: Date?
 
     /// Keeps the sidebar short; the palette (⌘K) is the way to the long tail.
@@ -27,9 +26,7 @@ struct SidebarView: View {
             if !projects.isEmpty || app.selection.isProject {
                 projectsSection
             }
-            if app.liveShortly.isConnected {
-                liveShortlySection
-            }
+            liveShortlySection
             toolsSection
         }
         .listStyle(.sidebar)
@@ -40,9 +37,19 @@ struct SidebarView: View {
         .safeAreaInset(edge: .bottom) { footer }
         .task { reloadAll() }
         .onChange(of: app.selection) { _, _ in reloadConversations() }
+        .onChange(of: app.liveShortly.isConnected) { _, connected in
+            // Connecting from Settings should fill this section straight away,
+            // not on the next launch.
+            guard connected else {
+                sessions = []
+                return
+            }
+            lastSessionLoad = nil
+            reloadSessions()
+        }
         .onChange(of: app.pendingCommand) { _, command in
             if command == .newLiveSession {
-                newSession = true
+                app.selection = .newSession
                 app.pendingCommand = nil
             }
         }
@@ -64,9 +71,6 @@ struct SidebarView: View {
                 }
             }
         }
-        .sheet(isPresented: $newSession) {
-            LSNewSessionSheet(account: app.liveShortly)
-        }
         .confirmationDialog(
             "Delete “\(confirmDelete?.title ?? "chat")”? This cannot be undone.",
             isPresented: Binding(
@@ -86,15 +90,7 @@ struct SidebarView: View {
 
     private var chatsSection: some View {
         Section {
-            Button {
-                app.newChat()
-                reloadConversations()
-            } label: {
-                Label("New chat", systemImage: "plus.circle.fill")
-                    .foregroundStyle(PocketColor.accent)
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("n", modifiers: .command)
+            NewChatMenu()
 
             ForEach(conversations.prefix(Self.recentChatLimit), id: \.id) { summary in
                 ChatRow(summary: summary)
@@ -148,25 +144,39 @@ struct SidebarView: View {
         }
     }
 
+    /// Always present, the way the Chats tab shows it on the phone. When the
+    /// Mac has not been connected yet it says so and offers the way in —
+    /// otherwise the integration is invisible here and looks missing.
     private var liveShortlySection: some View {
         Section {
-            ForEach(orderedSessions, id: \.id) { session in
-                SessionRow(session: session)
-                    .tag(AppModel.Destination.session(session.id))
-            }
-            if sessions.isEmpty {
-                Text("No sessions yet")
-                    .font(.pocket(.footnote))
-                    .foregroundStyle(PocketColor.textTertiary)
-            }
-            Button {
-                newSession = true
-            } label: {
+            if app.liveShortly.isConnected {
+                ForEach(orderedSessions, id: \.id) { session in
+                    SessionRow(session: session)
+                        .tag(AppModel.Destination.session(session.id))
+                }
+                if sessions.isEmpty {
+                    Text("No sessions yet")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textTertiary)
+                }
                 Label("New session", systemImage: "plus")
                     .font(.pocket(.footnote))
                     .foregroundStyle(PocketColor.textTertiary)
+                    .tag(AppModel.Destination.newSession)
+            } else {
+                VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                    Text("Not connected on this Mac")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textTertiary)
+                    SettingsLink {
+                        Label("Connect LiveShortly…", systemImage: "link")
+                            .font(.pocket(.footnote))
+                            .foregroundStyle(LSColor.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 2)
             }
-            .buttonStyle(.plain)
         } header: {
             HStack {
                 HUDLabel("LiveShortly")

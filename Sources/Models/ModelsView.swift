@@ -9,6 +9,7 @@ struct ModelsView: View {
     @State private var entries: [CatalogEntry] = []
     @State private var search = ""
     @State private var showInstalledOnly = false
+    @State private var formatFilter: FormatFilter = .all
     @State private var hubResults: [CatalogEntry] = []
     @State private var hubError: String?
     @State private var refreshTask: Task<Void, Never>?
@@ -89,6 +90,15 @@ struct ModelsView: View {
                 .padding(.vertical, 5)
                 .hudPanel(PocketColor.bgCanvas)
                 .onSubmit(searchHub)
+            Picker("", selection: $formatFilter) {
+                ForEach(FormatFilter.allCases, id: \.self) { filter in
+                    Text(filter.label).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help("MLX runs through Apple's MLX; GGUF runs through llama.cpp. Both run on this Mac.")
             Toggle("Installed only", isOn: $showInstalledOnly)
                 .toggleStyle(.switch)
                 .font(.pocket(.caption))
@@ -134,6 +144,7 @@ struct ModelsView: View {
         var list = showInstalledOnly ? installed : entries
         list = list.filter { entry in
             !downloading.contains { $0.manifest.id == entry.manifest.id }
+                && formatFilter.accepts(entry.manifest.format)
         }
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return list }
@@ -164,6 +175,9 @@ struct ModelsView: View {
         }
     }
 
+    /// Hugging Face search takes one format per call, so a search covering
+    /// both engines is two calls merged — otherwise GGUF models are invisible
+    /// here even though llama.cpp can run them.
     private func searchHub() {
         let query = search.trimmingCharacters(in: .whitespaces)
         guard query.count > 2 else {
@@ -171,11 +185,73 @@ struct ModelsView: View {
             return
         }
         hubError = nil
-        do {
-            hubResults = try app.core.searchHub(query: query, format: .mlxSafetensors)
-        } catch {
-            hubResults = []
-            hubError = "Hugging Face search failed: \(error.localizedDescription)"
+        var found: [CatalogEntry] = []
+        var failures: [String] = []
+        for format in formatFilter.hubFormats {
+            do {
+                found += try app.core.searchHub(query: query, format: format)
+            } catch {
+                failures.append(error.localizedDescription)
+            }
+        }
+        // Drop anything already in the local catalog so the Hugging Face
+        // section only shows what is genuinely new.
+        let known = Set(entries.map(\.manifest.id))
+        hubResults = found.filter { !known.contains($0.manifest.id) }
+        hubError = found.isEmpty && !failures.isEmpty
+            ? "Hugging Face search failed: \(failures[0])" : nil
+    }
+}
+
+/// Which engine's models to show. Both run locally; MLX is Apple's runtime,
+/// GGUF goes through the built-in llama.cpp engine.
+enum FormatFilter: CaseIterable, Hashable {
+    case all, mlx, gguf
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .mlx: return "MLX"
+        case .gguf: return "GGUF"
+        }
+    }
+
+    /// Formats to query Hugging Face with for this filter.
+    var hubFormats: [ModelFormat] {
+        switch self {
+        case .all: return [.mlxSafetensors, .gguf]
+        case .mlx: return [.mlxSafetensors]
+        case .gguf: return [.gguf]
+        }
+    }
+
+    func accepts(_ format: ModelFormat) -> Bool {
+        switch self {
+        case .all: return true
+        case .mlx: return format == .mlxSafetensors
+        case .gguf: return format == .gguf
+        }
+    }
+}
+
+extension ModelFormat {
+    /// Short badge text for a model card.
+    var badge: String {
+        switch self {
+        case .mlxSafetensors: return "MLX"
+        case .gguf: return "GGUF"
+        case .coreMlPackage: return "Core ML"
+        case .whisperKit: return "WhisperKit"
+        }
+    }
+
+    /// What actually runs this model, said plainly for a tooltip.
+    var engineDescription: String {
+        switch self {
+        case .mlxSafetensors: return "Runs on Apple's MLX runtime"
+        case .gguf: return "Runs on the built-in llama.cpp engine"
+        case .coreMlPackage: return "Runs on Core ML"
+        case .whisperKit: return "Speech model, runs on WhisperKit"
         }
     }
 }
@@ -196,6 +272,8 @@ struct ModelCard: View {
                     HStack(spacing: PocketSpacing.s8) {
                         Text(entry.manifest.displayName)
                             .font(.pocket(.headline))
+                        HUDChip(text: entry.manifest.format.badge)
+                            .help(entry.manifest.format.engineDescription)
                         if isDefault { HUDChip(text: "DEFAULT", filled: true) }
                     }
                     Text(subtitle)
@@ -224,6 +302,7 @@ struct ModelCard: View {
 
     private var subtitle: String {
         var bits = [entry.manifest.family, entry.manifest.quant]
+        // Format already shows as a badge, so the line carries the rest.
         if entry.manifest.paramsB > 0 {
             bits.append(String(format: "%.1fB", entry.manifest.paramsB))
         }

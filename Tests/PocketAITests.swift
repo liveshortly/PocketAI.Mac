@@ -88,6 +88,42 @@ final class PocketAITests: XCTestCase {
         }
     }
 
+    // MARK: - GGUF support
+
+    /// GGUF models must be reachable from the library, not just MLX ones: the
+    /// core routes them to the built-in llama.cpp engine, so hiding them in
+    /// the UI is the only thing that would stop them running.
+    func testCatalogOffersBothEngines() {
+        let core = PreviewCore()
+        let all = core.catalog(
+            filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
+        let formats = Set(all.map(\.manifest.format))
+        XCTAssertTrue(formats.contains(.mlxSafetensors), "catalog should offer MLX models")
+        XCTAssertTrue(formats.contains(.gguf), "catalog should offer GGUF models")
+    }
+
+    func testFormatFilterSelectsEngines() {
+        XCTAssertTrue(FormatFilter.all.accepts(.gguf))
+        XCTAssertTrue(FormatFilter.all.accepts(.mlxSafetensors))
+
+        XCTAssertTrue(FormatFilter.gguf.accepts(.gguf))
+        XCTAssertFalse(FormatFilter.gguf.accepts(.mlxSafetensors))
+
+        XCTAssertTrue(FormatFilter.mlx.accepts(.mlxSafetensors))
+        XCTAssertFalse(FormatFilter.mlx.accepts(.gguf))
+
+        // "All" must search both formats on Hugging Face, or GGUF models stay
+        // invisible there even though llama.cpp can run them.
+        XCTAssertEqual(Set(FormatFilter.all.hubFormats), [.mlxSafetensors, .gguf])
+        XCTAssertEqual(FormatFilter.gguf.hubFormats, [.gguf])
+    }
+
+    func testEngineBadgesNameTheRuntime() {
+        XCTAssertEqual(ModelFormat.gguf.badge, "GGUF")
+        XCTAssertEqual(ModelFormat.mlxSafetensors.badge, "MLX")
+        XCTAssertTrue(ModelFormat.gguf.engineDescription.contains("llama.cpp"))
+    }
+
     // MARK: - MAC-05: Onboarding
     func testOnboardingStateDefaults() {
         let model = AppModel()

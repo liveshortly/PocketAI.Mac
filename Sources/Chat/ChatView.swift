@@ -238,9 +238,15 @@ struct ChatView: View {
                     }
                 }
                 HStack(alignment: .bottom, spacing: PocketSpacing.s8) {
-                    TextEditorField(text: $draft, focused: $composerFocused) {
-                        submit(chat)
-                    }
+                    ComposerTextView(
+                        text: $draft,
+                        isFocused: composerFocused,
+                        onSubmit: { submit(chat) }
+                    )
+                    .frame(minHeight: 22)
+                    .padding(.horizontal, PocketSpacing.s12)
+                    .padding(.vertical, PocketSpacing.s8)
+                    .hudPanel(PocketColor.bgCanvas)
                     if chat.isStreaming {
                         Button {
                             chat.stop()
@@ -334,25 +340,6 @@ struct ChatView: View {
                 Task { @MainActor in attachments.append(url) }
             }
         }
-    }
-}
-
-/// Multi-line composer field: ⏎ sends, ⇧⏎ inserts a newline.
-struct TextEditorField: View {
-    @Binding var text: String
-    @FocusState.Binding var focused: Bool
-    let onSubmit: () -> Void
-
-    var body: some View {
-        TextField("Message…", text: $text, axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(.pocket(.body))
-            .lineLimit(1...8)
-            .focused($focused)
-            .onSubmit(onSubmit)
-            .padding(.horizontal, PocketSpacing.s12)
-            .padding(.vertical, PocketSpacing.s8)
-            .hudPanel(PocketColor.bgCanvas)
     }
 }
 

@@ -1,0 +1,449 @@
+import AppKit
+import PocketLiveShortly
+import PocketUI
+import SwiftUI
+
+/// A LiveShortly session rendered in the app's own chat idiom: same status
+/// strip, same transcript shapes, same composer as a local chat. Watching an
+/// agent and talking to a model should not feel like two different products.
+struct LSChatView: View {
+    @Environment(AppModel.self) private var app
+    @State private var session: LSSessionModel?
+    @State private var draft = ""
+    @State private var showRename = false
+    @State private var showProbeDetail = false
+    @State private var confirmEnd = false
+    @State private var confirmDelete = false
+    @FocusState private var composerFocused: Bool
+
+    let sessionID: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let session, session.loaded {
+                statusStrip(session)
+                HUDRule()
+                transcript(session)
+                if let probe = session.pendingProbe {
+                    LSPermissionBar(
+                        probe: probe,
+                        toolCall: session.toolCall(before: probe),
+                        onReview: { showProbeDetail = true },
+                        onDecide: { session.decide($0) })
+                    .padding(.horizontal, PocketSpacing.s16)
+                    .padding(.bottom, PocketSpacing.s8)
+                }
+                if session.canComment {
+                    composer(session)
+                } else {
+                    endedFooter(session)
+                }
+            } else {
+                ProgressView("Loading session…")
+                    .font(.pocket(.footnote))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(PocketColor.bgCanvas)
+        .task(id: sessionID) {
+            guard let client = app.liveShortly.client else { return }
+            let model = LSSessionModel(
+                sessionID: sessionID, client: client, myHandle: app.liveShortly.handle)
+            session = model
+            await model.open()
+            composerFocused = true
+        }
+        .onDisappear { session?.stop() }
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { now in
+            session?.expireTypers(now)
+        }
+        .sheet(isPresented: $showRename) {
+            if let session {
+                RenameSheet(title: session.title) { session.rename($0) }
+            }
+        }
+        .sheet(isPresented: $showProbeDetail) {
+            if let session, let probe = session.pendingProbe {
+                LSProbeDetailView(
+                    probe: probe,
+                    toolCall: session.toolCall(before: probe),
+                    onDecide: { session.decide($0) })
+            }
+        }
+        .confirmationDialog(
+            "End this session? The agent stops where it is.",
+            isPresented: $confirmEnd, titleVisibility: .visible
+        ) {
+            Button("End session", role: .destructive) { session?.endSession() }
+        }
+        .confirmationDialog(
+            "Delete this session permanently? This cannot be undone.",
+            isPresented: $confirmDelete, titleVisibility: .visible
+        ) {
+            Button("Delete session", role: .destructive) {
+                Task {
+                    if await session?.delete() == true { app.selection = nil }
+                }
+            }
+        }
+    }
+
+    // MARK: - Chrome
+
+    private func statusStrip(_ session: LSSessionModel) -> some View {
+        HStack(spacing: PocketSpacing.s12) {
+            Text(session.title)
+                .font(.pocket(.headline))
+                .lineLimit(1)
+                .onTapGesture { showRename = true }
+            if session.isLive {
+                HUDLiveBadge()
+                if session.agentBusy {
+                    HStack(spacing: PocketSpacing.s4) {
+                        PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                        Text("working")
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textTertiary)
+                    }
+                }
+            } else {
+                HUDChip(text: "ENDED")
+            }
+            if session.watchers > 1 {
+                HUDLabel("\(session.watchers) watching")
+            }
+            Spacer(minLength: 0)
+            if let framework = session.detail?.framework, framework == "claude-code",
+               session.isLive {
+                Menu {
+                    ForEach(LS.claudeModels, id: \.self) { model in
+                        Button(model) { session.setModel(model) }
+                    }
+                } label: {
+                    HUDChip(text: session.detail?.model ?? "model", tint: LSColor.accent)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
+            Menu {
+                Button("Rename…") { showRename = true }
+                if let link = app.liveShortly.client?.sessionLink(sessionID) {
+                    Button("Copy link") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(link.absoluteString, forType: .string)
+                    }
+                }
+                Divider()
+                if session.isLive {
+                    Button("End session", role: .destructive) { confirmEnd = true }
+                }
+                Button("Delete session", role: .destructive) { confirmDelete = true }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.horizontal, PocketSpacing.s16)
+        .padding(.vertical, PocketSpacing.s8)
+        .background(PocketColor.bgSurface)
+    }
+
+    private func transcript(_ session: LSSessionModel) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: PocketSpacing.s16) {
+                    if session.items.isEmpty {
+                        emptyState(session)
+                    }
+                    ForEach(session.items) { item in
+                        LSItemView(
+                            item: item,
+                            running: session.isLive && session.agentBusy
+                                && item.id == session.items.last?.id,
+                            myHandle: app.liveShortly.handle)
+                    }
+                    if let error = session.errorText {
+                        Text(error)
+                            .font(.pocket(.footnote))
+                            .foregroundStyle(PocketColor.statusBad)
+                            .padding(PocketSpacing.s12)
+                            .hudPanel(PocketColor.statusBad.opacity(0.08))
+                    }
+                    Color.clear.frame(height: 1).id("tail")
+                }
+                .padding(.horizontal, PocketSpacing.s24)
+                .padding(.vertical, PocketSpacing.s16)
+                .frame(maxWidth: 820, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
+            .onChange(of: session.items.count) { _, _ in
+                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("tail", anchor: .bottom) }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func emptyState(_ session: LSSessionModel) -> some View {
+        VStack(spacing: PocketSpacing.s12) {
+            PocketMarkView(
+                state: session.isLive ? .working(tokPerSec: nil) : .idle, size: 40)
+            Text(session.isLive ? "Session is live" : "No activity was recorded")
+                .font(.pocket(.title))
+            Text(
+                session.isLive
+                    ? "Say something below, or watch the agent start up."
+                    : "This session ended without producing any events."
+            )
+            .font(.pocket(.footnote))
+            .foregroundStyle(PocketColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 80)
+    }
+
+    private func composer(_ session: LSSessionModel) -> some View {
+        VStack(spacing: 0) {
+            HUDRule()
+            VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                if let typing = session.typingLine {
+                    HUDLabel(typing)
+                }
+                HStack(alignment: .bottom, spacing: PocketSpacing.s8) {
+                    ComposerTextView(
+                        text: $draft,
+                        placeholder: "Message this session…",
+                        isFocused: composerFocused,
+                        onSubmit: { send(session) },
+                        onEdit: { session.noteTyping() }
+                    )
+                    .frame(minHeight: 22)
+                    .padding(.horizontal, PocketSpacing.s12)
+                    .padding(.vertical, PocketSpacing.s8)
+                    .hudPanel(PocketColor.bgCanvas)
+
+                    Button {
+                        send(session)
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.accentOnAccent)
+                            .frame(width: 26, height: 26)
+                            .background(Circle().fill(LSColor.accent))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                HUDLabel("⏎ send · ⇧⏎ newline · goes to the agent as a viewer message")
+            }
+            .padding(PocketSpacing.s12)
+        }
+        .background(PocketColor.bgSurface)
+    }
+
+    private func endedFooter(_ session: LSSessionModel) -> some View {
+        HStack {
+            Text(session.isLive ? "Read only — you can watch but not comment."
+                 : "Session ended — read only.")
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, PocketSpacing.s12)
+        .background(PocketColor.bgSurface)
+    }
+
+    private func send(_ session: LSSessionModel) {
+        let text = draft
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        draft = ""
+        session.send(text)
+    }
+}
+
+/// One transcript row, matching the local chat's shapes: viewer messages as
+/// right-aligned cards, agent prose full width, tool activity folded.
+struct LSItemView: View {
+    let item: LSItem
+    let running: Bool
+    var myHandle: String
+
+    var body: some View {
+        switch item.kind {
+        case .day(let date):
+            HStack(spacing: PocketSpacing.s8) {
+                HUDRule()
+                Text(date.formatted(.dateTime.weekday(.wide).month().day()))
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+                    .fixedSize()
+                HUDRule()
+            }
+        case .work(let run):
+            LSWorkRun(run: run, running: running)
+        case .single(let event):
+            single(event)
+        }
+    }
+
+    @ViewBuilder private func single(_ event: LSEvent) -> some View {
+        switch event.eventType {
+        case "prompt", "viewer_comment":
+            let mine = event.payload["username"]?.stringValue == myHandle
+            LSBubbleRow(event: event, viewer: event.eventType == "viewer_comment" && !mine,
+                        grouped: item.grouped)
+        case "response":
+            VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                if !item.grouped {
+                    HStack(spacing: PocketSpacing.s8) {
+                        HUDLabel("◆ agent", tint: LSColor.accent)
+                        Text(event.ts.formatted(date: .omitted, time: .shortened))
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textTertiary)
+                    }
+                }
+                MarkdownText(lsBodyText(event))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case "input_requested", "viewer_decision":
+            Text(systemLine(event))
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+        default:
+            EmptyView()
+        }
+    }
+
+    private func systemLine(_ event: LSEvent) -> String {
+        switch event.eventType {
+        case "input_requested":
+            let kind = event.payload["kind"]?.stringValue == "permission" ? "permission" : "input"
+            return "awaiting \(kind)"
+        case "viewer_decision":
+            let who = event.payload["username"]?.stringValue ?? "viewer"
+            let what = event.payload["decision"]?.stringValue == "deny" ? "denied" : "allowed"
+            return "\(who) \(what) the request"
+        default:
+            return event.eventType
+        }
+    }
+}
+
+struct LSBubbleRow: View {
+    let event: LSEvent
+    let viewer: Bool
+    var grouped = false
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: PocketSpacing.s4) {
+            if !grouped {
+                HStack(spacing: PocketSpacing.s8) {
+                    HUDLabel(
+                        lsHandleText(event),
+                        tint: viewer ? PocketColor.statusInfo : LSColor.accent)
+                    Text(event.ts.formatted(date: .omitted, time: .shortened))
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textTertiary)
+                }
+            }
+            Text(lsBodyText(event))
+                .font(.pocket(.body))
+                .textSelection(.enabled)
+                .padding(.horizontal, PocketSpacing.s12)
+                .padding(.vertical, PocketSpacing.s8)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(viewer
+                            ? PocketColor.statusInfo.opacity(0.12)
+                            : LSColor.accent.opacity(0.12)))
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
+/// Folded tool activity — the same gray block the iPhone shows, sized for a
+/// wide window.
+struct LSWorkRun: View {
+    let run: [LSEvent]
+    let running: Bool
+    @State private var expanded = false
+
+    private static let collapsedTail = 6
+
+    private var shown: [LSEvent] {
+        expanded || run.count <= Self.collapsedTail ? run : Array(run.suffix(Self.collapsedTail))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                expanded.toggle()
+            } label: {
+                HStack(spacing: PocketSpacing.s8) {
+                    Image(systemName: "gearshape.2")
+                        .font(.pocket(.caption))
+                    HUDLabel("agent activity · \(run.count) step\(run.count == 1 ? "" : "s")")
+                    Spacer(minLength: 0)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textTertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, PocketSpacing.s12)
+            .padding(.top, PocketSpacing.s8)
+            .padding(.bottom, PocketSpacing.s4)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if !expanded, run.count > Self.collapsedTail {
+                    HUDLabel("… \(run.count - Self.collapsedTail) earlier steps")
+                }
+                ForEach(shown) { event in
+                    Text(line(event))
+                        .font(.pocket(.mono))
+                        .foregroundStyle(PocketColor.textSecondary)
+                        .lineLimit(expanded ? 6 : 1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if running {
+                    HStack(spacing: PocketSpacing.s4) {
+                        PocketMarkView(state: .working(tokPerSec: nil), size: 12)
+                        HUDLabel("running")
+                    }
+                    .padding(.top, 2)
+                }
+            }
+            .padding(.horizontal, PocketSpacing.s12)
+            .padding(.bottom, PocketSpacing.s8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hudPanel(PocketColor.bgSunken)
+    }
+
+    private func line(_ event: LSEvent) -> String {
+        let tool = event.payload["tool"]?.stringValue
+        switch event.eventType {
+        case "tool_call":
+            if let command = event.payload["command"]?.stringValue, !command.isEmpty {
+                return "› \(tool ?? "Bash") \(command)"
+            }
+            return "› \(tool ?? "tool")"
+        case "pre_tool":
+            return "› \(event.payload["action"]?.stringValue ?? "running") \(tool ?? "")"
+        case "file_write":
+            return "› \(tool ?? "Edit") \(event.payload["file"]?.stringValue ?? "")"
+        case "output":
+            let text = lsBodyText(event)
+            return text.isEmpty ? "› output" : "  \(text)"
+        default:
+            let text = lsBodyText(event)
+            return text.isEmpty ? "› \(event.eventType)" : "› \(text)"
+        }
+    }
+}
+
+extension LSEvent: @retroactive Identifiable {}

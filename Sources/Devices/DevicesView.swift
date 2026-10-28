@@ -19,9 +19,13 @@ struct DevicesView: View {
                 Text("Devices")
                     .font(.pocket(.headline))
                 Spacer()
-                Button("Pair a device…") { makeOffer() }
-                    .buttonStyle(.hudProminent)
-                    .disabled(!app.serverStatus.running)
+                // Never a dead button: pairing needs the LAN server, so this
+                // starts it rather than sitting disabled with the reason
+                // somewhere else on screen.
+                Button(app.serverStatus.running ? "Pair a device…" : "Start server & pair…") {
+                    makeOffer()
+                }
+                .buttonStyle(.hudProminent)
             }
             .padding(.horizontal, PocketSpacing.s16)
             .padding(.vertical, PocketSpacing.s8)
@@ -184,8 +188,20 @@ struct DevicesView: View {
     }
 
     private func makeOffer() {
+        qrError = nil
+        // A phone reaches this Mac over the LAN, so loopback-only serving
+        // cannot complete a pairing.
+        if !app.serverStatus.running || !app.serverStatus.lanEnabled {
+            app.startServer(lan: true)
+        }
+        guard app.serverStatus.running else {
+            qrError = """
+                The local server didn't start, so there is nothing for a device to pair with. \
+                Open Local server and start it there to see why.
+                """
+            return
+        }
         do {
-            qrError = nil
             qrString = try app.core.pairingOfferQrString()
         } catch {
             qrString = nil

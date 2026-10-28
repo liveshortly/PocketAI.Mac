@@ -142,6 +142,9 @@ extension View {
 struct HUDButtonStyle: ButtonStyle {
     var prominent: Bool = false
     var destructive: Bool = false
+    /// A disabled button must look disabled — otherwise it reads as broken
+    /// when a click does nothing.
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         let tint: Color = destructive ? PocketColor.statusBad : PocketColor.accent
@@ -161,7 +164,7 @@ struct HUDButtonStyle: ButtonStyle {
                         lineWidth: HUD.hairline
                     )
             )
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
             .contentShape(Rectangle())
     }
 }

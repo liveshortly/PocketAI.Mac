@@ -37,6 +37,9 @@ public final class AppModel {
         case chat(String)
         case project(String)
         case session(String)
+        /// Starting an agent session is a destination like any other, so it
+        /// opens in the detail pane instead of a modal over the app.
+        case newSession
         case models
         case devices
         case server
@@ -212,9 +215,12 @@ public final class AppModel {
     /// Creates a conversation and selects it. Returns nil when the core
     /// refuses (a degraded core after an open failure).
     @discardableResult
-    public func newChat(projectId: String? = nil) -> String? {
-        let input = NewConversation(title: nil, projectId: projectId, modelId: currentModelId)
+    public func newChat(projectId: String? = nil, modelId: String? = nil) -> String? {
+        let chosen = modelId ?? currentModelId
+        let input = NewConversation(title: nil, projectId: projectId, modelId: chosen)
         guard let conversation = try? core.createConversation(input) else { return nil }
+        // Picking a model for a new chat makes it the default for the next one.
+        if let modelId, modelId != currentModelId { currentModelId = modelId }
         selection = .chat(conversation.id)
         pendingCommand = .focusComposer
         return conversation.id

@@ -30,6 +30,7 @@ struct InspectorView: View {
                     group("Model") {
                         field("Name", app.currentModelDisplayName)
                         if let entry = currentEntry {
+                            field("Engine", entry.manifest.format.badge)
                             field("Quant", entry.manifest.quant)
                             field("Context", "\(entry.manifest.contextLength) tokens")
                             field("Disk", hudBytes(entry.fit.diskBytes))
