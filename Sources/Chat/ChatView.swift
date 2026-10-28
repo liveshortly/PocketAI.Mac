@@ -15,6 +15,7 @@ struct ChatView: View {
     @State private var isDropTargeted = false
     @State private var dictation = Dictation()
     @State private var pinnedToBottom = true
+    @State private var attachmentRefusal: String?
     @FocusState private var composerFocused: Bool
 
     let conversationId: String
@@ -62,6 +63,10 @@ struct ChatView: View {
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            guard let chat, chat.modelSupportsVision else {
+                attachmentRefusal = chat.map(visionWarning)
+                return false
+            }
             loadDroppedFiles(providers)
             return true
         }
@@ -247,6 +252,21 @@ struct ChatView: View {
         VStack(spacing: 0) {
             HUDRule()
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                if let attachmentRefusal {
+                    HStack(spacing: PocketSpacing.s8) {
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .foregroundStyle(PocketColor.statusWarn)
+                        Text(attachmentRefusal)
+                            .font(.pocket(.caption))
+                        Spacer(minLength: 0)
+                        Button("Dismiss") { self.attachmentRefusal = nil }
+                            .buttonStyle(.plain)
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textTertiary)
+                    }
+                    .padding(PocketSpacing.s8)
+                    .hudPanel(PocketColor.statusWarn.opacity(0.10))
+                }
                 if !attachments.isEmpty {
                     HStack(spacing: PocketSpacing.s8) {
                         ForEach(attachments, id: \.self) { url in
@@ -312,7 +332,9 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(PocketColor.textTertiary)
-                    .help("Attach an image")
+                    .disabled(!attachmentsAllowed(chat))
+                    .help(attachmentsAllowed(chat)
+                        ? "Attach an image" : visionWarning(chat))
                     Button {
                         dictation.toggle(base: draft) { draft = $0 }
                     } label: {
@@ -352,6 +374,17 @@ struct ChatView: View {
         draft = ""
         attachments = []
         chat.send(text, attachments: files)
+    }
+
+    /// Images only make sense for a model that can read them; say so here
+    /// rather than letting the engine fail after the send.
+    private func attachmentsAllowed(_ chat: ChatModel) -> Bool { chat.modelSupportsVision }
+
+    private func visionWarning(_ chat: ChatModel) -> String {
+        if let suggestion = chat.suggestedVisionModel {
+            return "This model can't read images. Switch to \(suggestion) to attach one."
+        }
+        return "This model can't read images. Install a vision model to attach one."
     }
 
     private func pickAttachment() {

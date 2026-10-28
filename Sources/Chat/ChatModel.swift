@@ -55,6 +55,9 @@ final class ChatModel {
     func send(_ text: String, attachments: [URL] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+        // `run` cancels our reader but not the core's generation, so starting a
+        // second turn mid-stream would leave the first decoding unattended.
+        guard !isStreaming else { return }
         guard rebindModelIfMissing() else { return }
 
         var parts: [ContentPart] = attachments.map { .imageRef(path: $0.path) }

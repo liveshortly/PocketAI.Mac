@@ -13,6 +13,7 @@ struct LSChatView: View {
     @State private var showRename = false
     /// The probe being reviewed, captured when the sheet opens.
     @State private var reviewing: LSEvent?
+    @State private var dictation = Dictation()
     @State private var showShare = false
     @State private var confirmEnd = false
     @State private var confirmDelete = false
@@ -56,6 +57,7 @@ struct LSChatView: View {
             composerFocused = true
         }
         .onDisappear {
+            dictation.stop()
             if let session {
                 LSSeen.mark(
                     sessionID, max(session.detail?.eventCount ?? 0, session.events.count))
@@ -112,7 +114,7 @@ struct LSChatView: View {
             Text(session.title)
                 .font(.pocket(.headline))
                 .lineLimit(1)
-                .onTapGesture { showRename = true }
+                .onTapGesture { if session.detail?.isOwner == true { showRename = true } }
             if session.isLive {
                 HUDLiveBadge()
                 if session.agentBusy {
@@ -163,7 +165,9 @@ struct LSChatView: View {
                 .help("Share this session")
             }
             Menu {
-                Button("Rename…") { showRename = true }
+                if session.detail?.isOwner == true {
+                    Button("Rename…") { showRename = true }
+                }
                 if let link = app.liveShortly.client?.sessionLink(sessionID) {
                     Button("Copy link") {
                         NSPasteboard.general.clearContents()
@@ -172,12 +176,12 @@ struct LSChatView: View {
                 }
                 if session.detail?.isOwner == true {
                     Button("Share…") { showShare = true }
+                    Divider()
+                    if session.isLive {
+                        Button("End session", role: .destructive) { confirmEnd = true }
+                    }
+                    Button("Delete session", role: .destructive) { confirmDelete = true }
                 }
-                Divider()
-                if session.isLive {
-                    Button("End session", role: .destructive) { confirmEnd = true }
-                }
-                Button("Delete session", role: .destructive) { confirmDelete = true }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -204,11 +208,21 @@ struct LSChatView: View {
                             myHandle: app.liveShortly.handle)
                     }
                     if let error = session.errorText {
-                        Text(error)
-                            .font(.pocket(.footnote))
-                            .foregroundStyle(PocketColor.statusBad)
-                            .padding(PocketSpacing.s12)
-                            .hudPanel(PocketColor.statusBad.opacity(0.08))
+                        HStack(alignment: .top, spacing: PocketSpacing.s8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(PocketColor.statusWarn)
+                            Text(error)
+                                .font(.pocket(.footnote))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Button("Reconnect") {
+                                Task { await session.open() }
+                            }
+                            .buttonStyle(.hud)
+                        }
+                        .padding(PocketSpacing.s12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .hudPanel(PocketColor.statusWarn.opacity(0.10))
                     }
                     Color.clear.frame(height: 1).id("tail")
                 }
@@ -263,6 +277,18 @@ struct LSChatView: View {
                     .hudPanel(PocketColor.bgCanvas)
 
                     Button {
+                        dictation.toggle(base: draft) { draft = $0 }
+                    } label: {
+                        Image(systemName: dictation.isRecording ? "mic.fill" : "mic")
+                            .foregroundStyle(
+                                dictation.isRecording
+                                    ? PocketColor.statusBad : PocketColor.textTertiary)
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .help(dictation.isRecording ? "Stop dictation" : "Dictate")
+
+                    Button {
                         send(session)
                     } label: {
                         Image(systemName: "arrow.up")
@@ -294,6 +320,7 @@ struct LSChatView: View {
     }
 
     private func send(_ session: LSSessionModel) {
+        dictation.stop()
         let text = draft
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         draft = ""

@@ -253,8 +253,16 @@ public final class AppModel {
     /// is dropped so a long session does not accumulate transcripts in memory.
     private func evictIdleModels() {
         guard chatModels.count > 8 else { return }
-        let idle = chatModels.filter { !$0.value.isStreaming && $0.key != currentChatId }
-        for key in idle.keys.dropLast(4) { chatModels[key] = nil }
+        // Dictionary order is arbitrary, so sort by when each conversation was
+        // last touched and drop the stalest. Taking a slice of `keys` evicted
+        // whichever chats happened to hash first, including recent ones.
+        let idle = chatModels
+            .filter { !$0.value.isStreaming && $0.key != currentChatId }
+            .sorted { lhs, rhs in
+                (lhs.value.conversation?.updatedAt ?? 0)
+                    < (rhs.value.conversation?.updatedAt ?? 0)
+            }
+        for (key, _) in idle.dropLast(4) { chatModels[key] = nil }
     }
 
     private var currentChatId: String? {
