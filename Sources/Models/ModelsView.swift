@@ -338,7 +338,7 @@ struct ModelCard: View {
             HStack(spacing: PocketSpacing.s8) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: PocketSpacing.s8) {
-                        Text(entry.manifest.displayName)
+                        Text(ModelNaming.short(entry.manifest.displayName))
                             .font(.pocket(.headline))
                         HUDChip(text: entry.manifest.format.badge)
                             .help(entry.manifest.format.engineDescription)

@@ -165,9 +165,9 @@ struct ChatView: View {
                     app.currentModelId = entry.manifest.id
                 } label: {
                     if entry.manifest.id == (chat.conversation?.modelId ?? app.currentModelId) {
-                        Label(entry.manifest.displayName, systemImage: "checkmark")
+                        Label(ModelNaming.short(entry.manifest.displayName), systemImage: "checkmark")
                     } else {
-                        Text(entry.manifest.displayName)
+                        Text(ModelNaming.short(entry.manifest.displayName))
                     }
                 }
             }

@@ -117,7 +117,7 @@ struct ModelSettings: View {
                     set: { app.currentModelId = $0 })
                 ) {
                     ForEach(app.installedChatModels(), id: \.manifest.id) { entry in
-                        Text(entry.manifest.displayName).tag(entry.manifest.id)
+                        Text(ModelNaming.short(entry.manifest.displayName)).tag(entry.manifest.id)
                     }
                 }
                 Button("Open model library") { app.selection = .models }

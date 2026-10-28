@@ -222,9 +222,8 @@ public final class AppModel {
             currentModelDisplayName = "Apple Intelligence"
             return
         }
-        currentModelDisplayName =
-            catalog.first(where: { $0.manifest.id == currentModelId })?.manifest.displayName
-            ?? "Qwen3 4B"
+        let name = catalog.first { $0.manifest.id == currentModelId }?.manifest.displayName
+        currentModelDisplayName = ModelNaming.short(name ?? currentModelId)
     }
 
     /// True when this Mac can run Apple's on-device system model.
@@ -235,9 +234,12 @@ public final class AppModel {
     /// catalog entry because they need no download.
     public func displayName(forModelId id: String) -> String {
         if id == Self.appleIntelligenceId { return "Apple Intelligence" }
-        return core.catalog(
+        let catalogName = core.catalog(
             filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false)
-        ).first { $0.manifest.id == id }?.manifest.displayName ?? id
+        ).first { $0.manifest.id == id }?.manifest.displayName
+        // Even a catalog display name carries packaging noise
+        // ("Qwen3-4B-Instruct-2507-GGUF"); short() is what belongs on screen.
+        return ModelNaming.short(catalogName ?? id)
     }
 
     /// Installed chat-capable models, for the composer's model picker.

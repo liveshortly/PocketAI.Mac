@@ -65,6 +65,6 @@ struct NewChatMenu: View {
     /// Model name plus which engine runs it, so GGUF and MLX are
     /// distinguishable at the moment of choosing.
     private func menuLabel(_ entry: CatalogEntry) -> String {
-        "\(entry.manifest.displayName) · \(entry.manifest.format.badge)"
+        "\(ModelNaming.short(entry.manifest.displayName)) · \(entry.manifest.format.badge)"
     }
 }

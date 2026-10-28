@@ -119,7 +119,7 @@ struct OnboardingView: View {
     private func onboardingModelRow(_ entry: CatalogEntry) -> some View {
         HStack(spacing: PocketSpacing.s12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.manifest.displayName)
+                Text(ModelNaming.short(entry.manifest.displayName))
                     .font(.pocket(.headline))
                 Text("\(hudBytes(entry.fit.diskBytes)) · \(entry.fit.reason)")
                     .font(.pocket(.caption))
