@@ -14,6 +14,8 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             ModelSettings()
                 .tabItem { Label("Models", systemImage: "cpu") }
+            VoiceSettings()
+                .tabItem { Label("Voice", systemImage: "waveform") }
             LiveShortlySettings()
                 .tabItem { Label("LiveShortly", systemImage: "dot.radiowaves.left.and.right") }
             AboutSettings()
@@ -142,6 +144,45 @@ struct ModelSettings: View {
     }
 }
 
+/// Speech: which voice reads replies, and whether they are read automatically.
+struct VoiceSettings: View {
+    @State private var speech = ReadAloud.shared
+    @AppStorage("app.getpocketai.mac.autoSpeak") private var autoSpeak = false
+    private let voices = ReadAloud.availableVoices()
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Voice", selection: Binding(
+                    get: { speech.voiceIdentifier ?? "" },
+                    set: { speech.voiceIdentifier = $0.isEmpty ? nil : $0 })
+                ) {
+                    Text("System default").tag("")
+                    ForEach(voices, id: \.identifier) { voice in
+                        Text("\(voice.name) · \(voice.language)").tag(voice.identifier)
+                    }
+                }
+                Button("Preview") {
+                    speech.toggle(
+                        "This is how replies will sound.", id: "settings-preview")
+                }
+                .buttonStyle(.hud)
+            } header: {
+                HUDLabel("Read aloud")
+            }
+            Section {
+                Toggle("Speak replies automatically", isOn: $autoSpeak)
+                Text("Every finished reply is read out. Stop it from the reply itself.")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(PocketColor.bgCanvas)
+    }
+}
+
 struct LiveShortlySettings: View {
     @Environment(AppModel.self) private var app
 
@@ -173,6 +214,16 @@ struct AboutSettings: View {
                 HUDLabel("PocketAI for Mac")
             }
             Section {
+                engineRow("MLX", "Apple silicon, .safetensors models")
+                engineRow("llama.cpp", "GGUF models, built in")
+                engineRow("Apple Intelligence", "System model, macOS 15.1+ on supported Macs")
+                Text("A model's badge in the library says which engine runs it.")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            } header: {
+                HUDLabel("Engines")
+            }
+            Section {
                 TextField("License key", text: $licenseKey)
                     .textFieldStyle(.roundedBorder)
                 Button("Activate") { activate() }
@@ -190,6 +241,18 @@ struct AboutSettings: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(PocketColor.bgCanvas)
+    }
+
+    private func engineRow(_ name: String, _ detail: String) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.pocket(.body))
+                Text(detail)
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     private func activate() {

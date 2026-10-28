@@ -37,8 +37,10 @@ struct AllChatsView: View {
             HUDRule()
 
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(chats, id: \.id) { chat in
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach(sections, id: \.title) { section in
+                        Section {
+                            ForEach(section.chats, id: \.id) { chat in
                         Button {
                             app.selection = .chat(chat.id)
                         } label: {
@@ -70,6 +72,17 @@ struct AllChatsView: View {
                             Button("Delete", role: .destructive) { confirmDelete = chat }
                         }
                         HUDRule()
+                            }
+                        } header: {
+                            HStack {
+                                HUDLabel(section.title)
+                                Spacer()
+                                HUDLabel("\(section.chats.count)")
+                            }
+                            .padding(.horizontal, PocketSpacing.s12)
+                            .padding(.vertical, PocketSpacing.s4)
+                            .background(PocketColor.bgCanvas)
+                        }
                     }
                     if chats.isEmpty {
                         Text(query.isEmpty ? "No chats yet" : "No chats match “\(query)”")
@@ -102,6 +115,39 @@ struct AllChatsView: View {
                 NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
                 reload()
             }
+        }
+    }
+
+    /// Chats grouped the way people look for them — by when they were last
+    /// touched, not as one long undifferentiated list.
+    private var sections: [(title: String, chats: [ConversationSummary])] {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday)!
+        let weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday)!
+        let monthAgo = calendar.date(byAdding: .day, value: -30, to: startOfToday)!
+
+        var buckets: [String: [ConversationSummary]] = [:]
+        for chat in chats {
+            let when = Date(timeIntervalSince1970: TimeInterval(chat.updatedAt))
+            let title: String
+            if when >= startOfToday {
+                title = "Today"
+            } else if when >= yesterday {
+                title = "Yesterday"
+            } else if when >= weekAgo {
+                title = "Previous 7 days"
+            } else if when >= monthAgo {
+                title = "Previous 30 days"
+            } else {
+                title = "Older"
+            }
+            buckets[title, default: []].append(chat)
+        }
+        let order = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"]
+        return order.compactMap { title in
+            guard let group = buckets[title], !group.isEmpty else { return nil }
+            return (title, group.sorted { $0.updatedAt > $1.updatedAt })
         }
     }
 

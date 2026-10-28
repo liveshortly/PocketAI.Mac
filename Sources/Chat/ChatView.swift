@@ -17,6 +17,7 @@ struct ChatView: View {
     @State private var pinnedToBottom = true
     @State private var attachmentRefusal: String?
     @State private var chatExportError: String?
+    @AppStorage("app.getpocketai.mac.autoSpeak") private var autoSpeak = false
     @FocusState private var composerFocused: Bool
 
     let conversationId: String
@@ -41,6 +42,14 @@ struct ChatView: View {
         .onDisappear { dictation.stop() }
         .onChange(of: chat?.tokensPerSecond ?? 0) { _, rate in
             app.activeTokPerSec = rate
+        }
+        .onChange(of: chat?.isStreaming ?? false) { wasStreaming, streaming in
+            // Read the finished reply when the user asked for that.
+            guard autoSpeak, wasStreaming, !streaming,
+                  let last = chat?.messages.last, !last.isUser
+            else { return }
+            let text = last.plainText
+            if !text.isEmpty { ReadAloud.shared.toggle(text, id: last.id) }
         }
         .onChange(of: app.commandSerial) { _, _ in
             guard let command = app.pendingCommand, let chat else { return }
