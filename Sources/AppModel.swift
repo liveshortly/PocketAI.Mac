@@ -39,7 +39,9 @@ public final class AppModel {
         case session(String)
         /// Starting an agent session is a destination like any other, so it
         /// opens in the detail pane instead of a modal over the app.
-        case newSession
+        /// Carries the project a session is being started for, so the
+        /// finished session can be filed under it.
+        case newSession(projectId: String? = nil)
         /// The sidebar keeps only the most recent few; these are the full,
         /// searchable lists behind them.
         case allChats

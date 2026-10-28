@@ -54,7 +54,7 @@ struct SidebarView: View {
         .onChange(of: app.commandSerial) { _, _ in
             switch app.pendingCommand {
             case .newLiveSession:
-                app.selection = .newSession
+                app.selection = .newSession()
                 app.clearCommand()
             case .refresh:
                 // Re-fetch both lists; a session or chat can land after load.
@@ -233,7 +233,7 @@ struct SidebarView: View {
                 Label("New session", systemImage: "plus")
                     .font(.pocket(.footnote))
                     .foregroundStyle(PocketColor.textTertiary)
-                    .tag(AppModel.Destination.newSession)
+                    .tag(AppModel.Destination.newSession())
             } else {
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
                     Text("Not connected on this Mac")

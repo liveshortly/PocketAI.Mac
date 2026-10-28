@@ -226,7 +226,7 @@ struct AllSessionsView: View {
                     .padding(.horizontal, PocketSpacing.s8)
                     .padding(.vertical, 5)
                     .hudPanel(PocketColor.bgCanvas)
-                Button("New session") { app.selection = .newSession }
+                Button("New session") { app.selection = .newSession() }
                     .buttonStyle(.hudProminent)
             }
             .padding(.horizontal, PocketSpacing.s16)

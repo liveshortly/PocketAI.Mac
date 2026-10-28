@@ -7,6 +7,8 @@ import SwiftUI
 /// are the same gesture in the same place.
 struct LSNewSessionView: View {
     @Environment(AppModel.self) private var app
+    /// When set, the session that gets created is filed under this project.
+    var projectId: String?
 
     @State private var hosts: [LSHost] = []
     @State private var hostID: String?
@@ -63,7 +65,7 @@ struct LSNewSessionView: View {
         HStack(spacing: PocketSpacing.s12) {
             Image(systemName: "bolt")
                 .foregroundStyle(LSColor.accent)
-            Text("New agent session")
+            Text(projectId == nil ? "New agent session" : "New agent session in this project")
                 .font(.pocket(.headline))
             Spacer(minLength: 0)
             Button("Start session") { start() }
@@ -244,6 +246,9 @@ struct LSNewSessionView: View {
                         + "the agent: \(spawn.error ?? "unknown error"). "
                         + "It is in the sidebar if you still want to open it."
                 } else {
+                    if let projectId {
+                        ProjectSessions.link(created.id, to: projectId)
+                    }
                     // Straight into the session, as a new chat opens its thread.
                     app.selection = .session(created.id)
                 }

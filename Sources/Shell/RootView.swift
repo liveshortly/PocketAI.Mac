@@ -55,8 +55,8 @@ struct RootView: View {
         case .session(let id):
             LSChatView(sessionID: id)
                 .id(id)
-        case .newSession:
-            LSNewSessionView()
+        case .newSession(let projectId):
+            LSNewSessionView(projectId: projectId)
         case .allChats:
             AllChatsView()
         case .allSessions:

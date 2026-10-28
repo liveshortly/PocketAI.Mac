@@ -1,4 +1,5 @@
 import PocketKit
+import PocketLiveShortly
 import PocketUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -19,6 +20,7 @@ struct ProjectDetailView: View {
     @State private var importError: String?
     /// Kept apart from `importError` so it cannot surface under Documents.
     @State private var instructionsNote: String?
+    @State private var linkedSessions: [LSSession] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +31,7 @@ struct ProjectDetailView: View {
                     instructionsCard
                     documentsCard
                     chatsCard
+                    sessionsCard
                 }
                 .padding(PocketSpacing.s16)
                 .frame(maxWidth: 820, alignment: .leading)
@@ -64,6 +67,12 @@ struct ProjectDetailView: View {
             Text(project?.name ?? "Project")
                 .font(.pocket(.headline))
             Spacer(minLength: 0)
+            if app.liveShortly.isConnected {
+                Button("New agent session") {
+                    app.selection = .newSession(projectId: projectId)
+                }
+                .buttonStyle(.hud)
+            }
             Button("New chat here") {
                 app.newChat(projectId: projectId)
                 NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
@@ -209,6 +218,59 @@ struct ProjectDetailView: View {
         }
     }
 
+    /// LiveShortly sessions filed under this project. The link is local to
+    /// this Mac — the server does not know about projects.
+    private var sessionsCard: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            HUDLabel("LiveShortly sessions · \(linkedSessions.count)")
+            if !app.liveShortly.isConnected {
+                Text("Connect LiveShortly in Settings to run agent sessions for this project.")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textTertiary)
+                    .padding(PocketSpacing.s12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .hudPanel()
+            } else if linkedSessions.isEmpty {
+                Text("No sessions yet — start one and it stays filed under this project.")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textTertiary)
+                    .padding(PocketSpacing.s12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .hudPanel()
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(linkedSessions.enumerated()), id: \.element.id) { index, session in
+                        if index > 0 { HUDRule() }
+                        Button {
+                            app.selection = .session(session.id)
+                        } label: {
+                            HStack(spacing: PocketSpacing.s8) {
+                                Image(systemName: "dot.radiowaves.left.and.right")
+                                    .foregroundStyle(session.isLive
+                                        ? LSColor.accent : PocketColor.textTertiary)
+                                Text(session.title.isEmpty ? "Untitled session" : session.title)
+                                    .font(.pocket(.body))
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                if session.isLive { HUDLiveBadge() }
+                            }
+                            .padding(PocketSpacing.s8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Remove from project") {
+                                ProjectSessions.unlink(session.id, from: projectId)
+                                reloadSessions()
+                            }
+                        }
+                    }
+                }
+                .hudPanel()
+            }
+        }
+    }
+
     // MARK: - Data
 
     private func reload() {
@@ -217,10 +279,26 @@ struct ProjectDetailView: View {
         instructionsDirty = false
         instructionsNote = nil
         documents = app.core.listDocuments(projectId: projectId)
+        reloadSessions()
         chats = app.core.conversations(
             query: ConversationQuery(search: nil, archived: false, limit: 100, offset: 0)
         ).filter { summary in
             app.core.conversation(id: summary.id)?.projectId == projectId
+        }
+    }
+
+    /// Resolves the linked ids to live session records, dropping any the
+    /// server no longer has (deleted elsewhere).
+    private func reloadSessions() {
+        let ids = Set(ProjectSessions.ids(for: projectId))
+        guard !ids.isEmpty, let client = app.liveShortly.client else {
+            linkedSessions = []
+            return
+        }
+        Task {
+            let all = (try? await client.sessions(limit: 200)) ?? []
+            linkedSessions = all.filter { ids.contains($0.id) }
+                .sorted { $0.isLive && !$1.isLive }
         }
     }
 
