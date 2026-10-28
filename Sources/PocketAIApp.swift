@@ -50,10 +50,6 @@ struct AppCommands: Commands {
         CommandGroup(after: .toolbar) {
             Button("Command Palette…") { app.showCommandPalette = true }
                 .keyboardShortcut("k", modifiers: .command)
-            Button(app.showInspector ? "Hide Inspector" : "Show Inspector") {
-                app.showInspector.toggle()
-            }
-            .keyboardShortcut("i", modifiers: [.command, .option])
             Divider()
         }
         CommandMenu("Chat") {

@@ -51,11 +51,6 @@ public final class AppModel {
         didSet { persistSelection() }
     }
 
-    /// Right inspector visibility, remembered across launches.
-    public var showInspector: Bool {
-        didSet { UserDefaults.standard.set(showInspector, forKey: Self.inspectorKey) }
-    }
-
     public var showCommandPalette = false
     public var sidebarSearch = ""
 
@@ -105,7 +100,6 @@ public final class AppModel {
 
     private static let onboardedKey = "app.getpocketai.hasOnboarded"
     private static let currentModelKey = "app.getpocketai.currentModelId"
-    private static let inspectorKey = "app.getpocketai.mac.showInspector"
     private static let selectionKey = "app.getpocketai.mac.selection"
     private static let licenseKeychainKey = "app.getpocketai.licenseKey"
     private static let defaultModelId =
@@ -120,7 +114,6 @@ public final class AppModel {
         } else {
             hasOnboarded = UserDefaults.standard.bool(forKey: Self.onboardedKey)
         }
-        showInspector = UserDefaults.standard.bool(forKey: Self.inspectorKey)
 
         let hooks = LivePlatformHooks()
         self.hooks = hooks

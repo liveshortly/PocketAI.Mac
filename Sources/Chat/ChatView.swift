@@ -93,16 +93,6 @@ struct ChatView: View {
             }
             Spacer(minLength: 0)
             modelPicker(chat)
-            Button {
-                app.showInspector.toggle()
-            } label: {
-                Image(systemName: "sidebar.right")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(
-                app.showInspector ? PocketColor.accent : PocketColor.textTertiary
-            )
-            .help("Toggle inspector (⌥⌘I)")
             Menu {
                 Button("Rename…") { showRename = true }
                 Button("Regenerate reply") { chat.regenerate() }

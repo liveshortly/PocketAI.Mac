@@ -19,17 +19,8 @@ struct RootView: View {
                     SidebarView()
                         .navigationSplitViewColumnWidth(min: 220, ideal: 248, max: 340)
                 } detail: {
-                    HStack(spacing: 0) {
-                        detail
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        if app.showInspector {
-                            HUDRule().frame(width: HUD.hairline, height: nil)
-                            InspectorView()
-                                .frame(width: 300)
-                                .transition(.move(edge: .trailing))
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.18), value: app.showInspector)
+                    detail
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .background(PocketColor.bgCanvas)
             }
