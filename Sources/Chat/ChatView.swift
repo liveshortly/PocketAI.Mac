@@ -31,12 +31,11 @@ struct ChatView: View {
         }
         .background(PocketColor.bgCanvas)
         .task(id: conversationId) {
-            chat = ChatModel(conversationId: conversationId, core: app.core)
+            chat = app.chatModel(for: conversationId)
+            chat?.load()
             composerFocused = true
         }
-        .onChange(of: chat?.isStreaming ?? false) { _, streaming in
-            app.isGenerating = streaming
-        }
+        .onDisappear { dictation.stop() }
         .onChange(of: chat?.tokensPerSecond ?? 0) { _, rate in
             app.activeTokPerSec = rate
         }
@@ -105,6 +104,7 @@ struct ChatView: View {
                         name: .pocketConversationsChanged, object: nil)
                 }
                 Button("Delete", role: .destructive) {
+                    app.forgetChatModel(conversationId)
                     try? app.core.deleteConversation(id: conversationId)
                     app.selection = nil
                     NotificationCenter.default.post(

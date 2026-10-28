@@ -40,6 +40,10 @@ public final class AppModel {
         /// Starting an agent session is a destination like any other, so it
         /// opens in the detail pane instead of a modal over the app.
         case newSession
+        /// The sidebar keeps only the most recent few; these are the full,
+        /// searchable lists behind them.
+        case allChats
+        case allSessions
         case models
         case devices
         case server
@@ -56,9 +60,17 @@ public final class AppModel {
 
     // MARK: - Chat state shared with the chrome
 
-    /// True while any conversation is streaming — drives the toolbar mark and
+    /// Live chat models, keyed by conversation. Held here rather than in the
+    /// view so switching away from a generating chat does not orphan its
+    /// stream: the reply keeps arriving, Stop still reaches it, and coming
+    /// back shows the text that landed while you were gone.
+    private var chatModels: [String: ChatModel] = [:]
+
+    /// True while any conversation is streaming — drives the working mark and
     /// enables Stop in the menu.
-    public var isGenerating = false
+    public var isGenerating: Bool {
+        chatModels.values.contains { $0.isStreaming }
+    }
     /// Measured decode rate of the live stream. Zero until a real rate is
     /// observed; never seed a fabricated throughput.
     public var activeTokPerSec: Int = 0
@@ -203,6 +215,40 @@ public final class AppModel {
             }
     }
 
+    // MARK: - Chat models
+
+    /// The model for a conversation, reused if it is already open.
+    func chatModel(for conversationId: String) -> ChatModel {
+        if let existing = chatModels[conversationId] { return existing }
+        let model = ChatModel(conversationId: conversationId, core: core)
+        chatModels[conversationId] = model
+        evictIdleModels()
+        return model
+    }
+
+    /// Stops generation everywhere — what ⌘. and Stop everything mean.
+    public func stopAllGeneration() {
+        for model in chatModels.values where model.isStreaming { model.stop() }
+    }
+
+    public func forgetChatModel(_ conversationId: String) {
+        chatModels[conversationId]?.stop()
+        chatModels[conversationId] = nil
+    }
+
+    /// Keeps a handful of recent conversations warm; anything idle beyond that
+    /// is dropped so a long session does not accumulate transcripts in memory.
+    private func evictIdleModels() {
+        guard chatModels.count > 8 else { return }
+        let idle = chatModels.filter { !$0.value.isStreaming && $0.key != currentChatId }
+        for key in idle.keys.dropLast(4) { chatModels[key] = nil }
+    }
+
+    private var currentChatId: String? {
+        if case .chat(let id) = selection { return id }
+        return nil
+    }
+
     // MARK: - Navigation helpers
 
     /// Creates a conversation and selects it. Returns nil when the core
@@ -285,8 +331,7 @@ public final class AppModel {
     public func stopEverything() {
         core.stopEverything()
         advertiser.stop()
-        pendingCommand = .stopGeneration
-        isGenerating = false
+        stopAllGeneration()
         if let activity = activeServerActivity {
             ProcessInfo.processInfo.endActivity(activity)
             activeServerActivity = nil

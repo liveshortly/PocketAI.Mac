@@ -55,7 +55,10 @@ struct AppCommands: Commands {
         CommandMenu("Chat") {
             Button("Focus Composer") { app.pendingCommand = .focusComposer }
                 .keyboardShortcut("l", modifiers: .command)
-            Button("Stop Generating") { app.pendingCommand = .stopGeneration }
+            // Reaches every generating chat, not just the visible one — a
+            // reply can still be arriving in a conversation you switched away
+            // from.
+            Button("Stop Generating") { app.stopAllGeneration() }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(!app.isGenerating)
             Button("Regenerate Reply") { app.pendingCommand = .regenerate }

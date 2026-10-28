@@ -161,11 +161,21 @@ final class PocketAITests: XCTestCase {
     }
 
     // MARK: - MAC-08: Menu bar extra state
-    func testMenuBarStateReflection() {
+    /// `isGenerating` is derived from the open chat models, so it stays true
+    /// while a conversation you have navigated away from is still streaming —
+    /// that is what keeps Stop reachable.
+    func testGeneratingReflectsOpenChats() {
         let model = AppModel()
+        XCTAssertFalse(model.isGenerating, "nothing open, nothing generating")
+
+        let chat = model.chatModel(for: "c-1")
+        XCTAssertFalse(chat.isStreaming)
         XCTAssertFalse(model.isGenerating)
-        model.isGenerating = true
-        XCTAssertTrue(model.isGenerating)
+
+        // The same conversation hands back the same model rather than a
+        // second one racing the first.
+        XCTAssertTrue(chat === model.chatModel(for: "c-1"))
+
         model.stopEverything()
         XCTAssertFalse(model.isGenerating)
     }

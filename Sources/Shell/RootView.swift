@@ -57,6 +57,10 @@ struct RootView: View {
                 .id(id)
         case .newSession:
             LSNewSessionView()
+        case .allChats:
+            AllChatsView()
+        case .allSessions:
+            AllSessionsView()
         case .models:
             ModelsView()
         case .devices:

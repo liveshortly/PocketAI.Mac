@@ -16,8 +16,9 @@ struct SidebarView: View {
     @State private var newProject = false
     @State private var lastSessionLoad: Date?
 
-    /// Keeps the sidebar short; the palette (⌘K) is the way to the long tail.
-    private static let recentChatLimit = 12
+    /// The sidebar shows only the newest few of each kind; the rest live
+    /// in the full lists (and ⌘K reaches any of them directly).
+    private static let recentLimit = 5
 
     var body: some View {
         @Bindable var app = app
@@ -79,6 +80,7 @@ struct SidebarView: View {
         ) {
             Button("Delete chat", role: .destructive) {
                 guard let target = confirmDelete else { return }
+                app.forgetChatModel(target.id)
                 try? app.core.deleteConversation(id: target.id)
                 if app.selection == .chat(target.id) { app.selection = nil }
                 reloadConversations()
@@ -92,7 +94,7 @@ struct SidebarView: View {
         Section {
             NewChatMenu()
 
-            ForEach(conversations.prefix(Self.recentChatLimit), id: \.id) { summary in
+            ForEach(conversations.prefix(Self.recentLimit), id: \.id) { summary in
                 ChatRow(summary: summary)
                     .tag(AppModel.Destination.chat(summary.id))
                     .contextMenu {
@@ -110,15 +112,13 @@ struct SidebarView: View {
                     .font(.pocket(.footnote))
                     .foregroundStyle(PocketColor.textTertiary)
             }
-            if conversations.count > Self.recentChatLimit {
-                Button {
-                    app.showCommandPalette = true
-                } label: {
-                    Text("\(conversations.count - Self.recentChatLimit) more… ⌘K")
-                        .font(.pocket(.footnote))
-                        .foregroundStyle(PocketColor.textTertiary)
-                }
-                .buttonStyle(.plain)
+            if conversations.count > Self.recentLimit {
+                Label(
+                    "All chats (\(conversations.count))",
+                    systemImage: "list.bullet")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textTertiary)
+                    .tag(AppModel.Destination.allChats)
             }
         } header: {
             HUDLabel("Chats")
@@ -150,9 +150,17 @@ struct SidebarView: View {
     private var liveShortlySection: some View {
         Section {
             if app.liveShortly.isConnected {
-                ForEach(orderedSessions, id: \.id) { session in
+                ForEach(orderedSessions.prefix(Self.recentLimit), id: \.id) { session in
                     SessionRow(session: session)
                         .tag(AppModel.Destination.session(session.id))
+                }
+                if sessions.count > Self.recentLimit {
+                    Label(
+                        "All sessions (\(sessions.count))",
+                        systemImage: "list.bullet")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textTertiary)
+                        .tag(AppModel.Destination.allSessions)
                 }
                 if sessions.isEmpty {
                     Text("No sessions yet")
