@@ -14,6 +14,7 @@ struct ModelsView: View {
     @State private var hubError: String?
     @State private var refreshTask: Task<Void, Never>?
     @State private var searching = false
+    @State private var autoResumed: Set<String> = []
     @State private var confirmDelete: CatalogEntry?
 
     var body: some View {
@@ -165,6 +166,23 @@ struct ModelsView: View {
     private func reload() {
         entries = app.core.catalog(
             filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
+        resumeInterrupted()
+    }
+
+    /// Resumes transfers that stopped on their own. A download the user paused
+    /// is left alone — only failures that look transient are retried, and each
+    /// is retried once per visit so a genuinely broken download cannot loop.
+    private func resumeInterrupted() {
+        guard !app.core.isOffline() else { return }
+        for entry in entries {
+            guard case .failed(let reason) = entry.state else { continue }
+            let lowered = reason.lowercased()
+            let transient = lowered.contains("network") || lowered.contains("connection")
+                || lowered.contains("timed out") || lowered.contains("interrupted")
+            guard transient, !autoResumed.contains(entry.manifest.id) else { continue }
+            autoResumed.insert(entry.manifest.id)
+            try? app.core.resumeDownload(modelId: entry.manifest.id)
+        }
     }
 
     /// Download progress only shows up on subsequent `catalog()` calls, so the

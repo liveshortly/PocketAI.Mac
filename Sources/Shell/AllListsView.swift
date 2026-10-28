@@ -11,6 +11,8 @@ struct AllChatsView: View {
     @State private var query = ""
     @State private var includeArchived = false
     @State private var confirmDelete: ConversationSummary?
+    @State private var selected: Set<String> = []
+    @State private var confirmBulkDelete = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +32,16 @@ struct AllChatsView: View {
                     .toggleStyle(.switch)
                     .font(.pocket(.caption))
                     .tint(PocketColor.accent)
+                if selected.isEmpty {
+                    Button("Select all") { selected = Set(chats.map(\.id)) }
+                        .buttonStyle(.hud)
+                        .disabled(chats.isEmpty)
+                } else {
+                    Button("Delete \(selected.count)") { confirmBulkDelete = true }
+                        .buttonStyle(.hudDestructive)
+                    Button("Clear") { selected = [] }
+                        .buttonStyle(.hud)
+                }
             }
             .padding(.horizontal, PocketSpacing.s16)
             .padding(.vertical, PocketSpacing.s8)
@@ -45,6 +57,19 @@ struct AllChatsView: View {
                             app.selection = .chat(chat.id)
                         } label: {
                             HStack(spacing: PocketSpacing.s12) {
+                                Button {
+                                    if selected.contains(chat.id) {
+                                        selected.remove(chat.id)
+                                    } else {
+                                        selected.insert(chat.id)
+                                    }
+                                } label: {
+                                    Image(systemName: selected.contains(chat.id)
+                                        ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(selected.contains(chat.id)
+                                            ? PocketColor.accent : PocketColor.lineStrong)
+                                }
+                                .buttonStyle(.plain)
                                 Image(systemName: "bubble.left")
                                     .foregroundStyle(PocketColor.textTertiary)
                                 VStack(alignment: .leading, spacing: 1) {
@@ -101,6 +126,23 @@ struct AllChatsView: View {
         .onChange(of: includeArchived) { _, _ in reload() }
         .onChange(of: app.commandSerial) { _, _ in
             if app.pendingCommand == .refresh { reload() }
+        }
+        .confirmationDialog(
+            "Delete \(selected.count) chat\(selected.count == 1 ? "" : "s")? This cannot be undone.",
+            isPresented: $confirmBulkDelete, titleVisibility: .visible
+        ) {
+            Button("Delete \(selected.count)", role: .destructive) {
+                for id in selected {
+                    app.forgetChatModel(id)
+                    try? app.core.deleteConversation(id: id)
+                }
+                if case .chat(let open) = app.selection, selected.contains(open) {
+                    app.selection = nil
+                }
+                selected = []
+                NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
+                reload()
+            }
         }
         .confirmationDialog(
             "Delete “\(confirmDelete?.title ?? "chat")”? This cannot be undone.",
