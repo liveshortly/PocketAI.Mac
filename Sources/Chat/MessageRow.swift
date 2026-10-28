@@ -240,11 +240,7 @@ struct MarkdownText: View {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 switch block {
                 case .prose(let content):
-                    Text(inlineMarkdown(content))
-                        .font(.pocket(.reading))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    MarkdownProse(content, font: .pocket(.reading))
                 case .code(let code, let language):
                     CodeBlock(code: code, language: language)
                 }
@@ -257,13 +253,6 @@ struct MarkdownText: View {
                     .accessibilityHidden(true)
             }
         }
-    }
-
-    private func inlineMarkdown(_ string: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: string,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(string)
     }
 
     enum Block {
