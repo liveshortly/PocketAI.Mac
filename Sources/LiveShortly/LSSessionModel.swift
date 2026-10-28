@@ -12,7 +12,8 @@ final class LSSessionModel {
     private let client: LSClient
     private let myHandle: String
 
-    private(set) var detail: LSSessionDetail?
+    /// Settable so the share sheet can reflect a change it just made.
+    var detail: LSSessionDetail?
     private(set) var events: [LSEvent] = []
     private(set) var items: [LSItem] = []
     private(set) var isLive = false

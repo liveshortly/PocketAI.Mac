@@ -12,6 +12,7 @@ struct LSChatView: View {
     @State private var draft = ""
     @State private var showRename = false
     @State private var showProbeDetail = false
+    @State private var showShare = false
     @State private var confirmEnd = false
     @State private var confirmDelete = false
     @FocusState private var composerFocused: Bool
@@ -60,6 +61,14 @@ struct LSChatView: View {
         .sheet(isPresented: $showRename) {
             if let session {
                 RenameSheet(title: session.title) { session.rename($0) }
+            }
+        }
+        .sheet(isPresented: $showShare) {
+            if let session {
+                LSShareSheet(
+                    sessionID: sessionID,
+                    detail: Binding(get: { session.detail }, set: { session.detail = $0 }))
+                .environment(app)
             }
         }
         .sheet(isPresented: $showProbeDetail) {
@@ -112,6 +121,14 @@ struct LSChatView: View {
             if session.watchers > 1 {
                 HUDLabel("\(session.watchers) watching")
             }
+            // Who can see this is worth knowing without opening a dialog.
+            if let visibility = session.detail?.visibility, visibility != "private" {
+                HUDChip(text: visibility.uppercased(), tint: LSColor.accent)
+                    .help("Anyone with the link can open this session")
+            }
+            if session.detail?.publishedAt != nil {
+                HUDChip(text: "ON FEED", tint: LSColor.accent)
+            }
             Spacer(minLength: 0)
             if let framework = session.detail?.framework, framework == "claude-code",
                session.isLive {
@@ -126,6 +143,17 @@ struct LSChatView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
+            if session.detail?.isOwner == true {
+                Button {
+                    showShare = true
+                } label: {
+                    Label("Share", systemImage: "person.badge.plus")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(PocketColor.textTertiary)
+                .help("Share this session")
+            }
             Menu {
                 Button("Rename…") { showRename = true }
                 if let link = app.liveShortly.client?.sessionLink(sessionID) {
@@ -133,6 +161,9 @@ struct LSChatView: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(link.absoluteString, forType: .string)
                     }
+                }
+                if session.detail?.isOwner == true {
+                    Button("Share…") { showShare = true }
                 }
                 Divider()
                 if session.isLive {
