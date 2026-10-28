@@ -15,6 +15,7 @@ struct ChatView: View {
     @State private var isDropTargeted = false
     @State private var dictation = Dictation()
     @State private var pinnedToBottom = true
+    @State private var scrollActivity = ScrollActivity()
     @State private var attachmentRefusal: String?
     @State private var chatExportError: String?
     @AppStorage("app.getpocketai.mac.autoSpeak") private var autoSpeak = false
@@ -34,12 +35,16 @@ struct ChatView: View {
             }
         }
         .background(PocketColor.bgCanvas)
+        .onAppear { scrollActivity.start() }
         .task(id: conversationId) {
             chat = app.chatModel(for: conversationId)
             chat?.load()
             composerFocused = true
         }
-        .onDisappear { dictation.stop() }
+        .onDisappear {
+            dictation.stop()
+            scrollActivity.stop()
+        }
         .onChange(of: chat?.tokensPerSecond ?? 0) { _, rate in
             app.activeTokPerSec = rate
         }
@@ -227,11 +232,11 @@ struct ChatView: View {
             // Only follow the stream while the reader is already at the tail;
             // yanking the view down while they read back is the worst thing a
             // transcript can do.
-            .onChange(of: chat.messages.count) { _, _ in
-                if pinnedToBottom { scroll(proxy) }
-            }
-            .onChange(of: chat.streamingText) { _, _ in
-                if pinnedToBottom { scroll(proxy) }
+            .onChange(of: chat.messages.count) { _, _ in follow(proxy) }
+            .onChange(of: chat.streamingText) { _, _ in follow(proxy) }
+            .onChange(of: scrollActivity.isScrolling) { _, scrolling in
+                // Catch up once they stop, if they ended at the tail.
+                if !scrolling, pinnedToBottom { scroll(proxy) }
             }
             .overlay(alignment: .bottom) {
                 if !pinnedToBottom {
@@ -261,6 +266,12 @@ struct ChatView: View {
         let current = messages[index]
         return previous.role == current.role
             && current.createdAt - previous.createdAt < 300
+    }
+
+    /// Follows the tail only while the reader is there AND not mid-gesture.
+    private func follow(_ proxy: ScrollViewProxy) {
+        guard pinnedToBottom, !scrollActivity.isScrolling else { return }
+        scroll(proxy)
     }
 
     private func scroll(_ proxy: ScrollViewProxy) {

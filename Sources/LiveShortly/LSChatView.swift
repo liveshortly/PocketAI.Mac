@@ -14,6 +14,8 @@ struct LSChatView: View {
     /// The probe being reviewed, captured when the sheet opens.
     @State private var reviewing: LSEvent?
     @State private var dictation = Dictation()
+    @State private var scrollActivity = ScrollActivity()
+    @State private var pinnedToBottom = true
     @State private var showShare = false
     @State private var confirmEnd = false
     @State private var confirmDelete = false
@@ -56,8 +58,10 @@ struct LSChatView: View {
             await model.open()
             composerFocused = true
         }
+        .onAppear { scrollActivity.start() }
         .onDisappear {
             dictation.stop()
+            scrollActivity.stop()
             if let session {
                 LSSeen.mark(
                     sessionID, max(session.detail?.eventCount ?? 0, session.events.count))
@@ -238,18 +242,37 @@ struct LSChatView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .hudPanel(PocketColor.statusWarn.opacity(0.10))
                     }
-                    Color.clear.frame(height: 1).id("tail")
+                    Color.clear
+                        .frame(height: 1)
+                        .id("tail")
+                        .onAppear { pinnedToBottom = true }
+                        .onDisappear { pinnedToBottom = false }
                 }
                 .padding(.horizontal, PocketSpacing.s24)
                 .padding(.vertical, PocketSpacing.s16)
                 .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
-            .onChange(of: session.items.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("tail", anchor: .bottom) }
+            .onChange(of: session.items.count) { _, _ in follow(proxy) }
+            .onChange(of: session.agentBusy) { _, _ in follow(proxy) }
+            .onChange(of: scrollActivity.isScrolling) { _, scrolling in
+                if !scrolling, pinnedToBottom { scrollToTail(proxy) }
             }
-            .onChange(of: session.agentBusy) { _, _ in
-                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("tail", anchor: .bottom) }
+            .overlay(alignment: .bottom) {
+                if !pinnedToBottom {
+                    Button {
+                        pinnedToBottom = true
+                        scrollToTail(proxy)
+                    } label: {
+                        Label("Jump to latest", systemImage: "arrow.down")
+                            .font(.pocket(.caption))
+                            .padding(.horizontal, PocketSpacing.s12)
+                            .padding(.vertical, 6)
+                            .hudPanel(PocketColor.bgRaised)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, PocketSpacing.s12)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -334,6 +357,16 @@ struct LSChatView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, PocketSpacing.s12)
         .background(PocketColor.bgSurface)
+    }
+
+    /// Follow the tail only when the reader is there and not mid-gesture.
+    private func follow(_ proxy: ScrollViewProxy) {
+        guard pinnedToBottom, !scrollActivity.isScrolling else { return }
+        scrollToTail(proxy)
+    }
+
+    private func scrollToTail(_ proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("tail", anchor: .bottom) }
     }
 
     private func send(_ session: LSSessionModel) {
