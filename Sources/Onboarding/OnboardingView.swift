@@ -91,9 +91,28 @@ struct OnboardingView: View {
                 bullet("Connect LiveShortly in Settings to watch your coding agents.")
             }
             .frame(maxWidth: 440, alignment: .leading)
+            VStack(spacing: PocketSpacing.s8) {
+                HUDLabel("Try one")
+                ForEach(Self.starters, id: \.self) { starter in
+                    Button {
+                        finish(starter: starter)
+                    } label: {
+                        Text(starter)
+                            .font(.pocket(.body))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, PocketSpacing.s12)
+                            .padding(.vertical, PocketSpacing.s8)
+                            .hudPanel()
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: 440)
+            .padding(.top, PocketSpacing.s8)
+
             Button("Start using PocketAI") { finish() }
                 .buttonStyle(.hudProminent)
-                .padding(.top, PocketSpacing.s8)
+                .padding(.top, PocketSpacing.s4)
         }
     }
 
@@ -178,9 +197,19 @@ struct OnboardingView: View {
         }
     }
 
-    private func finish() {
+    private static let starters = [
+        "Explain what this app can do, briefly.",
+        "Summarise the text I paste next.",
+        "Draft a commit message from a diff I'll paste.",
+    ]
+
+    /// Finishing with a starter opens a chat already holding the question, so
+    /// the first screen after onboarding is a conversation, not an empty box.
+    private func finish(starter: String? = nil) {
         pollTask?.cancel()
         app.hasOnboarded = true
-        if app.selection == nil { app.newChat() }
+        if let id = app.newChat(), let starter {
+            app.chatModel(for: id).send(starter)
+        }
     }
 }

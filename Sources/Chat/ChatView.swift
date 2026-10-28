@@ -141,6 +141,19 @@ struct ChatView: View {
 
     private func modelPicker(_ chat: ChatModel) -> some View {
         Menu {
+            if app.appleIntelligenceAvailable {
+                Button {
+                    chat.setModel(AppModel.appleIntelligenceId)
+                    app.currentModelId = AppModel.appleIntelligenceId
+                } label: {
+                    if (chat.conversation?.modelId ?? app.currentModelId)
+                        == AppModel.appleIntelligenceId {
+                        Label("Apple Intelligence", systemImage: "checkmark")
+                    } else {
+                        Text("Apple Intelligence · no download")
+                    }
+                }
+            }
             ForEach(app.installedChatModels(), id: \.manifest.id) { entry in
                 Button {
                     chat.setModel(entry.manifest.id)
@@ -166,9 +179,7 @@ struct ChatView: View {
     }
 
     private func modelName(_ chat: ChatModel) -> String {
-        let id = chat.conversation?.modelId ?? app.currentModelId
-        return app.installedChatModels().first { $0.manifest.id == id }?.manifest.displayName
-            ?? app.currentModelDisplayName
+        app.displayName(forModelId: chat.conversation?.modelId ?? app.currentModelId)
     }
 
     // MARK: - Transcript

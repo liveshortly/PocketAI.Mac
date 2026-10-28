@@ -15,10 +15,19 @@ struct NewChatMenu: View {
     var body: some View {
         Menu {
             let models = app.installedChatModels()
-            if models.isEmpty {
+            if models.isEmpty, !app.appleIntelligenceAvailable {
                 Button("Download a model…") { app.selection = .models }
             } else {
                 Section("Chat on this Mac") {
+                    if app.appleIntelligenceAvailable {
+                        Button {
+                            app.newChat(modelId: AppModel.appleIntelligenceId)
+                            NotificationCenter.default.post(
+                                name: .pocketConversationsChanged, object: nil)
+                        } label: {
+                            Text("Apple Intelligence · system")
+                        }
+                    }
                     ForEach(models, id: \.manifest.id) { entry in
                         Button {
                             app.newChat(modelId: entry.manifest.id)

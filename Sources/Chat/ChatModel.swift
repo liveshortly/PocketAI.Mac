@@ -73,12 +73,22 @@ final class ChatModel {
     /// Returns false when nothing is installed to fall back to.
     @discardableResult
     private func rebindModelIfMissing() -> Bool {
+        // Apple's system model needs no download and has no catalog entry;
+        // it is available whenever the engine says so.
+        if conversation?.modelId == AppleFoundationModelsEngine.modelId,
+           AppleFoundationModelsEngine.isAvailable {
+            return true
+        }
         let installed = core.catalog(
             filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: true)
         ).filter {
             $0.manifest.modalities.contains(.text) || $0.manifest.modalities.contains(.vision)
         }
         guard !installed.isEmpty else {
+            if AppleFoundationModelsEngine.isAvailable {
+                setModel(AppleFoundationModelsEngine.modelId)
+                return true
+            }
             errorText = "No model is installed yet — open the model library and download one."
             return false
         }

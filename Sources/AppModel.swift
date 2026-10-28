@@ -216,9 +216,26 @@ public final class AppModel {
     private func refreshCurrentModelDisplayName() {
         let catalog = core.catalog(
             filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
+        if currentModelId == Self.appleIntelligenceId {
+            currentModelDisplayName = "Apple Intelligence"
+            return
+        }
         currentModelDisplayName =
             catalog.first(where: { $0.manifest.id == currentModelId })?.manifest.displayName
             ?? "Qwen3 4B"
+    }
+
+    /// True when this Mac can run Apple's on-device system model.
+    public var appleIntelligenceAvailable: Bool { AppleFoundationModelsEngine.isAvailable }
+    public static let appleIntelligenceId = AppleFoundationModelsEngine.modelId
+
+    /// A display name for any model id, including the ones that have no
+    /// catalog entry because they need no download.
+    public func displayName(forModelId id: String) -> String {
+        if id == Self.appleIntelligenceId { return "Apple Intelligence" }
+        return core.catalog(
+            filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false)
+        ).first { $0.manifest.id == id }?.manifest.displayName ?? id
     }
 
     /// Installed chat-capable models, for the composer's model picker.
