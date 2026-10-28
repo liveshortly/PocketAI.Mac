@@ -8,7 +8,7 @@ targets:
   PocketAI:
     type: application
     platform: macOS
-    deploymentTarget: "15.0"
+    deploymentTarget: "14.0"
     sources: [Sources]
     scheme:
       testTargets:
@@ -23,6 +23,8 @@ targets:
         product: PocketMLX
       - package: PocketCore
         product: PocketImageGen
+      - package: PocketCore
+        product: PocketLiveShortly
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.getpocketai.app
@@ -45,7 +47,7 @@ targets:
   PocketAITests:
     type: bundle.unit-test
     platform: macOS
-    deploymentTarget: "15.0"
+    deploymentTarget: "14.0"
     sources: [Tests]
     dependencies:
       - target: PocketAI
@@ -67,7 +69,7 @@ targets:
   PocketAIUITests:
     type: bundle.ui-testing
     platform: macOS
-    deploymentTarget: "15.0"
+    deploymentTarget: "14.0"
     sources: [UITests]
     dependencies:
       - target: PocketAI

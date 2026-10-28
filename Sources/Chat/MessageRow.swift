@@ -1,0 +1,237 @@
+import AppKit
+import PocketKit
+import PocketUI
+import SwiftUI
+
+/// One persisted turn. User turns are right-aligned accent cards; assistant
+/// turns are full-width prose with fenced code lifted into `CodeBlock`.
+struct MessageRow: View {
+    let message: Message
+
+    var body: some View {
+        if message.isUser {
+            UserTurn(message: message)
+        } else {
+            AssistantTurn(
+                text: message.plainText,
+                reasoning: message.reasoning,
+                stats: message.stats,
+                status: message.status)
+        }
+    }
+}
+
+struct UserTurn: View {
+    let message: Message
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: PocketSpacing.s4) {
+            HStack(spacing: PocketSpacing.s8) {
+                HUDLabel("you")
+                Text(
+                    Date(timeIntervalSince1970: TimeInterval(message.createdAt))
+                        .formatted(date: .omitted, time: .shortened)
+                )
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
+            }
+            if !message.imagePaths.isEmpty {
+                HStack(spacing: PocketSpacing.s4) {
+                    ForEach(message.imagePaths, id: \.self) { path in
+                        if let image = NSImage(contentsOfFile: path) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 92, height: 92)
+                                .clipShape(
+                                    RoundedRectangle(cornerRadius: HUD.radius, style: .continuous))
+                        }
+                    }
+                }
+            }
+            if !message.plainText.isEmpty {
+                Text(message.plainText)
+                    .font(.pocket(.body))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, PocketSpacing.s12)
+                    .padding(.vertical, PocketSpacing.s8)
+                    .hudAccentPanel()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
+struct AssistantTurn: View {
+    let text: String
+    var reasoning: String?
+    var stats: GenerateStats?
+    var status: MessageStatus = .done
+    @State private var showReasoning = false
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            HStack(spacing: PocketSpacing.s8) {
+                HUDLabel("◆ assistant", tint: PocketColor.accent)
+                if status == .cancelled {
+                    HUDChip(text: "stopped")
+                } else if status == .error {
+                    HUDChip(text: "failed", tint: PocketColor.statusBad)
+                }
+                Spacer(minLength: 0)
+                if !text.isEmpty {
+                    Button {
+                        copy()
+                    } label: {
+                        HUDLabel(copied ? "copied" : "copy")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy this reply")
+                }
+            }
+            if let reasoning, !reasoning.isEmpty {
+                DisclosureGroup(isExpanded: $showReasoning) {
+                    Text(reasoning)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+                        .textSelection(.enabled)
+                        .padding(.top, PocketSpacing.s4)
+                } label: {
+                    HUDLabel("reasoning")
+                }
+                .padding(PocketSpacing.s8)
+                .hudPanel(PocketColor.bgSunken)
+            }
+            MarkdownText(text)
+            if let stats {
+                HUDLabel(
+                    "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens · \(stats.ttftMs) ms to first token"
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+        Task {
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            copied = false
+        }
+    }
+}
+
+/// The reply currently arriving, with a live caret at the tail.
+struct StreamingRow: View {
+    let text: String
+    let reasoning: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            HStack(spacing: PocketSpacing.s8) {
+                HUDLabel("◆ assistant", tint: PocketColor.accent)
+                PocketMarkView(state: .working(tokPerSec: nil), size: 12)
+            }
+            if text.isEmpty && reasoning.isEmpty {
+                HUDLabel("thinking…")
+            } else {
+                MarkdownText(text, caret: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Renders assistant text: fenced code becomes `CodeBlock`, the rest is
+/// inline-markdown prose. Deliberately small — a full markdown engine is not
+/// what makes a reply readable, correct code framing is.
+struct MarkdownText: View {
+    private let blocks: [Block]
+    private let caret: Bool
+
+    init(_ text: String, caret: Bool = false) {
+        self.blocks = Block.parse(text)
+        self.caret = caret
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                switch block {
+                case .prose(let content):
+                    Text(inlineMarkdown(content))
+                        .font(.pocket(.reading))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case .code(let code, let language):
+                    CodeBlock(code: code, language: language)
+                }
+            }
+            if caret {
+                Rectangle()
+                    .fill(PocketColor.accent)
+                    .frame(width: 7, height: 14)
+                    .opacity(0.85)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func inlineMarkdown(_ string: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: string,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(string)
+    }
+
+    enum Block {
+        case prose(String)
+        case code(String, String?)
+
+        /// Splits on ``` fences. An unterminated fence (mid-stream) still
+        /// renders as code, so a block does not flicker into prose and back.
+        static func parse(_ text: String) -> [Block] {
+            var out: [Block] = []
+            var prose: [String] = []
+            var code: [String] = []
+            var language: String?
+            var inFence = false
+
+            func flushProse() {
+                let joined = prose.joined(separator: "\n").trimmingCharacters(
+                    in: .whitespacesAndNewlines)
+                if !joined.isEmpty { out.append(.prose(joined)) }
+                prose = []
+            }
+
+            for line in text.components(separatedBy: "\n") {
+                if line.hasPrefix("```") {
+                    if inFence {
+                        out.append(.code(code.joined(separator: "\n"), language))
+                        code = []
+                        language = nil
+                        inFence = false
+                    } else {
+                        flushProse()
+                        let tag = line.dropFirst(3).trimmingCharacters(in: .whitespaces)
+                        language = tag.isEmpty ? nil : tag
+                        inFence = true
+                    }
+                } else if inFence {
+                    code.append(line)
+                } else {
+                    prose.append(line)
+                }
+            }
+            if inFence, !code.isEmpty {
+                out.append(.code(code.joined(separator: "\n"), language))
+            }
+            flushProse()
+            return out
+        }
+    }
+}
