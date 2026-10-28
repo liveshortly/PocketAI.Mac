@@ -2,3 +2,9 @@
 /DerivedData
 .DS_Store
 /PocketAI.xcodeproj
+
+# Build output
+build/
+build-uitest/
+DerivedData/
+*.xcresult
