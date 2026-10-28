@@ -93,6 +93,26 @@ final class PocketAITests: XCTestCase {
         }
     }
 
+    // MARK: - Chat naming
+
+    /// Models decorate their answers; a title has to survive that or chats end
+    /// up named `"**Sure! Here is a title:**`.
+    func testChatTitleCleaning() {
+        XCTAssertEqual(ChatModel.cleanTitle("Rust borrow checker help"),
+                       "Rust borrow checker help")
+        XCTAssertEqual(ChatModel.cleanTitle("  \"Debugging a segfault\"  "),
+                       "Debugging a segfault")
+        XCTAssertEqual(ChatModel.cleanTitle("## Swift concurrency basics"),
+                       "Swift concurrency basics")
+        // Reasoning first, title last.
+        XCTAssertEqual(ChatModel.cleanTitle("Let me think.\n\nPlanning a trip"),
+                       "Planning a trip")
+        // Not titles: empty, too long, too many words.
+        XCTAssertNil(ChatModel.cleanTitle("   "))
+        XCTAssertNil(ChatModel.cleanTitle(String(repeating: "a", count: 80)))
+        XCTAssertNil(ChatModel.cleanTitle("one two three four five six seven eight nine"))
+    }
+
     // MARK: - GGUF support
 
     /// GGUF models must be reachable from the library, not just MLX ones: the

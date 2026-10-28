@@ -166,6 +166,7 @@ final class ChatModel {
                         self.conversation = self.core.conversation(id: self.conversationId)
                         NotificationCenter.default.post(
                             name: .pocketConversationsChanged, object: nil)
+                        self.nameIfUntitled()
                     }
                 }
                 self?.finishStream()
@@ -177,6 +178,76 @@ final class ChatModel {
                 self.finishStream()
             }
         }
+    }
+
+    /// Gives a new chat a real name, written by the model that answered it.
+    ///
+    /// Only after the first exchange, only when the user has not named it, and
+    /// best-effort: a failure leaves the chat as it was rather than surfacing
+    /// an error for something nobody asked for.
+    private func nameIfUntitled() {
+        guard (conversation?.title ?? "").isEmpty,
+              messages.count >= 2,
+              let question = messages.first(where: { $0.isUser })?.plainText,
+              let answer = messages.last(where: { !$0.isUser })?.plainText
+        else { return }
+
+        let modelId = conversation?.modelId ?? ""
+        let core = self.core
+        let conversationId = self.conversationId
+        Task { [weak self] in
+            let prompt = """
+                Give this conversation a title of at most six words. Reply with the \
+                title alone — no quotes, no punctuation at the end, no preamble.
+
+                Message: \(question.prefix(500))
+                Reply: \(answer.prefix(500))
+                """
+            // A scratch conversation keeps the naming turn out of the thread
+            // and out of the sidebar.
+            guard let scratch = try? core.createConversation(
+                NewConversation(title: "Naming", projectId: nil, modelId: modelId))
+            else { return }
+            try? core.archiveConversation(id: scratch.id, archived: true)
+            defer { try? core.deleteConversation(id: scratch.id) }
+
+            var titled = ""
+            do {
+                for try await event in core.sendMessage(
+                    conversationId: scratch.id, input: UserInput(parts: [.text(text: prompt)])
+                ) {
+                    if case .delta(let delta) = event { titled += delta.text }
+                    if titled.count > 120 { break }  // a runaway answer is not a title
+                }
+            } catch {
+                return
+            }
+
+            guard let title = Self.cleanTitle(titled) else { return }
+            await MainActor.run {
+                guard let self, (self.conversation?.title ?? "").isEmpty else { return }
+                try? core.renameConversation(id: conversationId, title: title)
+                self.conversation = core.conversation(id: conversationId)
+                NotificationCenter.default.post(
+                    name: .pocketConversationsChanged, object: nil)
+            }
+        }
+    }
+
+    /// Takes the model's first line, strips the decoration models like to add,
+    /// and rejects anything that does not look like a title.
+    static func cleanTitle(_ raw: String) -> String? {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Some models answer with reasoning first; the title is the last
+        // non-empty line in that case, the only line otherwise.
+        text = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty } ?? text
+        text = text.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’ .:-–—*#"))
+        guard !text.isEmpty, text.count <= 60 else { return nil }
+        let words = text.split(separator: " ")
+        guard words.count <= 8 else { return nil }
+        return text
     }
 
     private func apply(_ delta: GenerateDelta) {
