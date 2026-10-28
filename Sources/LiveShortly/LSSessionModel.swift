@@ -90,6 +90,7 @@ final class LSSessionModel {
             rebuild()
             errorText = nil
             loaded = true
+            LSSeen.mark(sessionID, max(loadedDetail.eventCount, events.count))
             if loadedDetail.isLive { startStream() }
         } catch {
             errorText = error.localizedDescription

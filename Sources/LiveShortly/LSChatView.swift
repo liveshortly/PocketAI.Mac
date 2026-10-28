@@ -54,7 +54,13 @@ struct LSChatView: View {
             await model.open()
             composerFocused = true
         }
-        .onDisappear { session?.stop() }
+        .onDisappear {
+            if let session {
+                LSSeen.mark(
+                    sessionID, max(session.detail?.eventCount ?? 0, session.events.count))
+            }
+            session?.stop()
+        }
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { now in
             session?.expireTypers(now)
         }

@@ -305,9 +305,26 @@ struct SessionRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            if unread > 0 {
+                Text(unread > 99 ? "99+" : "\(unread)")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.accentOnAccent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(LSColor.accent))
+                    .accessibilityLabel("\(unread) new events")
+            }
             if session.isLive { HUDDot(pulsing: true) }
         }
         .padding(.vertical, 1)
+    }
+
+    /// Events since this session was last opened here. Sessions never opened
+    /// on this Mac stay quiet rather than all shouting at once.
+    private var unread: Int {
+        let seen = LSSeen.count(session.id)
+        guard seen > 0 else { return 0 }
+        return max(0, session.eventCount - seen)
     }
 
     private var subtitle: String {
