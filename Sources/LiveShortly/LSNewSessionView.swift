@@ -212,10 +212,16 @@ struct LSNewSessionView: View {
                     hostID: host.id, agent: chosenAgent, cwd: chosenCwd,
                     model: model, bypassPermissions: bypass)
                 if let spawn = created.spawn, spawn.status == "failed" {
-                    errorText = "The machine refused to start the agent: \(spawn.error ?? "unknown error")"
+                    // Stay on this screen so the reason is readable: navigating
+                    // would destroy the view showing it and drop the user into
+                    // an empty session with no agent behind it.
+                    errorText = "The session was created, but the machine refused to start "
+                        + "the agent: \(spawn.error ?? "unknown error"). "
+                        + "It is in the sidebar if you still want to open it."
+                } else {
+                    // Straight into the session, as a new chat opens its thread.
+                    app.selection = .session(created.id)
                 }
-                // Straight into the session, same as a new chat opens its thread.
-                app.selection = .session(created.id)
             } catch {
                 errorText = "Couldn't start the session: \(error.localizedDescription)"
             }

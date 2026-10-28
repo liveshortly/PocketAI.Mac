@@ -63,9 +63,15 @@ struct ComposerTextView: NSViewRepresentable {
             textView.needsDisplay = true
         }
         textView.placeholder = placeholder
-        if isFocused, textView.window?.firstResponder !== textView {
+        // Claim focus only on a fresh request. Re-asserting it on every
+        // update stole the caret back from wherever the user had clicked —
+        // once per streamed token.
+        if isFocused, !context.coordinator.didTakeFocus,
+           textView.window?.firstResponder !== textView {
+            context.coordinator.didTakeFocus = true
             DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
         }
+        if !isFocused { context.coordinator.didTakeFocus = false }
         context.coordinator.resize()
     }
 
@@ -75,6 +81,8 @@ struct ComposerTextView: NSViewRepresentable {
         var parent: ComposerTextView
         weak var textView: ComposerNSTextView?
         weak var scrollView: NSScrollView?
+        /// Guards against re-stealing first responder on every update.
+        var didTakeFocus = false
 
         init(_ parent: ComposerTextView) {
             self.parent = parent

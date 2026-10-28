@@ -11,7 +11,8 @@ struct LSChatView: View {
     @State private var session: LSSessionModel?
     @State private var draft = ""
     @State private var showRename = false
-    @State private var showProbeDetail = false
+    /// The probe being reviewed, captured when the sheet opens.
+    @State private var reviewing: LSEvent?
     @State private var showShare = false
     @State private var confirmEnd = false
     @State private var confirmDelete = false
@@ -29,8 +30,8 @@ struct LSChatView: View {
                     LSPermissionBar(
                         probe: probe,
                         toolCall: session.toolCall(before: probe),
-                        onReview: { showProbeDetail = true },
-                        onDecide: { session.decide($0) })
+                        onReview: { reviewing = probe },
+                        onDecide: { await session.decide($0) })
                     .padding(.horizontal, PocketSpacing.s16)
                     .padding(.bottom, PocketSpacing.s8)
                 }
@@ -77,13 +78,14 @@ struct LSChatView: View {
                 .environment(app)
             }
         }
-        .sheet(isPresented: $showProbeDetail) {
-            if let session, let probe = session.pendingProbe {
-                LSProbeDetailView(
-                    probe: probe,
-                    toolCall: session.toolCall(before: probe),
-                    onDecide: { session.decide($0) })
-            }
+        .sheet(item: $reviewing) { probe in
+            LSProbeDetailView(
+                probe: probe,
+                toolCall: session?.toolCall(before: probe),
+                onDecide: { decision in
+                    guard let session else { return false }
+                    return await session.decide(decision)
+                })
         }
         .confirmationDialog(
             "End this session? The agent stops where it is.",

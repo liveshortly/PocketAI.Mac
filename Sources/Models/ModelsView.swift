@@ -13,6 +13,7 @@ struct ModelsView: View {
     @State private var hubResults: [CatalogEntry] = []
     @State private var hubError: String?
     @State private var refreshTask: Task<Void, Never>?
+    @State private var searching = false
     @State private var confirmDelete: CatalogEntry?
 
     var body: some View {
@@ -141,9 +142,12 @@ struct ModelsView: View {
     }
 
     private var filtered: [CatalogEntry] {
+        // Build the in-flight set once; testing `downloading` per row rescanned
+        // the whole catalog for every entry.
+        let inFlight = Set(downloading.map(\.manifest.id))
         var list = showInstalledOnly ? installed : entries
         list = list.filter { entry in
-            !downloading.contains { $0.manifest.id == entry.manifest.id }
+            !inFlight.contains(entry.manifest.id)
                 && formatFilter.accepts(entry.manifest.format)
         }
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -185,15 +189,30 @@ struct ModelsView: View {
             return
         }
         hubError = nil
-        var found: [CatalogEntry] = []
-        var failures: [String] = []
-        for format in formatFilter.hubFormats {
-            do {
-                found += try app.core.searchHub(query: query, format: format)
-            } catch {
-                failures.append(error.localizedDescription)
-            }
+        searching = true
+        let core = app.core
+        let formats = formatFilter.hubFormats
+        Task {
+            // Hugging Face search is a blocking network call at the FFI
+            // boundary; running it inline from onSubmit froze the window.
+            let (found, failures) = await Task.detached {
+                var found: [CatalogEntry] = []
+                var failures: [String] = []
+                for format in formats {
+                    do {
+                        found += try core.searchHub(query: query, format: format)
+                    } catch {
+                        failures.append(error.localizedDescription)
+                    }
+                }
+                return (found, failures)
+            }.value
+            apply(found: found, failures: failures)
+            searching = false
         }
+    }
+
+    private func apply(found: [CatalogEntry], failures: [String]) {
         // Drop anything already in the local catalog so the Hugging Face
         // section only shows what is genuinely new.
         let known = Set(entries.map(\.manifest.id))

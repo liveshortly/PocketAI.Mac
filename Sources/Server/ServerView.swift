@@ -11,6 +11,8 @@ struct ServerView: View {
     @State private var apiKey: String?
     @State private var copied = false
     @State private var refreshTask: Task<Void, Never>?
+    /// True while the toggle is being seeded from the server's own state.
+    @State private var syncingFromStatus = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,7 +42,9 @@ struct ServerView: View {
         }
         .background(PocketColor.bgCanvas)
         .task {
+            syncingFromStatus = true
             lanEnabled = app.serverStatus.lanEnabled
+            syncingFromStatus = false
             apiKey = app.core.hasLocalApiKey() ? "••••••••••••••••" : nil
             startRefreshing()
         }
@@ -87,8 +91,13 @@ struct ServerView: View {
                 .tint(PocketColor.accent)
                 .font(.pocket(.body))
                 .onChange(of: lanEnabled) { _, enabled in
-                    guard app.serverStatus.running else { return }
-                    // Rebinding is the only way to change the interface.
+                    // Only a human flip rebinds. Seeding this toggle from the
+                    // live status on appear used to trip this handler and
+                    // bounce a running server, killing a paired device's
+                    // in-flight request.
+                    guard !syncingFromStatus, app.serverStatus.running,
+                          enabled != app.serverStatus.lanEnabled
+                    else { return }
                     app.stopServer()
                     app.startServer(lan: enabled)
                 }

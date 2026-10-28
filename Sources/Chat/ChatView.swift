@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var showRename = false
     @State private var isDropTargeted = false
     @State private var dictation = Dictation()
+    @State private var pinnedToBottom = true
     @FocusState private var composerFocused: Bool
 
     let conversationId: String
@@ -39,18 +40,18 @@ struct ChatView: View {
         .onChange(of: chat?.tokensPerSecond ?? 0) { _, rate in
             app.activeTokPerSec = rate
         }
-        .onChange(of: app.pendingCommand) { _, command in
-            guard let command, let chat else { return }
+        .onChange(of: app.commandSerial) { _, _ in
+            guard let command = app.pendingCommand, let chat else { return }
             switch command {
             case .focusComposer:
                 composerFocused = true
-                app.pendingCommand = nil
+                app.clearCommand()
             case .stopGeneration:
                 chat.stop()
-                app.pendingCommand = nil
+                app.clearCommand()
             case .regenerate:
                 chat.regenerate()
-                app.pendingCommand = nil
+                app.clearCommand()
             default:
                 break
             }
@@ -143,6 +144,8 @@ struct ChatView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .disabled(chat.isStreaming)
+        .help(chat.isStreaming ? "Stop generating to switch models" : "Model for this chat")
     }
 
     private func modelName(_ chat: ChatModel) -> String {
@@ -164,9 +167,11 @@ struct ChatView: View {
                         }
                         .padding(.top, 80)
                     }
-                    ForEach(chat.messages) { message in
-                        MessageRow(message: message)
-                            .id(message.id)
+                    ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, message in
+                        MessageRow(
+                            message: message,
+                            grouped: isGrouped(chat.messages, index))
+                        .id(message.id)
                     }
                     if chat.isStreaming {
                         StreamingRow(
@@ -175,23 +180,59 @@ struct ChatView: View {
                         .id("streaming")
                     }
                     if let error = chat.errorText {
-                        Text(error)
-                            .font(.pocket(.footnote))
-                            .foregroundStyle(PocketColor.statusBad)
-                            .padding(PocketSpacing.s12)
-                            .hudPanel(PocketColor.statusBad.opacity(0.08))
+                        ChatErrorRow(message: error) { chat.regenerate() }
                     }
-                    Color.clear.frame(height: 1).id("tail")
+                    // Whether this sentinel is on screen tells us if the
+                    // reader is at the tail — `onScrollGeometryChange` would
+                    // be cleaner but is macOS 15 only.
+                    Color.clear
+                        .frame(height: 1)
+                        .id("tail")
+                        .onAppear { pinnedToBottom = true }
+                        .onDisappear { pinnedToBottom = false }
                 }
                 .padding(.horizontal, PocketSpacing.s24)
                 .padding(.vertical, PocketSpacing.s16)
                 .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
-            .onChange(of: chat.messages.count) { _, _ in scroll(proxy) }
-            .onChange(of: chat.streamingText) { _, _ in scroll(proxy) }
+            // Only follow the stream while the reader is already at the tail;
+            // yanking the view down while they read back is the worst thing a
+            // transcript can do.
+            .onChange(of: chat.messages.count) { _, _ in
+                if pinnedToBottom { scroll(proxy) }
+            }
+            .onChange(of: chat.streamingText) { _, _ in
+                if pinnedToBottom { scroll(proxy) }
+            }
+            .overlay(alignment: .bottom) {
+                if !pinnedToBottom {
+                    Button {
+                        pinnedToBottom = true
+                        scroll(proxy)
+                    } label: {
+                        Label("Jump to latest", systemImage: "arrow.down")
+                            .font(.pocket(.caption))
+                            .padding(.horizontal, PocketSpacing.s12)
+                            .padding(.vertical, 6)
+                            .hudPanel(PocketColor.bgRaised)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, PocketSpacing.s12)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// True when this turn continues the previous author's run, so the row can
+    /// drop its repeated header.
+    private func isGrouped(_ messages: [Message], _ index: Int) -> Bool {
+        guard index > 0 else { return false }
+        let previous = messages[index - 1]
+        let current = messages[index]
+        return previous.role == current.role
+            && current.createdAt - previous.createdAt < 300
     }
 
     private func scroll(_ proxy: ScrollViewProxy) {

@@ -58,7 +58,9 @@ struct QuickAskPanel: View {
         .padding(PocketSpacing.s12)
         .background(PocketColor.bgSurface)
         .onAppear { focused = true }
-        .onDisappear { streamTask?.cancel() }
+        // Cancel the generation itself, not just our reader: otherwise the
+        // model keeps decoding with nobody listening.
+        .onDisappear { stop() }
     }
 
     private var header: some View {

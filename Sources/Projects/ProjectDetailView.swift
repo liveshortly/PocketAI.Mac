@@ -17,6 +17,8 @@ struct ProjectDetailView: View {
     @State private var showRename = false
     @State private var confirmDelete = false
     @State private var importError: String?
+    /// Kept apart from `importError` so it cannot surface under Documents.
+    @State private var instructionsNote: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -94,10 +96,19 @@ struct ProjectDetailView: View {
                 .frame(height: 110)
                 .padding(PocketSpacing.s8)
                 .hudPanel(PocketColor.bgCanvas)
-                .onChange(of: instructions) { _, _ in instructionsDirty = true }
+                .onChange(of: instructions) { _, value in
+                    // Seeding from the stored project is not an edit.
+                    instructionsDirty = value != (project?.instructions ?? "")
+                }
             Text("Every chat in this project starts with these instructions.")
                 .font(.pocket(.caption))
                 .foregroundStyle(PocketColor.textTertiary)
+            if let instructionsNote {
+                Text(instructionsNote)
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.statusWarn)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -201,6 +212,7 @@ struct ProjectDetailView: View {
         project = app.core.listProjects().first { $0.id == projectId }
         instructions = project?.instructions ?? ""
         instructionsDirty = false
+        instructionsNote = nil
         documents = app.core.listDocuments(projectId: projectId)
         chats = app.core.conversations(
             query: ConversationQuery(search: nil, archived: false, limit: 100, offset: 0)
@@ -219,7 +231,7 @@ struct ProjectDetailView: View {
             project = updated
         }
         instructionsDirty = false
-        importError = """
+        instructionsNote = """
             Kept for this window only — the core has no call to store project \
             instructions yet, so this does not survive a relaunch.
             """

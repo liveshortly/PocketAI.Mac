@@ -9,8 +9,8 @@ struct LSPermissionBar: View {
     let probe: LSEvent
     var toolCall: LSEvent?
     let onReview: () -> Void
-    let onDecide: (String) -> Void
-    @State private var answered = false
+    let onDecide: (String) async -> Bool
+    @State private var answering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
@@ -52,7 +52,7 @@ struct LSPermissionBar: View {
                     .buttonStyle(.hudDestructive)
                 Spacer(minLength: 0)
             }
-            .disabled(answered)
+            .disabled(answering)
         }
         .padding(PocketSpacing.s12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -65,8 +65,12 @@ struct LSPermissionBar: View {
     }
 
     private func answer(_ decision: String) {
-        answered = true
-        onDecide(decision)
+        answering = true
+        Task {
+            // Re-enable on failure: a dropped verdict must not leave the only
+            // way to unblock the agent permanently greyed out.
+            if await onDecide(decision) == false { answering = false }
+        }
     }
 }
 
@@ -75,7 +79,7 @@ struct LSPermissionBar: View {
 struct LSProbeDetailView: View {
     let probe: LSEvent
     var toolCall: LSEvent?
-    let onDecide: (String) -> Void
+    let onDecide: (String) async -> Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -115,12 +119,12 @@ struct LSProbeDetailView: View {
             HUDRule()
             HStack(spacing: PocketSpacing.s12) {
                 Button("Deny") {
-                    onDecide("deny")
+                    Task { _ = await onDecide("deny") }
                     dismiss()
                 }
                 .buttonStyle(.hudDestructive)
                 Button("Allow") {
-                    onDecide("allow")
+                    Task { _ = await onDecide("allow") }
                     dismiss()
                 }
                 .buttonStyle(.hudProminent)

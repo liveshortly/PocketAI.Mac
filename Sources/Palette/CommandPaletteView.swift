@@ -170,7 +170,7 @@ struct CommandPaletteView: View {
                 Item(
                     id: "action-new-session", kind: .action, title: "New LiveShortly session",
                     subtitle: "⇧⌘N", symbol: "bolt", live: false
-                ) { app.pendingCommand = .newLiveSession },
+                ) { app.post(.newLiveSession) },
                 at: 1)
         }
         return list

@@ -191,8 +191,18 @@ final class LSSessionModel {
         Task { await client.typing(sessionID) }
     }
 
-    func decide(_ decision: String) {
-        Task { try? await client.decide(sessionID, decision: decision) }
+    /// Answers a permission probe. Returns false when the verdict did not
+    /// reach the server, so the caller can re-enable its buttons instead of
+    /// leaving the agent blocked behind a dead bar.
+    @discardableResult
+    func decide(_ decision: String) async -> Bool {
+        do {
+            try await client.decide(sessionID, decision: decision)
+            return true
+        } catch {
+            errorText = "Couldn't send that answer: \(error.localizedDescription)"
+            return false
+        }
     }
 
     func setModel(_ model: String) {

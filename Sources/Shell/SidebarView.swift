@@ -48,10 +48,10 @@ struct SidebarView: View {
             lastSessionLoad = nil
             reloadSessions()
         }
-        .onChange(of: app.pendingCommand) { _, command in
-            if command == .newLiveSession {
+        .onChange(of: app.commandSerial) { _, _ in
+            if app.pendingCommand == .newLiveSession {
                 app.selection = .newSession
-                app.pendingCommand = nil
+                app.clearCommand()
             }
         }
         .onReceive(

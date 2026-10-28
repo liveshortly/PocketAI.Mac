@@ -55,12 +55,50 @@ final class ChatModel {
     func send(_ text: String, attachments: [URL] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+        guard rebindModelIfMissing() else { return }
 
         var parts: [ContentPart] = attachments.map { .imageRef(path: $0.path) }
         if !trimmed.isEmpty { parts.append(.text(text: trimmed)) }
         run { [core, conversationId] in
             core.sendMessage(conversationId: conversationId, input: UserInput(parts: parts))
         }
+    }
+
+    /// A chat remembers the model it was created with, which may since have
+    /// been deleted from the library. Re-point it at an installed one rather
+    /// than letting the send fail somewhere inside the engine.
+    /// Returns false when nothing is installed to fall back to.
+    @discardableResult
+    private func rebindModelIfMissing() -> Bool {
+        let installed = core.catalog(
+            filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: true)
+        ).filter {
+            $0.manifest.modalities.contains(.text) || $0.manifest.modalities.contains(.vision)
+        }
+        guard !installed.isEmpty else {
+            errorText = "No model is installed yet — open the model library and download one."
+            return false
+        }
+        let current = conversation?.modelId
+        if let current, installed.contains(where: { $0.manifest.id == current }) { return true }
+        guard let replacement = installed.first else { return false }
+        setModel(replacement.manifest.id)
+        return true
+    }
+
+    /// True when this chat's model can take images.
+    var modelSupportsVision: Bool {
+        let id = conversation?.modelId
+        return core.catalog(
+            filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: true)
+        ).first { $0.manifest.id == id }?.manifest.modalities.contains(.vision) ?? false
+    }
+
+    /// An installed vision model to point the user at, if there is one.
+    var suggestedVisionModel: String? {
+        core.catalog(
+            filter: CatalogFilter(modality: .vision, curatedOnly: false, installedOnly: true)
+        ).first?.manifest.displayName
     }
 
     /// Drops the trailing assistant reply and re-runs from existing history.

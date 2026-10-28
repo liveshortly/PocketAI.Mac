@@ -43,7 +43,7 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Chat") { app.newChat() }
                 .keyboardShortcut("n", modifiers: .command)
-            Button("New LiveShortly Session…") { app.pendingCommand = .newLiveSession }
+            Button("New LiveShortly Session…") { app.post(.newLiveSession) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(!app.liveShortly.isConnected)
         }
@@ -53,7 +53,7 @@ struct AppCommands: Commands {
             Divider()
         }
         CommandMenu("Chat") {
-            Button("Focus Composer") { app.pendingCommand = .focusComposer }
+            Button("Focus Composer") { app.post(.focusComposer) }
                 .keyboardShortcut("l", modifiers: .command)
             // Reaches every generating chat, not just the visible one — a
             // reply can still be arriving in a conversation you switched away
@@ -61,7 +61,7 @@ struct AppCommands: Commands {
             Button("Stop Generating") { app.stopAllGeneration() }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(!app.isGenerating)
-            Button("Regenerate Reply") { app.pendingCommand = .regenerate }
+            Button("Regenerate Reply") { app.post(.regenerate) }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(app.isGenerating)
             Divider()

@@ -101,7 +101,20 @@ public final class AppModel {
         case openConversation(String)
         case newLiveSession
     }
-    public var pendingCommand: Command?
+    /// Commands are consumed by the focused view and cleared. Each post also
+    /// carries a serial so sending the SAME command twice still registers as a
+    /// change — otherwise a latched value made the next ⌘L do nothing.
+    public private(set) var pendingCommand: Command?
+    public private(set) var commandSerial = 0
+
+    public func post(_ command: Command) {
+        pendingCommand = command
+        commandSerial += 1
+    }
+
+    public func clearCommand() {
+        pendingCommand = nil
+    }
 
     /// Incoming pairing request awaiting Allow/Deny, polled app-wide so the
     /// approval sheet can present from any screen.
@@ -261,7 +274,7 @@ public final class AppModel {
         // Picking a model for a new chat makes it the default for the next one.
         if let modelId, modelId != currentModelId { currentModelId = modelId }
         selection = .chat(conversation.id)
-        pendingCommand = .focusComposer
+        post(.focusComposer)
         return conversation.id
     }
 

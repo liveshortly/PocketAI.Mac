@@ -1,4 +1,5 @@
 import PocketKit
+import ServiceManagement
 import PocketLiveShortly
 import PocketUI
 import SwiftUI
@@ -24,13 +25,22 @@ struct SettingsView: View {
 
 struct GeneralSettings: View {
     @Environment(AppModel.self) private var app
-    @AppStorage("app.getpocketai.mac.launchAtLogin") private var launchAtLogin = false
     @AppStorage("app.getpocketai.mac.appearance") private var appearance = "auto"
+    /// Read from the login-item service itself, so the switch shows what macOS
+    /// actually does rather than what was last tapped.
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var loginItemError: String?
 
     var body: some View {
         Form {
             Section {
                 Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, enabled in setLoginItem(enabled) }
+                if let loginItemError {
+                    Text(loginItemError)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusBad)
+                }
                 Picker("Appearance", selection: $appearance) {
                     Text("Auto").tag("auto")
                     Text("Light").tag("light")
@@ -72,6 +82,24 @@ struct GeneralSettings: View {
             case "dark": NSAppearance(named: .darkAqua)
             default: nil
             }
+        }
+    }
+
+    /// Registers or removes the app as a login item. An unsigned local build
+    /// is refused by macOS, so the switch reports that instead of lying.
+    private func setLoginItem(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            loginItemError = nil
+        } catch {
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            loginItemError =
+                "macOS refused to change this: \(error.localizedDescription). "
+                + "A signed build is usually required."
         }
     }
 }

@@ -7,34 +7,41 @@ import SwiftUI
 /// turns are full-width prose with fenced code lifted into `CodeBlock`.
 struct MessageRow: View {
     let message: Message
+    /// Continues the previous turn by the same author, so the header is
+    /// dropped — the same grouping the session transcript uses.
+    var grouped = false
 
     var body: some View {
         if message.isUser {
-            UserTurn(message: message)
+            UserTurn(message: message, grouped: grouped)
         } else {
             AssistantTurn(
                 text: message.plainText,
                 reasoning: message.reasoning,
                 stats: message.stats,
                 status: message.status,
-                messageId: message.id)
+                messageId: message.id,
+                grouped: grouped)
         }
     }
 }
 
 struct UserTurn: View {
     let message: Message
+    var grouped = false
 
     var body: some View {
         VStack(alignment: .trailing, spacing: PocketSpacing.s4) {
-            HStack(spacing: PocketSpacing.s8) {
-                HUDLabel("you")
-                Text(
-                    Date(timeIntervalSince1970: TimeInterval(message.createdAt))
-                        .formatted(date: .omitted, time: .shortened)
-                )
-                .font(.pocket(.caption))
-                .foregroundStyle(PocketColor.textTertiary)
+            if !grouped {
+                HStack(spacing: PocketSpacing.s8) {
+                    HUDLabel("you")
+                    Text(
+                        Date(timeIntervalSince1970: TimeInterval(message.createdAt))
+                            .formatted(date: .omitted, time: .shortened)
+                    )
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+                }
             }
             if !message.imagePaths.isEmpty {
                 HStack(spacing: PocketSpacing.s4) {
@@ -69,6 +76,7 @@ struct AssistantTurn: View {
     var stats: GenerateStats?
     var status: MessageStatus = .done
     var messageId: String = ""
+    var grouped = false
     @State private var showReasoning = false
     @State private var copied = false
     @State private var speech = ReadAloud.shared
@@ -76,7 +84,9 @@ struct AssistantTurn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack(spacing: PocketSpacing.s8) {
-                HUDLabel("◆ assistant", tint: PocketColor.accent)
+                if !grouped {
+                    HUDLabel("◆ assistant", tint: PocketColor.accent)
+                }
                 if status == .cancelled {
                     HUDChip(text: "stopped")
                 } else if status == .error {
@@ -155,6 +165,61 @@ struct StreamingRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A failed turn, explained in words the user can act on, with the retry that
+/// matches. Raw `localizedDescription` from the engine reads like a crash log.
+struct ChatErrorRow: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: PocketSpacing.s8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(PocketColor.statusWarn)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(friendly)
+                    .font(.pocket(.body))
+                    .fixedSize(horizontal: false, vertical: true)
+                if friendly != message {
+                    Text(message)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textTertiary)
+                        .lineLimit(3)
+                }
+            }
+            Spacer(minLength: 0)
+            Button("Retry", action: retry)
+                .buttonStyle(.hud)
+        }
+        .padding(PocketSpacing.s12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hudPanel(PocketColor.statusWarn.opacity(0.10))
+    }
+
+    /// Maps the handful of failures users actually hit onto plain sentences.
+    private var friendly: String {
+        let lowered = message.lowercased()
+        if lowered.contains("no model") || lowered.contains("not installed") {
+            return "No model is installed yet. Open the model library and download one."
+        }
+        if lowered.contains("memory") || lowered.contains("resource") {
+            return "This Mac ran out of memory for that model. Try a smaller one, "
+                + "or unload other models first."
+        }
+        if lowered.contains("cancel") {
+            return "That reply was stopped."
+        }
+        if lowered.contains("context") || lowered.contains("too long") {
+            return "The conversation is longer than this model's context. "
+                + "Start a new chat to continue."
+        }
+        if lowered.contains("network") || lowered.contains("offline")
+            || lowered.contains("connection") {
+            return "Couldn't reach the network. Local models still work offline."
+        }
+        return message
     }
 }
 

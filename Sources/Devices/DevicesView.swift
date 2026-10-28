@@ -191,7 +191,12 @@ struct DevicesView: View {
         qrError = nil
         // A phone reaches this Mac over the LAN, so loopback-only serving
         // cannot complete a pairing.
-        if !app.serverStatus.running || !app.serverStatus.lanEnabled {
+        if !app.serverStatus.running {
+            app.startServer(lan: true)
+        } else if !app.serverStatus.lanEnabled {
+            // Already serving, but only on loopback — a phone on the LAN can
+            // never reach that, so rebind before handing out a code.
+            app.stopServer()
             app.startServer(lan: true)
         }
         guard app.serverStatus.running else {
