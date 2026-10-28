@@ -19,16 +19,21 @@ final class PocketAITests: XCTestCase {
         let model = AppModel()
         XCTAssertNil(model.pendingCommand)
 
-        model.pendingCommand = .newChat
+        model.post(.newChat)
         XCTAssertEqual(model.pendingCommand, .newChat)
 
-        model.pendingCommand = .openConversation("c-1")
+        model.post(.openConversation("c-1"))
         XCTAssertEqual(model.pendingCommand, .openConversation("c-1"))
 
-        model.pendingCommand = .focusComposer
+        // Posting the same command twice must still register as a change, or
+        // a second ⌘L after a ⌘N silently does nothing.
+        let serial = model.commandSerial
+        model.post(.focusComposer)
+        model.post(.focusComposer)
         XCTAssertEqual(model.pendingCommand, .focusComposer)
+        XCTAssertEqual(model.commandSerial, serial + 2)
 
-        model.pendingCommand = nil
+        model.clearCommand()
         XCTAssertNil(model.pendingCommand)
     }
 
