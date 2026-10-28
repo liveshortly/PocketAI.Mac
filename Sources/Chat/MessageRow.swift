@@ -16,7 +16,8 @@ struct MessageRow: View {
                 text: message.plainText,
                 reasoning: message.reasoning,
                 stats: message.stats,
-                status: message.status)
+                status: message.status,
+                messageId: message.id)
         }
     }
 }
@@ -67,8 +68,10 @@ struct AssistantTurn: View {
     var reasoning: String?
     var stats: GenerateStats?
     var status: MessageStatus = .done
+    var messageId: String = ""
     @State private var showReasoning = false
     @State private var copied = false
+    @State private var speech = ReadAloud.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
@@ -81,6 +84,16 @@ struct AssistantTurn: View {
                 }
                 Spacer(minLength: 0)
                 if !text.isEmpty {
+                    Button {
+                        speech.toggle(text, id: messageId)
+                    } label: {
+                        HUDLabel(
+                            speech.speakingId == messageId ? "stop" : "read aloud",
+                            tint: speech.speakingId == messageId
+                                ? PocketColor.statusBad : PocketColor.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Read this reply aloud")
                     Button {
                         copy()
                     } label: {

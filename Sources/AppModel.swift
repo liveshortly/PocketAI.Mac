@@ -13,6 +13,10 @@ import SwiftUI
 @Observable
 @MainActor
 public final class AppModel {
+    /// Set once the window's model exists, so App Intents (Shortcuts) can
+    /// reach the same core instead of opening a second handle to the store.
+    public private(set) static var shared: AppModel?
+
     public let core: CoreClient
     public let hooks: PlatformHooks
     /// LiveShortly integration (opt-in; connected from Settings → LiveShortly).
@@ -182,6 +186,7 @@ public final class AppModel {
         if args.contains("-PocketStartServer") {
             startServer(lan: args.contains("-PocketServerLAN"))
         }
+        AppModel.shared = self
     }
 
     // MARK: - Model

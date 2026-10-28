@@ -13,6 +13,7 @@ struct ChatView: View {
     @State private var attachments: [URL] = []
     @State private var showRename = false
     @State private var isDropTargeted = false
+    @State private var dictation = Dictation()
     @FocusState private var composerFocused: Bool
 
     let conversationId: String
@@ -275,7 +276,26 @@ struct ChatView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(PocketColor.textTertiary)
                     .help("Attach an image")
-                    HUDLabel("⏎ send · ⇧⏎ newline")
+                    Button {
+                        dictation.toggle(base: draft) { draft = $0 }
+                    } label: {
+                        Image(systemName: dictation.isRecording ? "mic.fill" : "mic")
+                            .foregroundStyle(
+                                dictation.isRecording
+                                    ? PocketColor.statusBad : PocketColor.textTertiary)
+                            .background(
+                                Circle()
+                                    .fill(PocketColor.statusBad.opacity(
+                                        dictation.isRecording ? 0.18 * dictation.level + 0.08 : 0))
+                                    .frame(width: 22, height: 22))
+                    }
+                    .buttonStyle(.plain)
+                    .help(dictation.isRecording ? "Stop dictation" : "Dictate")
+                    if dictation.permissionDenied {
+                        HUDLabel("mic access denied", tint: PocketColor.statusBad)
+                    } else {
+                        HUDLabel("⏎ send · ⇧⏎ newline")
+                    }
                     Spacer(minLength: 0)
                     if let stats = chat.lastStats, !chat.isStreaming {
                         HUDLabel("\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens")
@@ -288,6 +308,7 @@ struct ChatView: View {
     }
 
     private func submit(_ chat: ChatModel) {
+        dictation.stop()
         let text = draft
         let files = attachments
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty || !files.isEmpty else { return }
