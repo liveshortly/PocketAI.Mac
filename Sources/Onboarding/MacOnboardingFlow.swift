@@ -16,6 +16,8 @@ struct MacOnboardingFlow: View {
     let deviceProfile: DeviceProfile
     let onFinished: () -> Void
     var onOpenDevices: (() -> Void)? = nil
+    /// Persists the first-run model choice as the app's current model.
+    var onModelPicked: ((String) -> Void)? = nil
 
     @State private var step: Step = .welcome
     @State private var selectedModelId: String?
@@ -44,6 +46,7 @@ struct MacOnboardingFlow: View {
                 case .pickModel:
                     MacOnboardingPickModelView(catalog: catalog) { modelId in
                         selectedModelId = modelId
+                        if let modelId { onModelPicked?(modelId) }
                         if let modelId, modelId != AppleFoundationModelsEngine.modelId {
                             try? core.startDownload(modelId: modelId)
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
@@ -103,12 +106,12 @@ private struct MacOnboardingWelcomeView: View {
         VStack(spacing: PocketSpacing.s24) {
             Spacer(minLength: 20)
 
-            PocketMarkView(state: .working(tokPerSec: 28), size: 84)
+            PocketMarkView(state: .working(tokPerSec: nil), size: 84)
                 .padding(.bottom, PocketSpacing.s8)
 
             VStack(spacing: PocketSpacing.s8) {
                 Text("Private AI that lives on your devices.")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.pocket(.display))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(PocketColor.textPrimary)
 
@@ -312,7 +315,7 @@ private struct MacOnboardingPickModelView: View {
                         }
 
                         HStack(spacing: PocketSpacing.s16) {
-                            PocketMarkView(state: .working(tokPerSec: 28), size: 36)
+                            PocketMarkView(state: .idle, size: 36)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(recommended.manifest.displayName)
@@ -326,7 +329,7 @@ private struct MacOnboardingPickModelView: View {
 
                             Spacer()
 
-                            Button("Download \(formatMacBytes(recommended.manifest.estRuntimeBytes))") {
+                            Button("Download \(formatMacBytes(modelDiskBytes(recommended)))") {
                                 onPick(recommended.manifest.id)
                             }
                             .buttonStyle(.pocketPrimary)
@@ -345,7 +348,7 @@ private struct MacOnboardingPickModelView: View {
                 if !alternates.isEmpty {
                     VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                         Text("OTHER OPTIONS")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textTertiary)
 
                         ForEach(alternates, id: \.manifest.id) { entry in
@@ -354,7 +357,7 @@ private struct MacOnboardingPickModelView: View {
                                     Text(entry.manifest.displayName)
                                         .font(.pocket(.body))
                                         .fontWeight(.medium)
-                                    Text("\(entry.manifest.family) · \(formatMacBytes(entry.manifest.estRuntimeBytes))")
+                                    Text("\(entry.manifest.family) · \(formatMacBytes(modelDiskBytes(entry)))")
                                         .font(.pocket(.caption))
                                         .foregroundStyle(PocketColor.textSecondary)
                                 }
@@ -437,6 +440,14 @@ private struct MacOnboardingDownloadingView: View {
     let onReady: () -> Void
 
     @State private var entry: CatalogEntry?
+    // Honest instruments: real throughput from bytesDone deltas, not a constant.
+    @State private var lastSample: (bytes: UInt64, at: Date)?
+    @State private var ratePerSec: Int64 = 0
+
+    private var isPaused: Bool {
+        if case .paused = entry?.state { return true }
+        return false
+    }
 
     private static let tips = [
         "Models stay completely on this Mac — nothing is ever uploaded to a cloud server.",
@@ -450,13 +461,21 @@ private struct MacOnboardingDownloadingView: View {
 
             if let entry {
                 DownloadProgress(
-                    state: .downloading(
-                        bytesDone: Int64(entry.bytesDone),
-                        bytesTotal: Int64(entry.manifest.estRuntimeBytes),
-                        bytesPerSecond: 18_000_000
-                    ),
-                    onPauseResume: {},
-                    onCancel: {}
+                    state: isPaused
+                        ? .paused(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(modelDiskBytes(entry)))
+                        : .downloading(
+                            bytesDone: Int64(entry.bytesDone),
+                            bytesTotal: Int64(modelDiskBytes(entry)),
+                            bytesPerSecond: ratePerSec
+                        ),
+                    onPauseResume: {
+                        if isPaused { try? core.resumeDownload(modelId: modelId) }
+                        else { try? core.pauseDownload(modelId: modelId) }
+                    },
+                    onCancel: {
+                        try? core.cancelDownload(modelId: modelId)
+                        onSkipToApple?()
+                    }
                 )
             }
 
@@ -498,6 +517,18 @@ private struct MacOnboardingDownloadingView: View {
                 let updated = core.catalog(filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
                     .first { $0.manifest.id == modelId }
                 entry = updated
+                if let updated, updated.state == .downloading {
+                    let now = Date()
+                    if let prev = lastSample {
+                        let elapsed = now.timeIntervalSince(prev.at)
+                        if elapsed >= 0.4, updated.bytesDone >= prev.bytes {
+                            ratePerSec = Int64(Double(updated.bytesDone - prev.bytes) / elapsed)
+                            lastSample = (updated.bytesDone, now)
+                        }
+                    } else {
+                        lastSample = (updated.bytesDone, now)
+                    }
+                }
                 if updated?.state == .installed {
                     onReady()
                     return

@@ -38,7 +38,7 @@ struct ModelSwitcherPopoverView: View {
                         } label: {
                             HStack(spacing: PocketSpacing.s12) {
                                 PocketMarkView(
-                                    state: isSelected && model.isGenerating ? .working(tokPerSec: 28) : .idle,
+                                    state: isSelected && model.isGenerating ? .working(tokPerSec: Double(model.activeTokPerSec)) : .idle,
                                     size: 20
                                 )
 

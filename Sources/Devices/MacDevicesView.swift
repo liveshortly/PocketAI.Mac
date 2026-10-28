@@ -12,11 +12,11 @@ import PocketUI
 struct MacDevicesView: View {
     @Environment(AppModel.self) private var model
 
-    @State private var peers: [Peer] = []
+    /// iPhones paired TO this Mac (`devices()`), not hosts this Mac is paired
+    /// to (`peers()`).
+    @State private var devices: [PairedDevice] = []
     @State private var showPairingSheet = false
-    @State private var pendingRequest: PairingRequest?
-    @State private var pendingRevokePeer: Peer?
-    @State private var pollTask: Task<Void, Never>?
+    @State private var pendingRevokeDevice: PairedDevice?
 
     var body: some View {
         ScrollView {
@@ -48,7 +48,7 @@ struct MacDevicesView: View {
                 Divider()
 
                 // Paired Devices List or Empty State
-                if peers.isEmpty {
+                if devices.isEmpty {
                     emptyDevicesView
                 } else {
                     pairedDevicesList
@@ -59,41 +59,29 @@ struct MacDevicesView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(PocketColor.bgCanvas)
-        .task {
-            reload()
-            startPolling()
-        }
-        .onDisappear { pollTask?.cancel() }
+        .task { reload() }
         .sheet(isPresented: $showPairingSheet) {
             MacPairingQRSheet()
         }
-        .sheet(item: $pendingRequest) { request in
-            AllowDenySheet(
-                request: request,
-                onAllow: {
-                    try? model.core.approvePairing(id: request.id)
-                    pendingRequest = nil
-                    reload()
-                },
-                onDeny: {
-                    try? model.core.denyPairing(id: request.id)
-                    pendingRequest = nil
-                }
-            )
+        // Pending-request polling + the approval sheet live in AppModel /
+        // RootSplitView now, so a request surfaces on any tab. Refresh the
+        // list once a request has been decided.
+        .onChange(of: model.pendingPairingRequest) { _, request in
+            if request == nil { reload() }
         }
         .confirmationDialog(
-            "Revoke “\(pendingRevokePeer?.name ?? "iPhone")”?",
-            isPresented: Binding(get: { pendingRevokePeer != nil }, set: { if !$0 { pendingRevokePeer = nil } }),
+            "Revoke “\(pendingRevokeDevice?.name ?? "iPhone")”?",
+            isPresented: Binding(get: { pendingRevokeDevice != nil }, set: { if !$0 { pendingRevokeDevice = nil } }),
             titleVisibility: .visible
         ) {
             Button("Revoke Access", role: .destructive) {
-                if let peer = pendingRevokePeer {
-                    revoke(peer)
+                if let device = pendingRevokeDevice {
+                    revoke(device)
                 }
-                pendingRevokePeer = nil
+                pendingRevokeDevice = nil
             }
             Button("Cancel", role: .cancel) {
-                pendingRevokePeer = nil
+                pendingRevokeDevice = nil
             }
         } message: {
             Text("This will immediately disconnect the iPhone from using this Mac's models.")
@@ -169,11 +157,11 @@ struct MacDevicesView: View {
 
     private var pairedDevicesList: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
-            Text("CONNECTED DEVICES (\(peers.count))")
-                .font(.system(size: 11, weight: .semibold))
+            Text("PAIRED DEVICES (\(devices.count))")
+                .font(.pocket(.caption))
                 .foregroundStyle(PocketColor.textTertiary)
 
-            ForEach(peers, id: \.id) { peer in
+            ForEach(devices, id: \.id) { peer in
                 HStack(spacing: PocketSpacing.s16) {
                     Image(systemName: "iphone.gen3")
                         .font(.system(size: 28))
@@ -189,15 +177,17 @@ struct MacDevicesView: View {
                                 .foregroundStyle(PocketColor.textPrimary)
 
                             Circle()
-                                .fill(PocketColor.statusOk)
+                                .fill(PocketColor.textTertiary)
                                 .frame(width: 8, height: 8)
 
-                            Text("Connected")
+                            // Honest instruments: we know the device is paired,
+                            // not whether it is reachable right now.
+                            Text("Paired")
                                 .font(.pocket(.caption))
-                                .foregroundStyle(PocketColor.statusOk)
+                                .foregroundStyle(PocketColor.textSecondary)
                         }
 
-                        Text(peer.addrs.first ?? "Local Network")
+                        Text(peer.lastAddr ?? "Local Network")
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textSecondary)
                     }
@@ -205,7 +195,7 @@ struct MacDevicesView: View {
                     Spacer()
 
                     Button("Revoke", role: .destructive) {
-                        pendingRevokePeer = peer
+                        pendingRevokeDevice = peer
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -222,27 +212,38 @@ struct MacDevicesView: View {
     }
 
     private func reload() {
-        peers = model.core.peers()
+        devices = model.core.devices().filter { $0.revokedAt == nil }
     }
 
-    private func revoke(_ peer: Peer) {
-        try? model.core.revokePeer(id: peer.id)
+    private func revoke(_ device: PairedDevice) {
+        try? model.core.revokeDevice(id: device.id)
         reload()
-    }
-
-    private func startPolling() {
-        pollTask = Task {
-            while !Task.isCancelled {
-                if pendingRequest == nil, let request = model.core.pendingPairings().first {
-                    pendingRequest = request
-                }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
-        }
     }
 }
 
 extension PairingRequest: @retroactive Identifiable {}
+
+/// Presents the Allow/Deny decision for `AppModel.pendingPairingRequest`.
+/// Shared by RootSplitView (any tab) and the QR sheet (which would otherwise
+/// block a sibling sheet from presenting).
+struct PairingApprovalSheet: View {
+    let request: PairingRequest
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        AllowDenySheet(
+            request: request,
+            onAllow: {
+                try? model.core.approvePairing(id: request.id)
+                model.pendingPairingRequest = nil
+            },
+            onDeny: {
+                try? model.core.denyPairing(id: request.id)
+                model.pendingPairingRequest = nil
+            }
+        )
+    }
+}
 
 private struct AllowDenySheet: View {
     let request: PairingRequest
@@ -407,22 +408,58 @@ private struct MacPairingQRSheet: View {
         .padding(PocketSpacing.s32)
         .frame(width: 460)
         .background(PocketColor.bgCanvas)
+        // An incoming approval must be able to present while this sheet is
+        // open — a sibling sheet on the parent view can't.
+        .sheet(item: Binding(
+            get: { model.pendingPairingRequest },
+            set: { model.pendingPairingRequest = $0 }
+        )) { request in
+            PairingApprovalSheet(request: request)
+        }
         .task {
-            do {
-                qrString = try model.core.pairingOfferQrString()
-                startCountdown()
-            } catch {
-                errorText = "Couldn't generate a pairing code: \(error.localizedDescription)"
+            // Orchestration fix (root cause of "sync not working"): the pairing
+            // QR encodes `server_status().port`. If the server is stopped, that
+            // port is 0, so the iPhone probes https://<ip>:0 and fails with a
+            // generic "Mac not reachable". Pairing also needs the LAN listener,
+            // not loopback-only — a running loopback server must be restarted
+            // with LAN on (the core returns current status while running).
+            if model.serverStatus.running && !model.serverStatus.lanEnabled {
+                model.stopServer()
             }
+            if !model.serverStatus.running || model.serverStatus.port == 0 {
+                model.startServer(lan: true)
+            }
+            guard model.serverStatus.running, model.serverStatus.port != 0, model.serverStatus.lanEnabled else {
+                errorText = "Couldn't start the LAN server needed for pairing. Open the Server tab, turn it on with \"Serve on Local Network\", then try again. (Pairing and LAN serving require PocketAI Pro.)"
+                return
+            }
+            refreshOffer()
+            startCountdown()
         }
         .onDisappear { countdownTask?.cancel() }
     }
 
+    private func refreshOffer() {
+        do {
+            qrString = try model.core.pairingOfferQrString()
+            errorText = nil
+            secondsRemaining = 300
+        } catch {
+            qrString = nil
+            errorText = "Couldn't generate a pairing code: \(error.localizedDescription)"
+        }
+    }
+
     private func startCountdown() {
         countdownTask = Task {
-            while !Task.isCancelled && secondsRemaining > 0 {
+            while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 secondsRemaining -= 1
+                // Expired: mint a fresh code instead of showing a dead QR.
+                if secondsRemaining <= 0 {
+                    refreshOffer()
+                    if qrString == nil { return }
+                }
             }
         }
     }

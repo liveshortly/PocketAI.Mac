@@ -11,12 +11,33 @@ struct MacChatInspectorView: View {
     @Environment(AppModel.self) private var model
 
     @State private var title: String = ""
-    @State private var systemPrompt: String = ""
     @State private var isEditingTitle: Bool = false
     @State private var messageCount: Int = 0
     @State private var estimatedTokens: Int = 0
     @State private var showDeleteConfirm: Bool = false
-    @State private var exportSuccess: Bool = false
+    @State private var exportStatus: String?
+    /// This conversation's own bound model (loaded via `conversation(id:)`),
+    /// not the global default.
+    @State private var conversationModelId: String?
+    /// Catalog snapshot loaded once in `loadDetails()` — never per render.
+    @State private var cachedCatalog: [CatalogEntry] = []
+
+    /// The model this chat will actually use: its own binding, falling back to
+    /// the global default only while unbound.
+    private var effectiveModelId: String {
+        if let bound = conversationModelId, !bound.isEmpty { return bound }
+        return model.currentModelId
+    }
+
+    /// The real catalog entry for the chat's model (nil if it isn't in the
+    /// catalog), so specs come from the manifest/fit — never hardcoded.
+    private var currentEntry: CatalogEntry? {
+        cachedCatalog.first { $0.manifest.id == effectiveModelId }
+    }
+
+    private var installedModels: [CatalogEntry] {
+        cachedCatalog.filter { $0.state == .installed }
+    }
 
     var body: some View {
         ScrollView {
@@ -24,7 +45,7 @@ struct MacChatInspectorView: View {
                 // Conversation Header / Title
                 VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                     Text("CONVERSATION")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
 
                     HStack {
@@ -57,22 +78,46 @@ struct MacChatInspectorView: View {
                 // Active Model & Settings
                 VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                     Text("MODEL & RUNTIME")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
 
                     VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                         HStack {
-                            PocketMarkView(state: model.isGenerating ? .working(tokPerSec: 28) : .idle, size: 18)
+                            PocketMarkView(state: model.isGenerating ? .working(tokPerSec: model.activeTokPerSec > 0 ? Double(model.activeTokPerSec) : nil) : .idle, size: 18)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(model.currentModelDisplayName)
+                                Text(currentEntry?.manifest.displayName ?? effectiveModelId)
                                     .font(.pocket(.body))
                                     .fontWeight(.medium)
-                                Text("MLX · 4-bit Quantized")
-                                    .font(.pocket(.caption))
-                                    .foregroundStyle(PocketColor.textSecondary)
+                                if let entry = currentEntry {
+                                    Text("\(entry.manifest.format) · \(entry.manifest.quant)")
+                                        .font(.pocket(.caption))
+                                        .foregroundStyle(PocketColor.textSecondary)
+                                }
                             }
                             Spacer()
-                            FitBadge(kind: .runsWell, reason: "Fits comfortably in memory.")
+                            if let entry = currentEntry {
+                                FitBadge(kind: fitKind(entry.fit.verdict), reason: entry.fit.reason)
+                            }
+                        }
+
+                        // Per-chat model picker: binds this conversation only,
+                        // never the global default.
+                        if !installedModels.isEmpty {
+                            Picker("Model for this chat", selection: Binding(
+                                get: { effectiveModelId },
+                                set: { newId in
+                                    try? model.core.setConversationModel(id: conversationId, modelId: newId)
+                                    conversationModelId = newId
+                                }
+                            )) {
+                                ForEach(installedModels, id: \.manifest.id) { entry in
+                                    Text(entry.manifest.displayName).tag(entry.manifest.id)
+                                }
+                                if !installedModels.contains(where: { $0.manifest.id == effectiveModelId }) {
+                                    Text(currentEntry?.manifest.displayName ?? effectiveModelId).tag(effectiveModelId)
+                                }
+                            }
+                            .font(.pocket(.footnote))
                         }
 
                         Divider()
@@ -82,7 +127,7 @@ struct MacChatInspectorView: View {
                                 .font(.pocket(.footnote))
                                 .foregroundStyle(PocketColor.textSecondary)
                             Spacer()
-                            Text("32,768 tokens")
+                            Text(currentEntry.map { "\($0.manifest.contextLength) tokens" } ?? "—")
                                 .font(.pocket(.metric))
                         }
 
@@ -91,7 +136,7 @@ struct MacChatInspectorView: View {
                                 .font(.pocket(.footnote))
                                 .foregroundStyle(PocketColor.textSecondary)
                             Spacer()
-                            Text("Apple Silicon GPU (Metal)")
+                            Text(currentEntry.map { "\($0.manifest.format)" } ?? "—")
                                 .font(.pocket(.footnote))
                                 .foregroundStyle(PocketColor.textTertiary)
                         }
@@ -107,34 +152,15 @@ struct MacChatInspectorView: View {
 
                 Divider()
 
-                // System Prompt
-                VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                    Text("SYSTEM PROMPT")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(PocketColor.textTertiary)
+                // System prompt editor removed: no FFI setter for a per-chat
+                // system prompt exists yet, so the field only edited local state.
 
-                    TextEditor(text: $systemPrompt)
-                        .font(.pocket(.footnote))
-                        .frame(height: 90)
-                        .padding(PocketSpacing.s8)
-                        .background(PocketColor.bgSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(PocketColor.lineHairline, lineWidth: 0.5)
-                        )
 
-                    Text("Custom instructions given to the model for this chat.")
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.textTertiary)
-                }
-
-                Divider()
 
                 // Metrics & Stats
                 VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                     Text("SESSION METRICS")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
 
                     VStack(spacing: PocketSpacing.s8) {
@@ -161,9 +187,9 @@ struct MacChatInspectorView: View {
                                 .font(.pocket(.footnote))
                                 .foregroundStyle(PocketColor.textSecondary)
                             Spacer()
-                            Text(model.isGenerating ? "\(model.activeTokPerSec) tok/s" : "28 tok/s")
+                            Text(model.isGenerating && model.activeTokPerSec > 0 ? "\(model.activeTokPerSec) tok/s" : "Not measured")
                                 .font(.pocket(.metric))
-                                .foregroundStyle(PocketColor.accent)
+                                .foregroundStyle(model.isGenerating && model.activeTokPerSec > 0 ? PocketColor.accent : PocketColor.textTertiary)
                         }
                     }
                     .padding(PocketSpacing.s12)
@@ -180,7 +206,7 @@ struct MacChatInspectorView: View {
                 // Actions
                 VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                     Text("ACTIONS")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
 
                     Button {
@@ -193,6 +219,12 @@ struct MacChatInspectorView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
+
+                    if let exportStatus {
+                        Text(exportStatus)
+                            .font(.pocket(.caption))
+                            .foregroundStyle(exportStatus.hasPrefix("Export failed") ? PocketColor.statusBad : PocketColor.statusOk)
+                    }
 
                     Button(role: .destructive) {
                         showDeleteConfirm = true
@@ -230,11 +262,22 @@ struct MacChatInspectorView: View {
         }
     }
 
-    private func loadDetails() {
-        let convs = model.core.conversations(query: ConversationQuery(search: nil, archived: nil, limit: 0, offset: 0))
-        if let current = convs.first(where: { $0.id == conversationId }) {
-            title = current.title ?? "New chat"
+    private func fitKind(_ verdict: FitVerdict) -> FitBadgeKind {
+        switch verdict {
+        case .runsWell: return .runsWell
+        case .runsSlow: return .runsSlow
+        case .willNotFit: return .willNotFit
+        case .notSupported: return .notSupported
         }
+    }
+
+    private func loadDetails() {
+        // Resolve directly by ID — never page-scan conversations().
+        if let convo = model.core.conversation(id: conversationId) {
+            title = convo.title ?? "New chat"
+            conversationModelId = convo.modelId
+        }
+        cachedCatalog = model.core.catalog(filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
         let msgs = model.core.messages(conversationId: conversationId)
         messageCount = msgs.count
         estimatedTokens = msgs.reduce(0) { total, msg in
@@ -270,7 +313,12 @@ struct MacChatInspectorView: View {
                 }.joined()
                 md += "### \(role)\n\n\(content)\n\n"
             }
-            try? md.write(to: url, atomically: true, encoding: .utf8)
+            do {
+                try md.write(to: url, atomically: true, encoding: .utf8)
+                exportStatus = "Exported to \(url.lastPathComponent)"
+            } catch {
+                exportStatus = "Export failed: \(error.localizedDescription)"
+            }
         }
     }
 }

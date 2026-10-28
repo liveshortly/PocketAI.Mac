@@ -111,7 +111,7 @@ struct CommandPaletteView: View {
             PaletteItem(
                 id: "act-toggle-server",
                 title: model.serverStatus.running ? "Stop Local Server" : "Start Local Server",
-                subtitle: model.serverStatus.running ? "Deactivate port :\(model.serverStatus.port)" : "Expose :7480 endpoint",
+                subtitle: model.serverStatus.running ? "Deactivate port :\(model.serverStatus.port)" : "Expose a local OpenAI-compatible endpoint",
                 icon: "bolt.horizontal",
                 type: .action
             ) {

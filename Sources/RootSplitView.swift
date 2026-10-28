@@ -3,6 +3,49 @@ import AppKit
 import PocketKit
 import PocketUI
 
+/// Non-crashing surface for a core-open failure (replaces the old fatalError).
+private struct MacCoreErrorBanner: View {
+    let message: String
+    @State private var dismissed = false
+    var body: some View {
+        if !dismissed {
+            HStack(alignment: .top, spacing: PocketSpacing.s8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(PocketColor.statusBad)
+                Text(message)
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: PocketSpacing.s8)
+                Button { dismissed = true } label: {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(PocketSpacing.s12)
+            .frame(maxWidth: 520)
+            .background(PocketColor.bgRaised, in: RoundedRectangle(cornerRadius: PocketRadius.card))
+            .overlay(RoundedRectangle(cornerRadius: PocketRadius.card).strokeBorder(PocketColor.statusBad.opacity(0.4)))
+            .padding(.top, PocketSpacing.s12)
+            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        }
+    }
+}
+
+/// Real process memory footprint (phys_footprint) — honest instruments, not a
+/// fabricated constant. Shared by the Pulse detail sheet.
+func appUsedMemoryBytes() -> Int64 {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    let kr = withUnsafeMutablePointer(to: &info) { ptr in
+        ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+        }
+    }
+    return kr == KERN_SUCCESS ? Int64(info.phys_footprint) : 0
+}
+
 /// Mac shell per 02-design-system.md §6.2: NavigationSplitView sidebar + content.
 /// Sidebar items: Chats, Projects, Models, Server, Devices, Privacy.
 /// Grouped sidebar sections, native translucent chrome, pinned Pulse status footer,
@@ -11,6 +54,7 @@ struct RootSplitView: View {
     @Environment(AppModel.self) private var model
     @State private var isModelPopoverPresented = false
     @State private var isPulseSheetPresented = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
         if !model.hasOnboarded {
@@ -21,16 +65,22 @@ struct RootSplitView: View {
                 onOpenDevices: {
                     model.hasOnboarded = true
                     model.selectedTab = .devices
-                }
+                },
+                onModelPicked: { model.currentModelId = $0 }
             )
         } else {
             shell
+                .overlay(alignment: .top) {
+                    if let err = model.coreOpenError {
+                        MacCoreErrorBanner(message: err)
+                    }
+                }
         }
     }
 
     private var shell: some View {
         @Bindable var m = model
-        return NavigationSplitView {
+        return NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $m.selectedTab) {
                 Section("WORKSPACE") {
                     Label {
@@ -168,6 +218,11 @@ struct RootSplitView: View {
                 break
             }
         }
+        // Incoming pairing approval, presented from the root so it appears on
+        // any tab (AppModel polls for requests app-wide).
+        .sheet(item: $m.pendingPairingRequest) { request in
+            PairingApprovalSheet(request: request)
+        }
         .sheet(isPresented: $isPulseSheetPresented) {
             VStack(spacing: 0) {
                 HStack {
@@ -189,19 +244,21 @@ struct RootSplitView: View {
                 Divider()
 
                 PulseDetailSheet(
-                    ramUsedBytes: 2_400_000_000,
-                    ramBudgetBytes: 11_200_000_000,
+                    ramUsedBytes: appUsedMemoryBytes(),
+                    ramBudgetBytes: Int64(model.hooks.deviceProfile().appMemoryLimitBytes),
                     ramTotalBytes: Int64(model.hooks.deviceProfile().totalRamBytes),
                     thermalLabel: "Nominal",
                     loadedModels: [
                         LoadedModelSummary(
                             id: model.currentModelId,
                             name: model.currentModelDisplayName,
-                            residentBytes: 2_400_000_000,
-                            onEject: {}
+                            residentBytes: appUsedMemoryBytes(),
+                            onEject: { try? model.core.unloadModel(id: model.currentModelId) }
                         )
                     ],
-                    lastReply: LastReplyStats(ttftMs: 120, tokens: 142, tokPerSec: 28, isMeasured: true),
+                    // Honest instruments: no fabricated "measured" stat. Shows
+                    // the real last-reply number only when one exists.
+                    lastReply: nil,
                     egressCountToday: model.core.egressLog(limit: 0).count
                 )
             }
@@ -214,7 +271,7 @@ struct RootSplitView: View {
             isModelPopoverPresented.toggle()
         } label: {
             HStack(spacing: PocketSpacing.s8) {
-                PocketMarkView(state: model.isGenerating ? .working(tokPerSec: 28) : .idle, size: 14)
+                PocketMarkView(state: model.isGenerating ? .working(tokPerSec: model.activeTokPerSec > 0 ? Double(model.activeTokPerSec) : nil) : .idle, size: 14)
 
                 Text(model.currentModelDisplayName)
                     .font(.pocket(.caption))
@@ -256,7 +313,7 @@ struct RootSplitView: View {
         } label: {
             HStack(spacing: PocketSpacing.s8) {
                 PocketMarkView(
-                    state: model.isGenerating ? .working(tokPerSec: 28) : .idle,
+                    state: model.isGenerating ? .working(tokPerSec: model.activeTokPerSec > 0 ? Double(model.activeTokPerSec) : nil) : .idle,
                     size: 16
                 )
 
@@ -331,13 +388,13 @@ struct MenuBarContent: View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
             HStack(spacing: PocketSpacing.s8) {
                 PocketMarkView(
-                    state: model.isGenerating ? .working(tokPerSec: 28) : (status.running ? .working(tokPerSec: nil) : .idle),
+                    state: model.isGenerating ? .working(tokPerSec: model.activeTokPerSec > 0 ? Double(model.activeTokPerSec) : nil) : (status.running ? .working(tokPerSec: nil) : .idle),
                     size: 24
                 )
                 VStack(alignment: .leading, spacing: 1) {
                     Text("PocketAI").font(.pocket(.headline))
                     if model.isGenerating {
-                        Text("Generating · 28 tok/s")
+                        Text(model.activeTokPerSec > 0 ? "Generating · \(model.activeTokPerSec) tok/s" : "Generating")
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.accent)
                     } else if status.running {
@@ -375,15 +432,16 @@ struct MenuBarContent: View {
             ))
             Toggle("Serve on local network", isOn: Binding(
                 get: { status.lanEnabled },
-                set: { lan in if status.running { model.startServer(lan: lan) } }
+                set: { lan in
+                    // The core returns current status while running, so a live
+                    // server must be restarted for a LAN change to take effect.
+                    if status.running {
+                        model.stopServer()
+                        model.startServer(lan: lan)
+                    }
+                }
             ))
             .disabled(!status.running)
-
-            if status.running {
-                Text("\(status.connectedDevices) connected device\(status.connectedDevices == 1 ? "" : "s")")
-                    .font(.pocket(.footnote))
-                    .foregroundStyle(PocketColor.textSecondary)
-            }
 
             Toggle("Keep running in menu bar", isOn: $keepRunningInBackground)
                 .font(.pocket(.footnote))

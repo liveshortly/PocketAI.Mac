@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Network
 import PocketKit
 import PocketUI
 
@@ -21,32 +22,33 @@ struct MacModelsView: View {
     @State private var pendingDelete: CatalogEntry?
     @State private var hubResults: [CatalogEntry] = []
     @State private var hubSearchError: String?
-
-    @AppStorage("app.getpocketai.memoryPolicy") private var memoryPolicyPercent: Double = 70.0
-
-    private var profile: DeviceProfile {
-        model.hooks.deviceProfile()
-    }
-
-    private var memoryBudgetFormatted: String {
-        let total = profile.totalRamBytes
-        let budget = UInt64(Double(total) * (memoryPolicyPercent / 100.0))
-        return "\(formatBytes(budget)) of \(formatBytes(total))"
-    }
+    /// Honest instruments: measured download throughput per model id, derived
+    /// from real bytesDone deltas between polls — never a fabricated constant.
+    @State private var downloadRates: [String: Int64] = [:]
+    @State private var downloadSamples: [String: (bytes: UInt64, at: Date)] = [:]
+    /// Real connectivity (not the user's offline *mode*): drives the
+    /// "Waiting for network…" state and auto-resume on reconnect.
+    @State private var net = NetworkMonitor()
 
     private var installedCount: Int {
-        catalog.filter { $0.state == .installed || $0.state == .downloading || $0.state == .paused }.count
+        catalog.filter { $0.state == .installed || isInFlight($0) }.count
+    }
+
+    /// An interrupted or in-progress download worth surfacing on the Installed
+    /// tab. A `.failed` entry only counts if it has partial bytes on disk
+    /// (i.e. it was mid-download), so a never-started failure isn't shown here.
+    private func isInFlight(_ entry: CatalogEntry) -> Bool {
+        switch entry.state {
+        case .downloading, .paused, .verifying, .queued: return true
+        case .failed: return entry.bytesDone > 0
+        case .installed, .available: return false
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // Controls & Filter Bar
             controlsBar
-
-            Divider()
-
-            // Memory Budget Gauge
-            memoryBudgetBar
 
             Divider()
 
@@ -60,7 +62,19 @@ struct MacModelsView: View {
             }
         }
         .background(PocketColor.bgCanvas)
-        .task { reload() }
+        .task {
+            reload()
+            net.start()
+            // Resume-on-launch: a download interrupted by a quit/crash comes
+            // back as .paused mid-file — pick it up automatically. Failed ones
+            // stay a manual Retry so a genuinely broken download can't loop.
+            resumeInterrupted(includingFailed: false)
+        }
+        .task { await pollDownloads() }
+        .onChange(of: net.isOnline) { _, online in
+            // Network came back: resume anything that stalled while offline.
+            if online { resumeInterrupted(includingFailed: true) }
+        }
         .onChange(of: searchText) { reload() }
         .onChange(of: fitsOnly) { reload() }
         .sheet(item: $detail) { entry in
@@ -68,7 +82,15 @@ struct MacModelsView: View {
                 entry: entry,
                 primaryActionLabel: primaryActionLabel(for: entry),
                 onPrimaryAction: { performPrimaryAction(for: entry) },
-                onDelete: entry.state == .installed ? { pendingDelete = entry; detail = nil } : nil
+                onCancel: {
+                    try? model.core.cancelDownload(modelId: entry.manifest.id)
+                    reload()
+                    detail = nil
+                },
+                onDelete: entry.state == .installed ? { pendingDelete = entry; detail = nil } : nil,
+                onRetry: { try? model.core.startDownload(modelId: entry.manifest.id); reload() },
+                downloadBytesPerSecond: downloadRates[entry.manifest.id] ?? 0,
+                isOnline: net.isOnline
             )
         }
         .confirmationDialog(
@@ -86,7 +108,7 @@ struct MacModelsView: View {
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: {
             if let entry = pendingDelete {
-                Text("This will free \(formatBytes(entry.manifest.estRuntimeBytes)) on your Mac.")
+                Text("This will free \(formatBytes(modelDiskBytes(entry))) on your Mac.")
             }
         }
     }
@@ -157,48 +179,6 @@ struct MacModelsView: View {
         .background(PocketColor.bgRaised)
     }
 
-    private var memoryBudgetBar: some View {
-        HStack(spacing: PocketSpacing.s16) {
-            Image(systemName: "memorychip")
-                .font(.system(size: 14))
-                .foregroundStyle(PocketColor.accent)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text("Memory Budget for Models:")
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.textSecondary)
-
-                    Text("\(Int(memoryPolicyPercent))% · \(memoryBudgetFormatted)")
-                        .font(.pocket(.metric))
-                        .foregroundStyle(PocketColor.textPrimary)
-                }
-
-                // Progress gauge
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(PocketColor.bgSunken)
-                            .frame(height: 5)
-
-                        Capsule()
-                            .fill(PocketColor.accent)
-                            .frame(width: geo.size.width * CGFloat(memoryPolicyPercent / 100.0), height: 5)
-                    }
-                }
-                .frame(height: 5)
-            }
-
-            Slider(value: $memoryPolicyPercent, in: 50...85, step: 5)
-                .frame(width: 140)
-
-            Spacer()
-        }
-        .padding(.horizontal, PocketSpacing.gutterMac)
-        .padding(.vertical, PocketSpacing.s8)
-        .background(PocketColor.bgCanvas)
-    }
-
     private var emptyInstalledView: some View {
         VStack(spacing: PocketSpacing.s16) {
             Spacer()
@@ -230,7 +210,7 @@ struct MacModelsView: View {
             entries = entries.filter { $0.manifest.displayName.localizedCaseInsensitiveContains(searchText) }
         }
         if segment == .installed {
-            return entries.filter { $0.state == .installed || $0.state == .downloading || $0.state == .paused }
+            return entries.filter { $0.state == .installed || isInFlight($0) }
         }
         if fitsOnly {
             entries = entries.filter { $0.fit.verdict == .runsWell || $0.fit.verdict == .runsSlow }
@@ -253,7 +233,7 @@ struct MacModelsView: View {
                             Image(systemName: section.icon)
                                 .font(.system(size: 11, weight: .semibold))
                             Text(section.title.uppercased())
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.pocket(.caption))
                         }
                         .foregroundStyle(PocketColor.textTertiary)
 
@@ -271,7 +251,7 @@ struct MacModelsView: View {
                         Divider()
                         HStack {
                             Text("HUGGING FACE HUB")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.pocket(.caption))
                                 .foregroundStyle(PocketColor.textTertiary)
                             Spacer()
                             Button {
@@ -323,7 +303,7 @@ struct MacModelsView: View {
             }
 
             HStack(alignment: .center, spacing: PocketSpacing.s16) {
-                PocketMarkView(state: .working(tokPerSec: 28), size: 40)
+                PocketMarkView(state: .idle, size: 40)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.manifest.displayName)
@@ -351,7 +331,7 @@ struct MacModelsView: View {
                         }
                     }
 
-                    Text(formatBytes(entry.manifest.estRuntimeBytes))
+                    Text(formatBytes(modelDiskBytes(entry)))
                         .font(.pocket(.metric))
                         .foregroundStyle(PocketColor.textTertiary)
                 }
@@ -400,7 +380,7 @@ struct MacModelsView: View {
 
             // Specs row
             HStack(spacing: PocketSpacing.s12) {
-                Label(formatBytes(entry.manifest.estRuntimeBytes), systemImage: "internaldrive")
+                Label(formatBytes(modelDiskBytes(entry)), systemImage: "internaldrive")
                     .font(.pocket(.metric))
                     .foregroundStyle(PocketColor.textSecondary)
 
@@ -412,6 +392,13 @@ struct MacModelsView: View {
 
                 Spacer()
 
+                Text("\(entry.manifest.format)")
+                    .font(.pocket(.caption))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(PocketColor.bgSunken)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
                 Text(entry.manifest.license.spdx)
                     .font(.pocket(.caption))
                     .padding(.horizontal, 6)
@@ -420,15 +407,9 @@ struct MacModelsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             }
 
-            // Download progress if active
-            if entry.state == .downloading || entry.state == .paused {
-                DownloadProgress(
-                    state: entry.state == .paused
-                        ? .paused(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(entry.manifest.estRuntimeBytes))
-                        : .downloading(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(entry.manifest.estRuntimeBytes), bytesPerSecond: 18_000_000),
-                    onPauseResume: { performPrimaryAction(for: entry) },
-                    onCancel: { try? model.core.cancelDownload(modelId: entry.manifest.id); reload() }
-                )
+            // Download progress / interrupted state if active
+            if showsDownloadStatus(entry) {
+                downloadStatus(for: entry)
             }
 
             Divider()
@@ -497,7 +478,7 @@ struct MacModelsView: View {
                 FitBadge(kind: fitKind(entry.fit.verdict), reason: entry.fit.reason)
             }
             TableColumn("Size") { entry in
-                Text(formatBytes(entry.manifest.estRuntimeBytes)).font(.pocket(.metric))
+                Text(formatBytes(modelDiskBytes(entry))).font(.pocket(.metric))
             }
             TableColumn("Speed") { entry in
                 if let speed = entry.fit.estTokensPerSec {
@@ -546,7 +527,7 @@ struct MacModelsView: View {
             entries = entries.filter { $0.manifest.displayName.localizedCaseInsensitiveContains(searchText) }
         }
         if segment == .installed {
-            entries = entries.filter { $0.state == .installed || $0.state == .downloading || $0.state == .paused }
+            entries = entries.filter { $0.state == .installed || isInFlight($0) }
             return entries.isEmpty ? [] : [ModelSection(title: "Installed on this Mac", icon: "internaldrive", entries: entries)]
         }
         if fitsOnly {
@@ -584,9 +565,47 @@ struct MacModelsView: View {
     }
 
     private func reload() {
+        // '#iphone'-suffixed variants (e.g. WhisperKit CoreML for iPhone) are
+        // phone-targeted duplicates — hide them on Mac.
         catalog = model.core.catalog(filter: CatalogFilter(modality: nil, curatedOnly: true, installedOnly: false))
+            .filter { !$0.manifest.id.hasSuffix("#iphone") }
         hubResults = []
         hubSearchError = nil
+    }
+
+    /// While any model is downloading, refresh the catalog and derive a real
+    /// throughput from consecutive bytesDone samples. Stops sampling (and clears
+    /// stale rates) once nothing is in-flight.
+    private func pollDownloads() async {
+        while !Task.isCancelled {
+            let active = catalog.filter {
+                switch $0.state {
+                case .downloading, .queued, .verifying, .paused: return true
+                case .failed, .installed, .available: return false
+                }
+            }
+            if active.isEmpty {
+                if !downloadSamples.isEmpty { downloadSamples.removeAll() }
+                if !downloadRates.isEmpty { downloadRates.removeAll() }
+            } else {
+                catalog = model.core.catalog(filter: CatalogFilter(modality: nil, curatedOnly: true, installedOnly: false))
+                    .filter { !$0.manifest.id.hasSuffix("#iphone") }
+                let now = Date()
+                for entry in catalog where entry.state == .downloading {
+                    let id = entry.manifest.id
+                    if let prev = downloadSamples[id] {
+                        let elapsed = now.timeIntervalSince(prev.at)
+                        if elapsed >= 0.4, entry.bytesDone >= prev.bytes {
+                            downloadRates[id] = Int64(Double(entry.bytesDone - prev.bytes) / elapsed)
+                            downloadSamples[id] = (entry.bytesDone, now)
+                        }
+                    } else {
+                        downloadSamples[id] = (entry.bytesDone, now)
+                    }
+                }
+            }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+        }
     }
 
     private func searchHub() async {
@@ -604,15 +623,21 @@ struct MacModelsView: View {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir)
     }
 
+    /// Only text/vision models can serve a chat; image/voice/embedding models
+    /// have no "Open in Chat" path.
+    private func isChatCapable(_ entry: CatalogEntry) -> Bool {
+        entry.manifest.modalities.contains(.text) || entry.manifest.modalities.contains(.vision)
+    }
+
     private func primaryActionLabel(for entry: CatalogEntry) -> String {
         switch entry.state {
-        case .installed: return "Open in Chat"
+        case .installed: return isChatCapable(entry) ? "Open in Chat" : "Installed"
         case .downloading: return "Pause"
         case .paused: return "Resume"
         case .verifying: return "Checking…"
         case .failed: return "Retry"
         case .available, .queued:
-            return entry.fit.verdict == .willNotFit ? "Won't fit" : "Download \(formatBytes(entry.manifest.estRuntimeBytes))"
+            return entry.fit.verdict == .willNotFit ? "Won't fit" : "Download \(formatBytes(modelDiskBytes(entry)))"
         }
     }
 
@@ -622,6 +647,7 @@ struct MacModelsView: View {
         case .paused: try? model.core.resumeDownload(modelId: entry.manifest.id)
         case .available, .queued, .failed: try? model.core.startDownload(modelId: entry.manifest.id)
         case .installed:
+            guard isChatCapable(entry) else { break }
             model.currentModelId = entry.manifest.id
             model.selectedTab = .chats
             model.pendingCommand = .newChat
@@ -629,6 +655,121 @@ struct MacModelsView: View {
             break
         }
         reload()
+    }
+
+    /// Whether this entry should render a download-status row (active,
+    /// interrupted, or a failed-mid-download worth retrying).
+    private func showsDownloadStatus(_ entry: CatalogEntry) -> Bool {
+        switch entry.state {
+        case .downloading, .paused, .verifying: return true
+        case .failed: return entry.bytesDone > 0
+        case .queued, .available, .installed: return false
+        }
+    }
+
+    @ViewBuilder
+    private func downloadStatus(for entry: CatalogEntry) -> some View {
+        let done = Int64(entry.bytesDone)
+        let total = Int64(modelDiskBytes(entry))
+        switch entry.state {
+        case .downloading:
+            if net.isOnline {
+                DownloadProgress(
+                    state: .downloading(bytesDone: done, bytesTotal: total, bytesPerSecond: downloadRates[entry.manifest.id] ?? 0),
+                    onPauseResume: { performPrimaryAction(for: entry) },
+                    onCancel: { try? model.core.cancelDownload(modelId: entry.manifest.id); reload() }
+                )
+            } else {
+                offlineRow(message: "Waiting for network…", done: done, total: total, entry: entry)
+            }
+        case .paused:
+            if net.isOnline {
+                DownloadProgress(
+                    state: .paused(bytesDone: done, bytesTotal: total),
+                    onPauseResume: { performPrimaryAction(for: entry) },
+                    onCancel: { try? model.core.cancelDownload(modelId: entry.manifest.id); reload() }
+                )
+            } else {
+                offlineRow(message: "Paused — no connection", done: done, total: total, entry: entry)
+            }
+        case .verifying:
+            DownloadProgress(state: .verifying, onPauseResume: {}, onCancel: {})
+        case .failed(let reason):
+            failedRow(reason: reason, done: done, total: total, entry: entry)
+        case .queued, .available, .installed:
+            EmptyView()
+        }
+    }
+
+    /// Honest offline state: real partial bytes, no fabricated rate/ETA.
+    private func offlineRow(message: String, done: Int64, total: Int64, entry: CatalogEntry) -> some View {
+        HStack(spacing: PocketSpacing.s12) {
+            Image(systemName: "wifi.slash")
+                .foregroundStyle(PocketColor.textTertiary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(message)
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textSecondary)
+                Text("\(formatBytes(UInt64(max(done, 0)))) of \(formatBytes(UInt64(max(total, 0))))")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
+            Spacer()
+            Button {
+                try? model.core.cancelDownload(modelId: entry.manifest.id)
+                reload()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(PocketColor.textTertiary)
+        }
+    }
+
+    private func failedRow(reason: String, done: Int64, total: Int64, entry: CatalogEntry) -> some View {
+        HStack(spacing: PocketSpacing.s12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(PocketColor.statusBad)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Download failed · \(formatBytes(UInt64(max(done, 0)))) of \(formatBytes(UInt64(max(total, 0))))")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.statusBad)
+                Text(reason)
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Button("Retry") {
+                try? model.core.startDownload(modelId: entry.manifest.id)
+                reload()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!net.isOnline)
+        }
+    }
+
+    /// Resume downloads that were interrupted. `.paused` with partial bytes is
+    /// resumed via `startDownload` (the Rust core resumes from the on-disk
+    /// `.part` via SHA-256; in-session `resumeDownload` state is lost across a
+    /// relaunch). `.failed` is only auto-resumed on reconnect, not on launch.
+    private func resumeInterrupted(includingFailed: Bool) {
+        guard net.isOnline else { return }
+        var resumed = false
+        for entry in catalog where entry.bytesDone > 0 {
+            switch entry.state {
+            case .paused:
+                try? model.core.startDownload(modelId: entry.manifest.id)
+                resumed = true
+            case .failed where includingFailed:
+                try? model.core.startDownload(modelId: entry.manifest.id)
+                resumed = true
+            default:
+                break
+            }
+        }
+        if resumed { reload() }
     }
 
     private func fitKind(_ verdict: FitVerdict) -> FitBadgeKind {
@@ -645,7 +786,12 @@ private struct ModelDetailSheet: View {
     let entry: CatalogEntry
     let primaryActionLabel: String
     let onPrimaryAction: () -> Void
+    var onCancel: () -> Void = {}
     let onDelete: (() -> Void)?
+    var onRetry: () -> Void = {}
+    /// Last measured throughput from the catalog screen's poller (0 = not yet measured).
+    var downloadBytesPerSecond: Int64 = 0
+    var isOnline: Bool = true
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -674,7 +820,7 @@ private struct ModelDetailSheet: View {
                 Section("Specifications") {
                     LabeledContent("Quantization", value: entry.manifest.quant)
                     LabeledContent("Context Window", value: "\(entry.manifest.contextLength) tokens")
-                    LabeledContent("Size on Disk", value: formatBytes(entry.manifest.estRuntimeBytes))
+                    LabeledContent("Size on Disk", value: formatBytes(modelDiskBytes(entry)))
                     LabeledContent("Runtime Engine", value: "\(entry.manifest.format)")
                     if let speed = entry.fit.estTokensPerSec {
                         LabeledContent("Estimated Speed", value: "\(Int(speed)) tok/s")
@@ -688,15 +834,9 @@ private struct ModelDetailSheet: View {
                     }
                 }
 
-                if entry.state == .downloading || entry.state == .paused {
+                if showsDownloadStatus {
                     Section("Download Status") {
-                        DownloadProgress(
-                            state: entry.state == .paused
-                                ? .paused(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(entry.manifest.estRuntimeBytes))
-                                : .downloading(bytesDone: Int64(entry.bytesDone), bytesTotal: Int64(entry.manifest.estRuntimeBytes), bytesPerSecond: 18_000_000),
-                            onPauseResume: onPrimaryAction,
-                            onCancel: {}
-                        )
+                        downloadStatusRow
                     }
                 }
             }
@@ -740,12 +880,93 @@ private struct ModelDetailSheet: View {
         case .notSupported: return .notSupported
         }
     }
+
+    private var showsDownloadStatus: Bool {
+        switch entry.state {
+        case .downloading, .paused, .verifying: return true
+        case .failed: return entry.bytesDone > 0
+        case .queued, .available, .installed: return false
+        }
+    }
+
+    @ViewBuilder
+    private var downloadStatusRow: some View {
+        let done = Int64(entry.bytesDone)
+        let total = Int64(modelDiskBytes(entry))
+        switch entry.state {
+        case .downloading where !isOnline:
+            Label("Waiting for network… · \(formatBytes(UInt64(max(done, 0)))) of \(formatBytes(UInt64(max(total, 0))))", systemImage: "wifi.slash")
+                .font(.pocket(.footnote))
+                .foregroundStyle(PocketColor.textSecondary)
+        case .paused where !isOnline:
+            Label("Paused — no connection · \(formatBytes(UInt64(max(done, 0)))) of \(formatBytes(UInt64(max(total, 0))))", systemImage: "wifi.slash")
+                .font(.pocket(.footnote))
+                .foregroundStyle(PocketColor.textSecondary)
+        case .failed(let reason):
+            VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                Label("Download failed · \(formatBytes(UInt64(max(done, 0)))) of \(formatBytes(UInt64(max(total, 0))))", systemImage: "exclamationmark.triangle.fill")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.statusBad)
+                Text(reason)
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+                Button("Retry") { onRetry() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!isOnline)
+            }
+        default:
+            DownloadProgress(
+                state: entry.state == .paused
+                    ? .paused(bytesDone: done, bytesTotal: total)
+                    : (entry.state == .verifying
+                        ? .verifying
+                        : .downloading(bytesDone: done, bytesTotal: total, bytesPerSecond: downloadBytesPerSecond)),
+                onPauseResume: onPrimaryAction,
+                onCancel: onCancel
+            )
+        }
+    }
 }
 
 extension CatalogEntry: @retroactive Identifiable {
     public var id: String { manifest.id }
 }
 
+/// Download/size-on-disk total for a model: the fit report's real disk bytes,
+/// falling back to summed manifest file sizes, then estRuntimeBytes (RAM
+/// estimate) only as a last resort. Using estRuntimeBytes directly made
+/// download bars stall around 87%.
+func modelDiskBytes(_ entry: CatalogEntry) -> UInt64 {
+    if entry.fit.diskBytes > 0 { return entry.fit.diskBytes }
+    let summed = entry.manifest.files.reduce(UInt64(0)) { $0 + $1.size }
+    return summed > 0 ? summed : entry.manifest.estRuntimeBytes
+}
+
 private func formatBytes(_ bytes: UInt64) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+}
+
+/// Thin wrapper over `NWPathMonitor` for real connectivity. This is distinct
+/// from the user's privacy *offline mode* (`CoreClient.isOffline`); it reports
+/// whether a usable network path exists so downloads can show an honest
+/// "Waiting for network…" state and auto-resume on reconnect. Starts optimistic
+/// (online) to avoid a false-offline flash before the first path update.
+@Observable
+@MainActor
+final class NetworkMonitor {
+    private(set) var isOnline = true
+    private let monitor = NWPathMonitor()
+    private let queue = DispatchQueue(label: "app.getpocketai.netmonitor")
+    private var started = false
+
+    func start() {
+        guard !started else { return }
+        started = true
+        monitor.pathUpdateHandler = { [weak self] path in
+            let online = path.status == .satisfied
+            Task { @MainActor in self?.isOnline = online }
+        }
+        monitor.start(queue: queue)
+    }
 }

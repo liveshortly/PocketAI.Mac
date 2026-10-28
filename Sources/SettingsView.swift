@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import PocketKit
+import PocketLiveShortly
 import PocketUI
 
 /// 02-design-system.md §6.2: `Settings` scene (⌘,) with tabs General,
@@ -15,10 +16,21 @@ struct SettingsView: View {
             MacServerView().tabItem { Label("Server", systemImage: "server.rack") }
             MacDevicesView().tabItem { Label("Devices", systemImage: "iphone") }
             MacPrivacyView().tabItem { Label("Privacy", systemImage: "hand.raised") }
+            MacLiveShortlyView().tabItem { Label("LiveShortly", systemImage: "dot.radiowaves.left.and.right") }
             MacLicenseView().tabItem { Label("License", systemImage: "key") }
         }
         .frame(width: 620, height: 500)
         .font(.pocket(.body))
+    }
+}
+
+private struct MacLiveShortlyView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        NavigationStack {
+            LSConnectView(account: model.liveShortly)
+        }
     }
 }
 
@@ -101,6 +113,9 @@ private struct MacLicenseView: View {
     private func activate() {
         do {
             entitlements = try model.core.activateLicense(key: keyField)
+            // Persist so AppModel.init can re-activate on relaunch —
+            // activation alone is memory-only.
+            model.saveLicenseKey(keyField.trimmingCharacters(in: .whitespacesAndNewlines))
             errorText = nil
         } catch {
             errorText = "Couldn't activate: \(error.localizedDescription)"
@@ -204,7 +219,7 @@ public struct MacPrivacyView: View {
     private var networkProofCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
             Text("NETWORK PROOF")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.pocket(.caption))
                 .foregroundStyle(PocketColor.textTertiary)
 
             VStack(alignment: .leading, spacing: PocketSpacing.s12) {
@@ -279,18 +294,16 @@ public struct MacPrivacyView: View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
             HStack {
                 Text("AUDIT LOG & CHAIN INTEGRITY")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
 
                 Spacer()
 
-                HStack(spacing: PocketSpacing.s8) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .foregroundStyle(PocketColor.statusOk)
-                    Text("Verified (\(filteredAuditEntries.count) events)")
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.statusOk)
-                }
+                // Honest instruments: the Core exposes no chain-verify API, so
+                // we report the event count plainly rather than claim "Verified".
+                Text("\(filteredAuditEntries.count) events")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textSecondary)
             }
 
             VStack(alignment: .leading, spacing: PocketSpacing.s12) {
@@ -396,8 +409,8 @@ public struct MacPrivacyView: View {
                     lines.append(string)
                 }
             }
-            let verificationHeader = "{\"verification\": \"sha256-chain-valid\", \"count\": \(auditEntries.count)}"
-            lines.insert(verificationHeader, at: 0)
+            let exportHeader = "{\"export\": \"pocketai-audit-log\", \"count\": \(auditEntries.count)}"
+            lines.insert(exportHeader, at: 0)
             let output = lines.joined(separator: "\n") + "\n"
             do {
                 try output.write(to: url, atomically: true, encoding: .utf8)

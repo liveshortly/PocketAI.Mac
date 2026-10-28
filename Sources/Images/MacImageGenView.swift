@@ -190,11 +190,11 @@ public struct MacImageGenView: View {
             VStack(alignment: .leading, spacing: PocketSpacing.s12) {
                 HStack {
                     Text("HISTORY")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
                     Spacer()
                     Text("(\(history.count))")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.accent)
                 }
 

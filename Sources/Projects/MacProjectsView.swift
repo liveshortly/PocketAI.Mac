@@ -272,11 +272,11 @@ private struct MacProjectDetailView: View {
             HStack {
                 HStack(spacing: PocketSpacing.s8) {
                     Text("DOCUMENTS")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
 
                     Text("(\(documents.count))")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.accent)
                 }
 

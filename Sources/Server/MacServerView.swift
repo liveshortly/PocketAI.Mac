@@ -22,6 +22,7 @@ struct MacServerView: View {
     @State private var selectedLang = SampleLang.curl
     @State private var copiedKeyFeedback = false
     @State private var copiedCodeFeedback = false
+    @State private var exportStatus: String?
 
     private var status: ServerStatus { model.serverStatus }
 
@@ -39,13 +40,21 @@ struct MacServerView: View {
                 // Configuration Form
                 VStack(alignment: .leading, spacing: PocketSpacing.s16) {
                     Text("NETWORK & SECURITY")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
 
                     VStack(spacing: PocketSpacing.s12) {
                         Toggle("Serve on Local Network (LAN)", isOn: Binding(
                             get: { status.lanEnabled },
-                            set: { lan in if status.running { toggleServer(true, lan: lan) } }
+                            // The core returns current status while running, so
+                            // a live server must be restarted for a LAN change
+                            // to take effect.
+                            set: { lan in
+                                if status.running {
+                                    model.stopServer()
+                                    model.startServer(lan: lan)
+                                }
+                            }
                         ))
                         .font(.pocket(.body))
                         .disabled(!status.running)
@@ -80,6 +89,12 @@ struct MacServerView: View {
                             }
                             .buttonStyle(.bordered)
                         }
+
+                        if let exportStatus {
+                            Text(exportStatus)
+                                .font(.pocket(.caption))
+                                .foregroundStyle(exportStatus.hasPrefix("Export failed") ? PocketColor.statusBad : PocketColor.statusOk)
+                        }
                     }
                     .padding(PocketSpacing.s16)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -98,6 +113,9 @@ struct MacServerView: View {
                 if status.running {
                     codeSamplesSection
                 }
+
+                // Request / activity log (device sessions + audit ledger)
+                ServerActivityView()
             }
             .padding(PocketSpacing.gutterMac)
             .frame(maxWidth: 800)
@@ -137,7 +155,7 @@ struct MacServerView: View {
                         .foregroundStyle(PocketColor.textPrimary)
 
                     Text(status.running
-                        ? "OpenAI-compatible endpoints active at http://127.0.0.1:\(status.port)/v1"
+                        ? "OpenAI-compatible endpoints active at https://127.0.0.1:\(status.port)/v1"
                         : "Expose on-device models to Cursor, Continue, or custom developer scripts."
                     )
                     .font(.pocket(.callout))
@@ -174,14 +192,14 @@ struct MacServerView: View {
                         Text("Base URL:")
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textSecondary)
-                        Text("http://127.0.0.1:\(status.port)/v1")
+                        Text("https://127.0.0.1:\(status.port)/v1")
                             .font(.pocket(.mono))
                             .foregroundStyle(PocketColor.textPrimary)
                     }
 
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("http://127.0.0.1:\(status.port)/v1", forType: .string)
+                        NSPasteboard.general.setString("https://127.0.0.1:\(status.port)/v1", forType: .string)
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 11))
@@ -209,8 +227,9 @@ struct MacServerView: View {
     }
 
     private var statTilesRow: some View {
+        // No "Connected Devices" tile: the core hardcodes that count to 0, so
+        // showing it would be a fabricated instrument.
         HStack(spacing: PocketSpacing.s12) {
-            statCard(label: "Connected Devices", value: "\(status.connectedDevices)", icon: "iphone")
             statCard(label: "Serving Port", value: ":\(status.port)", icon: "network")
             statCard(label: "Local Interface", value: "127.0.0.1", icon: "laptopcomputer")
         }
@@ -247,7 +266,7 @@ struct MacServerView: View {
     private var apiKeySection: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             Text("LOCAL API KEY")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.pocket(.caption))
                 .foregroundStyle(PocketColor.textTertiary)
 
             VStack(alignment: .leading, spacing: PocketSpacing.s12) {
@@ -329,7 +348,7 @@ struct MacServerView: View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack {
                 Text("INTEGRATION CODE SAMPLES")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
 
                 Spacer()
@@ -396,7 +415,8 @@ struct MacServerView: View {
 
     private var curlSample: String {
         """
-        curl http://127.0.0.1:\(status.port)/v1/chat/completions \\
+        # -k: the server uses a self-signed TLS cert (export it from this tab to pin it instead)
+        curl -k https://127.0.0.1:\(status.port)/v1/chat/completions \\
           -H "Authorization: Bearer \(keyString)" \\
           -H "Content-Type: application/json" \\
           -d '{
@@ -408,11 +428,15 @@ struct MacServerView: View {
 
     private var pythonSample: String {
         """
+        import httpx
         from openai import OpenAI
 
+        # The server uses a self-signed TLS cert; export it from the Server tab
+        # and pass it via verify=, or disable verification for localhost.
         client = OpenAI(
-            base_url="http://127.0.0.1:\(status.port)/v1",
-            api_key="\(keyString)"
+            base_url="https://127.0.0.1:\(status.port)/v1",
+            api_key="\(keyString)",
+            http_client=httpx.Client(verify=False)
         )
 
         response = client.chat.completions.create(
@@ -428,8 +452,10 @@ struct MacServerView: View {
         """
         import OpenAI from "openai";
 
+        // Self-signed TLS cert: export it from the Server tab and trust it, or
+        // for localhost only: NODE_TLS_REJECT_UNAUTHORIZED=0 node app.js
         const client = new OpenAI({
-            baseURL: "http://127.0.0.1:\(status.port)/v1",
+            baseURL: "https://127.0.0.1:\(status.port)/v1",
             apiKey: "\(keyString)"
         });
 
@@ -472,7 +498,12 @@ struct MacServerView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             let pem = model.core.hostCertPem()
-            try? pem.write(to: url, atomically: true, encoding: .utf8)
+            do {
+                try pem.write(to: url, atomically: true, encoding: .utf8)
+                exportStatus = "Exported to \(url.lastPathComponent)"
+            } catch {
+                exportStatus = "Export failed: \(error.localizedDescription)"
+            }
         }
     }
 }

@@ -1,6 +1,11 @@
 name: PocketAI
 options:
   bundleIdPrefix: com.getpocketai
+settings:
+  base:
+    # The macOS slice of pocket_ffiFFI.xcframework is arm64-only; Release
+    # otherwise also builds x86_64 and fails to link.
+    ARCHS: arm64
 packages:
   PocketCore:
     path: ../PocketAI.Core
@@ -29,6 +34,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGN_ENTITLEMENTS: Entitlements/PocketAI.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Sources/Info.plist
       properties:

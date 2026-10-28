@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PocketLiveShortly
 import UniformTypeIdentifiers
 import PocketKit
 import PocketUI
@@ -18,6 +19,10 @@ struct MacChatsView: View {
     @State private var conversations: [ConversationSummary] = []
     @State private var selectedId: String?
     @State private var hoveredConversationId: String?
+    /// A LiveShortly session shown in the detail pane (mutually exclusive
+    /// with a local conversation selection).
+    @State private var lsSessionId: String?
+    @State private var lsNewSession = false
 
     private var groupedConversations: [(title: String, items: [ConversationSummary])] {
         let calendar = Calendar.current
@@ -60,8 +65,26 @@ struct MacChatsView: View {
 
                         Spacer()
 
-                        Button {
-                            newChat()
+                        Menu {
+                            Button {
+                                newChat()
+                            } label: {
+                                Label("New chat", systemImage: "square.and.pencil")
+                            }
+                            if AppleFoundationModelsEngine.isAvailable {
+                                Button {
+                                    newChat(modelId: AppleFoundationModelsEngine.modelId)
+                                } label: {
+                                    Label("Apple Intelligence", systemImage: "apple.logo")
+                                }
+                            }
+                            if model.liveShortly.isConnected {
+                                Button {
+                                    lsNewSession = true
+                                } label: {
+                                    Label("LiveShortly session…", systemImage: "dot.radiowaves.left.and.right")
+                                }
+                            }
                         } label: {
                             Image(systemName: "square.and.pencil")
                                 .font(.system(size: 14, weight: .medium))
@@ -70,7 +93,9 @@ struct MacChatsView: View {
                                 .background(PocketColor.accentSoft)
                                 .clipShape(Circle())
                         }
-                        .buttonStyle(.plain)
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
                         .help("New Chat (⌘N)")
                     }
                     .padding(.horizontal, PocketSpacing.s12)
@@ -111,8 +136,10 @@ struct MacChatsView: View {
 
                 Divider()
 
-                // List of conversations
-                if conversations.isEmpty {
+                // List of conversations (a connected LiveShortly account keeps
+                // the List alive even with zero local chats — its sessions are
+                // content too).
+                if conversations.isEmpty && !model.liveShortly.isConnected {
                     VStack(spacing: PocketSpacing.s12) {
                         Spacer()
                         Image(systemName: "bubble.left.and.bubble.right")
@@ -131,6 +158,13 @@ struct MacChatsView: View {
                     .frame(maxWidth: .infinity)
                 } else {
                     List(selection: $selectedId) {
+                        LSSessionsSection(
+                            account: model.liveShortly,
+                            onOpen: { id in
+                                lsSessionId = id
+                                selectedId = nil
+                            },
+                            onNewSession: { lsNewSession = true })
                         ForEach(groupedConversations, id: \.title) { group in
                             Section {
                                 ForEach(group.items, id: \.id) { conv in
@@ -139,7 +173,7 @@ struct MacChatsView: View {
                                 }
                             } header: {
                                 Text(group.title.uppercased())
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.pocket(.caption))
                                     .foregroundStyle(PocketColor.textTertiary)
                                     .padding(.top, PocketSpacing.s4)
                             }
@@ -152,7 +186,14 @@ struct MacChatsView: View {
             .background(PocketColor.bgCanvas)
 
             // Right: Conversation Detail Column
-            if let selectedId {
+            if let lsSessionId, selectedId == nil {
+                NavigationStack {
+                    LSSessionView(account: model.liveShortly, sessionID: lsSessionId)
+                }
+                .id(lsSessionId)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(PocketColor.bgSurface)
+            } else if let selectedId {
                 MacChatDetailView(conversationId: selectedId, onNewChat: { newChat() })
                     .id(selectedId)
             } else {
@@ -170,12 +211,24 @@ struct MacChatsView: View {
                 .background(PocketColor.bgSurface)
             }
         }
+        .onChange(of: selectedId) {
+            if selectedId != nil { lsSessionId = nil }
+        }
+        .sheet(isPresented: $lsNewSession) {
+            LSNewSessionSheet(account: model.liveShortly)
+        }
         .inspector(isPresented: Binding(
-            get: { model.showChatInspector && selectedId != nil },
+            get: { model.showChatInspector },
             set: { model.showChatInspector = $0 }
         )) {
             if let selectedId {
                 MacChatInspectorView(conversationId: selectedId, onReload: { reload() })
+            } else {
+                ContentUnavailableView(
+                    "No conversation",
+                    systemImage: "sidebar.right",
+                    description: Text("Select a chat to see its details.")
+                )
             }
         }
         .inspectorColumnWidth(min: 280, ideal: 310, max: 380)
@@ -184,19 +237,27 @@ struct MacChatsView: View {
             if selectedId == nil, let first = conversations.first {
                 selectedId = first.id
             }
+            // Consume a command issued while this tab was hidden (⌘N from
+            // another tab sets pendingCommand before this view exists; an
+            // onChange alone never fires for it).
+            consumeCommand(model.pendingCommand)
         }
         .onChange(of: searchText) { reload() }
         .onChange(of: model.pendingCommand) { _, command in
-            switch command {
-            case .newChat:
-                newChat()
-                model.pendingCommand = nil
-            case .openConversation(let id):
-                selectedId = id
-                model.pendingCommand = nil
-            case .focusComposer, .stopGeneration, .openTab, .toggleInspector, .none:
-                break
-            }
+            consumeCommand(command)
+        }
+    }
+
+    private func consumeCommand(_ command: AppModel.Command?) {
+        switch command {
+        case .newChat:
+            newChat()
+            model.pendingCommand = nil
+        case .openConversation(let id):
+            selectedId = id
+            model.pendingCommand = nil
+        case .focusComposer, .stopGeneration, .openTab, .toggleInspector, .none:
+            break
         }
     }
 
@@ -265,8 +326,8 @@ struct MacChatsView: View {
         )
     }
 
-    private func newChat(firstMessage: String? = nil) {
-        guard let conversation = try? model.core.createConversation(NewConversation(title: nil, projectId: nil, modelId: nil)) else { return }
+    private func newChat(firstMessage: String? = nil, modelId: String? = nil) {
+        guard let conversation = try? model.core.createConversation(NewConversation(title: nil, projectId: nil, modelId: modelId)) else { return }
         reload()
         selectedId = conversation.id
         if let firstMessage {
@@ -317,10 +378,23 @@ private struct MacChatDetailView: View {
     }
     @State private var errorText: String?
     @State private var sendTask: Task<Void, Never>?
+    /// Identifies the stream whose cleanup may run; a Stop + immediate Retry
+    /// must not let the old stream's teardown clobber the new one.
+    @State private var activeStreamId = UUID()
+    /// This conversation's bound model, loaded by ID in reload().
+    @State private var conversationModelId: String?
+    /// Catalog snapshot refreshed in reload() — never call core.catalog() per
+    /// render (it re-parses the bundled JSON).
+    @State private var cachedCatalog: [CatalogEntry] = []
     @State private var isDictating = false
-    @State private var hoveredMessageId: String?
-    @State private var copiedMessageId: String?
     @State private var isDropTargetActive = false
+    /// Auto-scroll only follows new tokens while the user is pinned to the
+    /// bottom; scrolling up reveals a jump-to-latest control instead.
+    @State private var isPinnedToBottom = true
+    @State private var showJumpToBottom = false
+    /// Bumped on every streamed delta so the pinned auto-scroll tracks tokens
+    /// (the message count doesn't change while a single reply streams).
+    @State private var streamTick = 0
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -354,22 +428,37 @@ private struct MacChatDetailView: View {
         }
         .task {
             reload()
+            consumeCommand(model.pendingCommand)
             if let firstMessage = pendingFirstMessages.removeValue(forKey: conversationId) {
                 composerText = firstMessage
                 send()
             }
         }
         .onChange(of: model.pendingCommand) { _, command in
-            switch command {
-            case .focusComposer:
-                composerFocused = true
-                model.pendingCommand = nil
-            case .stopGeneration:
-                stopGeneration()
-                model.pendingCommand = nil
-            case .newChat, .openConversation, .openTab, .toggleInspector, .none:
-                break
+            consumeCommand(command)
+        }
+        .onDisappear {
+            // Switching chats mid-reply (.id(selectedId) tears this view down):
+            // stop the engine and the stream task instead of leaking them.
+            if isGenerating {
+                model.core.cancelConversation(id: conversationId)
+                isGenerating = false
             }
+            sendTask?.cancel()
+            sendTask = nil
+        }
+    }
+
+    private func consumeCommand(_ command: AppModel.Command?) {
+        switch command {
+        case .focusComposer:
+            composerFocused = true
+            model.pendingCommand = nil
+        case .stopGeneration:
+            stopGeneration()
+            model.pendingCommand = nil
+        case .newChat, .openConversation, .openTab, .toggleInspector, .none:
+            break
         }
     }
 
@@ -470,9 +559,13 @@ private struct MacChatDetailView: View {
     private var messagesScrollView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: PocketSpacing.s24) {
-                    ForEach(messages, id: \.id) { message in
-                        messageBlock(message)
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                        let grouped = index > 0 && messages[index - 1].role == message.role
+                        messageBlock(message, isGrouped: grouped)
+                            // Consecutive same-role messages sit tight; a new
+                            // speaker gets a clear gap between groups.
+                            .padding(.top, index == 0 ? 0 : (grouped ? PocketSpacing.s8 : PocketSpacing.s24))
                             .id(message.id)
                     }
 
@@ -487,26 +580,67 @@ private struct MacChatDetailView: View {
                         .padding(PocketSpacing.s12)
                         .background(PocketColor.statusBad.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(.top, PocketSpacing.s24)
                     }
+
+                    // Bottom anchor for smooth scroll-to-latest.
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.bottomAnchor)
                 }
                 .frame(maxWidth: 740)
                 .padding(.horizontal, PocketSpacing.gutterMac)
                 .padding(.vertical, PocketSpacing.s20)
                 .frame(maxWidth: .infinity)
             }
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                // Near the bottom (within one line's slack) counts as pinned.
+                geo.contentOffset.y >= geo.contentSize.height - geo.containerSize.height - 40
+            } action: { _, nearBottom in
+                isPinnedToBottom = nearBottom
+                withAnimation(.easeInOut(duration: 0.15)) { showJumpToBottom = !nearBottom }
+            }
             .onChange(of: messages.count) {
-                if let last = messages.last {
+                if isPinnedToBottom {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        proxy.scrollTo(last.id, anchor: .bottom)
+                        proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
                     }
+                }
+            }
+            .onChange(of: streamTick) {
+                // No animation per-token: jumps look smoother than spring stacking.
+                if isPinnedToBottom { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
+            }
+            .overlay(alignment: .bottom) {
+                if showJumpToBottom {
+                    Button {
+                        isPinnedToBottom = true
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(PocketColor.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(PocketColor.bgRaised)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(PocketColor.lineHairline, lineWidth: 0.8))
+                            .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, PocketSpacing.s8)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .help("Scroll to latest")
                 }
             }
         }
     }
 
+    private static let bottomAnchor = "bottom-anchor"
+
     @ViewBuilder
-    private func messageBlock(_ message: Message) -> some View {
-        let isHovered = hoveredMessageId == message.id
+    private func messageBlock(_ message: Message, isGrouped: Bool) -> some View {
         let text = message.parts.compactMap { part -> String? in
             if case .text(let t) = part { return t }
             return nil
@@ -521,127 +655,79 @@ private struct MacChatDetailView: View {
                             Button("Copy Prompt") {
                                 copyToPasteboard(text)
                             }
-                            Button("Retry with This Message") {
-                                composerText = text
-                                send()
+                            Button("Regenerate Reply") {
+                                regenerateLastTurn()
                             }
                         }
                 }
             }
         } else {
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                // Assistant header
-                HStack(spacing: PocketSpacing.s8) {
-                    PocketMarkView(state: message.status == .streaming ? .working(tokPerSec: 28) : .idle, size: 18)
-
-                    Text("PocketAI")
-                        .font(.pocket(.headline))
-                        .foregroundStyle(PocketColor.textPrimary)
-
-                    Text(formatMessageTime(message.createdAt))
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.textTertiary)
-
-                    Spacer()
-
-                    if message.status == .streaming {
-                        HStack(spacing: PocketSpacing.s4) {
-                            Text("Generating")
-                                .font(.pocket(.caption))
-                                .foregroundStyle(PocketColor.accent)
-                            ProgressView()
-                                .controlSize(.mini)
-                        }
-                    }
-                }
-
-                // Reasoning thought if present
-                if let reasoning = message.reasoning, !reasoning.isEmpty {
-                    DisclosureGroup {
-                        Text(reasoning)
-                            .font(.pocket(.footnote))
-                            .foregroundStyle(PocketColor.textSecondary)
-                            .padding(PocketSpacing.s8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } label: {
-                        HStack(spacing: PocketSpacing.s4) {
-                            Image(systemName: "brain.head.profile")
-                                .font(.system(size: 11))
-                            Text("Thinking process")
-                                .font(.pocket(.caption))
-                                .fontWeight(.medium)
-                        }
-                        .foregroundStyle(PocketColor.textSecondary)
-                    }
-                    .padding(PocketSpacing.s8)
-                    .background(PocketColor.bgSunken)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-
-                // Assistant message body
-                MessageView(
-                    text: text,
-                    reasoning: nil,
-                    onCopy: { copyToPasteboard(text) },
-                    onRetry: { retryLastTurn() },
-                    onSpeak: { speak(text) }
-                )
-
-                // Hover Actions Row
-                if isHovered && message.status != .streaming {
+                // Assistant header — hidden for a message grouped under the
+                // previous assistant turn so a reply reads as one block.
+                if !isGrouped {
                     HStack(spacing: PocketSpacing.s8) {
-                        Button {
-                            copyToPasteboard(text)
-                            copiedMessageId = message.id
-                            Task {
-                                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                                if copiedMessageId == message.id { copiedMessageId = nil }
-                            }
-                        } label: {
-                            Label(copiedMessageId == message.id ? "Copied" : "Copy", systemImage: copiedMessageId == message.id ? "checkmark" : "doc.on.doc")
-                                .font(.pocket(.caption))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        PocketMarkView(state: message.status == .streaming ? .working(tokPerSec: model.activeTokPerSec > 0 ? Double(model.activeTokPerSec) : nil) : .idle, size: 18)
 
-                        Button {
-                            retryLastTurn()
-                        } label: {
-                            Label("Retry", systemImage: "arrow.clockwise")
-                                .font(.pocket(.caption))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        Text("PocketAI")
+                            .font(.pocket(.headline))
+                            .foregroundStyle(PocketColor.textPrimary)
 
-                        Button {
-                            speak(text)
-                        } label: {
-                            Label("Speak", systemImage: "speaker.wave.2")
-                                .font(.pocket(.caption))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        Text(formatMessageTime(message.createdAt))
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textTertiary)
 
                         Spacer()
 
-                        if let stats = message.stats {
-                            Text("\(stats.decodeTps) tok/s · \(stats.completionTokens) tokens")
-                                .font(.pocket(.metric))
+                        switch message.status {
+                        case .streaming:
+                            HStack(spacing: PocketSpacing.s4) {
+                                Text("Generating")
+                                    .font(.pocket(.caption))
+                                    .foregroundStyle(PocketColor.accent)
+                                ProgressView()
+                                    .controlSize(.mini)
+                            }
+                        case .cancelled:
+                            Text("Stopped")
+                                .font(.pocket(.caption))
                                 .foregroundStyle(PocketColor.textTertiary)
+                        case .error:
+                            Text("Failed")
+                                .font(.pocket(.caption))
+                                .foregroundStyle(PocketColor.statusBad)
+                        case .done:
+                            EmptyView()
                         }
                     }
-                    .padding(.top, PocketSpacing.s4)
-                    .transition(.opacity)
+                }
+
+                // Assistant message body + a blinking caret while streaming.
+                // MessageView owns the reasoning ("Thinking…"/"Thought for a
+                // moment") disclosure and the copy/retry/speak + stats footer
+                // so the affordances stay consistent app-wide.
+                HStack(alignment: .bottom, spacing: PocketSpacing.s4) {
+                    MessageView(
+                        text: text,
+                        reasoning: message.reasoning,
+                        isThinking: message.status == .streaming,
+                        statsText: statsText(message),
+                        onCopy: { copyToPasteboard(text) },
+                        onRetry: { regenerateLastTurn() },
+                        onSpeak: { speak(text) }
+                    )
+                    if message.status == .streaming {
+                        StreamingCaret()
+                    }
                 }
             }
-            .padding(.vertical, PocketSpacing.s4)
             .contentShape(Rectangle())
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    hoveredMessageId = hovering ? message.id : nil
-                }
-            }
         }
+    }
+
+    private func statsText(_ message: Message) -> String? {
+        guard let stats = message.stats else { return nil }
+        return "\(stats.decodeTps) tok/s · \(stats.completionTokens) tokens"
     }
 
     private var composerSection: some View {
@@ -649,14 +735,16 @@ private struct MacChatDetailView: View {
             // Pulse Status Bar when generating
             if isGenerating {
                 HStack(spacing: PocketSpacing.s8) {
-                    PocketMarkView(state: .working(tokPerSec: 28), size: 14)
-                    Text("Generating with \(model.currentModelDisplayName)…")
+                    PocketMarkView(state: .working(tokPerSec: model.activeTokPerSec > 0 ? Double(model.activeTokPerSec) : nil), size: 14)
+                    Text("Generating with \(chatModelDisplayName)…")
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.accent)
                     Spacer()
-                    Text("28 tok/s")
-                        .font(.pocket(.metric))
-                        .foregroundStyle(PocketColor.accent)
+                    if model.activeTokPerSec > 0 {
+                        Text("\(model.activeTokPerSec) tok/s")
+                            .font(.pocket(.metric))
+                            .foregroundStyle(PocketColor.accent)
+                    }
                 }
                 .padding(.horizontal, PocketSpacing.s16)
                 .padding(.vertical, 6)
@@ -807,8 +895,30 @@ private struct MacChatDetailView: View {
 
     private func reload() {
         messages = model.core.messages(conversationId: conversationId)
-        title = model.core.conversations(query: ConversationQuery(search: nil, archived: nil, limit: 0, offset: 0))
-            .first { $0.id == conversationId }?.title
+        cachedCatalog = model.core.catalog(filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
+        // Resolve directly by ID — never page-scan conversations(), which
+        // misses older chats past the default window.
+        if let convo = model.core.conversation(id: conversationId) {
+            title = convo.title
+            conversationModelId = convo.modelId
+        }
+    }
+
+    /// The chat's own bound model name; the global default only while unbound.
+    private var chatModelDisplayName: String {
+        guard let id = conversationModelId,
+              let entry = cachedCatalog.first(where: { $0.manifest.id == id }) else {
+            return model.currentModelDisplayName
+        }
+        return entry.manifest.displayName
+    }
+
+    /// Is this model actually runnable right now? Used to self-heal a
+    /// conversation bound to a since-deleted model.
+    private func isModelUsable(_ id: String) -> Bool {
+        if id.hasPrefix("mac:") { return true }
+        if id == AppleFoundationModelsEngine.modelId { return AppleFoundationModelsEngine.isAvailable }
+        return cachedCatalog.contains { $0.manifest.id == id && $0.state == .installed }
     }
 
     private func send() {
@@ -817,42 +927,120 @@ private struct MacChatDetailView: View {
         composerText = ""
         errorText = nil
         isGenerating = true
+        model.activeTokPerSec = 0
+        let streamId = UUID()
+        activeStreamId = streamId
+        // Bind a model only when this conversation is unbound or its bound
+        // model is no longer runnable — never overwrite a valid per-chat
+        // choice with the global default on send.
+        let boundUsable = conversationModelId.map(isModelUsable) ?? false
+        if !boundUsable, isModelUsable(model.currentModelId) {
+            try? model.core.setConversationModel(id: conversationId, modelId: model.currentModelId)
+            conversationModelId = model.currentModelId
+        }
+        // Instant local echo: the user's bubble appears the moment they hit
+        // send — never after model load. The .done reload replaces it with the
+        // persisted row.
+        messages.removeAll { $0.id == Self.localEchoId }
+        messages.append(Message(
+            id: Self.localEchoId, conversationId: conversationId, role: "user",
+            parts: [.text(text: trimmed)], reasoning: nil, stats: nil, modelId: nil,
+            createdAt: Int64(Date().timeIntervalSince1970 * 1000), status: .done
+        ))
+        // And an empty streaming bubble right away, so the reply visibly
+        // "starts" while the model is still loading.
+        upsertStreamingPlaceholder(text: "")
         sendTask = Task {
-            var partialText = ""
-            do {
-                for try await event in model.core.sendMessage(conversationId: conversationId, input: UserInput(parts: [.text(text: trimmed)])) {
-                    if Task.isCancelled { return }
-                    switch event {
-                    case .delta(let delta):
-                        partialText += delta.text
-                        upsertStreamingPlaceholder(text: partialText)
-                    case .done:
-                        reload()
-                    }
-                }
-            } catch {
-                if !Task.isCancelled {
-                    errorText = "Something went wrong: \(error.localizedDescription)"
-                }
-            }
-            isGenerating = false
+            await consumeStream(
+                model.core.sendMessage(conversationId: conversationId, input: UserInput(parts: [.text(text: trimmed)])),
+                streamId: streamId
+            )
         }
     }
 
-    private func stopGeneration() {
-        sendTask?.cancel()
-        sendTask = nil
+    private static let localEchoId = "local-echo-user"
+
+    /// Shared consumption for a send or a regenerate stream.
+    @MainActor
+    private func consumeStream(_ stream: AsyncThrowingStream<ChatStreamEvent, Error>, streamId: UUID) async {
+        var partialText = ""
+        var partialReasoning = ""
+        let start = Date()
+        var charCount = 0
+        do {
+            for try await event in stream {
+                switch event {
+                case .delta(let delta):
+                    partialText += delta.text
+                    partialReasoning += delta.reasoning
+                    charCount += delta.text.count + delta.reasoning.count
+                    // Honest instruments: live rate from the real stream
+                    // (~4 chars/token); exact tok/s replaces it on .done.
+                    let elapsed = Date().timeIntervalSince(start)
+                    if elapsed > 0.2 { model.activeTokPerSec = Int((Double(charCount) / 4.0) / elapsed) }
+                    upsertStreamingPlaceholder(text: partialText, reasoning: partialReasoning)
+                case .done(let final):
+                    if let tps = final.stats?.decodeTps { model.activeTokPerSec = Int(tps) }
+                    reload()
+                }
+            }
+        } catch {
+            if activeStreamId == streamId { errorText = friendlyError(error) }
+        }
+        // Only the stream that still owns the screen may clean up — a Stop
+        // followed by an immediate Retry must not be clobbered by the old
+        // stream's late teardown.
+        guard activeStreamId == streamId else { return }
         isGenerating = false
+        reload()
     }
 
-    private func retryLastTurn() {
-        if let lastUserMessage = messages.last(where: { $0.role == "user" }) {
-            let userText = lastUserMessage.parts.compactMap { part -> String? in
-                if case .text(let t) = part { return t }
-                return nil
-            }.joined()
-            composerText = userText
-            send()
+    /// Actionable guidance for the most common first-run failure (no model),
+    /// instead of a generic "Something went wrong".
+    private func friendlyError(_ error: Error) -> String {
+        let desc = error.localizedDescription.lowercased()
+        if desc.contains("no model") || desc.contains("not installed") || desc.contains("not exist")
+            || desc.contains("config.json") || desc.contains("no engine") || desc.contains("notfound") {
+            return "No model is ready yet. Download one in Models to start chatting on this Mac."
+        }
+        if desc.contains("not entitled") || desc.contains("notentitled") {
+            return "This needs PocketAI Pro. Unlock it in Settings."
+        }
+        return "Something went wrong: \(error.localizedDescription)"
+    }
+
+    private func stopGeneration() {
+        // Reach the engine so a synchronous generate actually stops, then tear
+        // down the stream task.
+        model.core.cancelConversation(id: conversationId)
+        sendTask?.cancel()
+        sendTask = nil
+        activeStreamId = UUID() // orphan the old stream's cleanup
+        isGenerating = false
+        reload() // pick up the persisted .cancelled row, not a stuck "Generating" placeholder
+        // The core persists the cancelled row when the engine actually stops,
+        // which can land just after the immediate reload — refresh once more.
+        Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            if !isGenerating { reload() }
+        }
+    }
+
+    /// Regenerates the latest assistant reply: the core drops the failed or
+    /// stopped attempt and re-runs from existing history — never a duplicated
+    /// user message.
+    private func regenerateLastTurn() {
+        guard !isGenerating else { return }
+        guard messages.contains(where: { $0.role == "user" }) else { return }
+        errorText = nil
+        isGenerating = true
+        model.activeTokPerSec = 0
+        let streamId = UUID()
+        activeStreamId = streamId
+        reload() // show the dropped assistant attempt disappearing
+        upsertStreamingPlaceholder(text: "")
+        sendTask = Task {
+            await consumeStream(model.core.regenerate(conversationId: conversationId), streamId: streamId)
         }
     }
 
@@ -911,11 +1099,12 @@ private struct MacChatDetailView: View {
         }
     }
 
-    private func upsertStreamingPlaceholder(text: String) {
+    private func upsertStreamingPlaceholder(text: String, reasoning: String = "") {
         let placeholderId = "streaming-placeholder"
         let message = Message(
             id: placeholderId, conversationId: conversationId, role: "assistant",
-            parts: [.text(text: text)], reasoning: nil, stats: nil, modelId: nil,
+            parts: [.text(text: text)], reasoning: reasoning.isEmpty ? nil : reasoning,
+            stats: nil, modelId: nil,
             createdAt: Int64(Date().timeIntervalSince1970 * 1000), status: .streaming
         )
         if let index = messages.firstIndex(where: { $0.id == placeholderId }) {
@@ -923,6 +1112,7 @@ private struct MacChatDetailView: View {
         } else {
             messages.append(message)
         }
+        streamTick &+= 1
     }
 
     private func formatMessageTime(_ timestamp: Int64) -> String {
@@ -930,5 +1120,25 @@ private struct MacChatDetailView: View {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+/// A blinking block caret shown at the tail of a streaming reply. Pure
+/// decoration tied to the live `.streaming` status — it carries no fabricated
+/// progress; when the stream ends the caret is simply removed.
+private struct StreamingCaret: View {
+    @State private var on = true
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1, style: .continuous)
+            .fill(PocketColor.accent)
+            .frame(width: 2, height: 16)
+            .opacity(on ? 1 : 0)
+            .padding(.bottom, 3)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                    on = false
+                }
+            }
     }
 }

@@ -123,7 +123,9 @@ struct PocketAIApp: App {
             MacImageGenView()
                 .environment(model)
         }
-        .windowResizability(.contentSize)
+        // Resizable: a full feature window, not a fixed palette — users expand it.
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 720, height: 620)
         .defaultPosition(.center)
     }
 }
