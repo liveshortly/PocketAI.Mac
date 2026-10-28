@@ -278,6 +278,34 @@ extension ModelFormat {
     }
 }
 
+/// Tracks transfer rate per model from successive catalog reads, so a
+/// multi-gigabyte download can say how long it has left.
+@MainActor
+final class DownloadRates {
+    static let shared = DownloadRates()
+    private var samples: [String: (bytes: UInt64, at: Date)] = [:]
+    private var rates: [String: Double] = [:]
+
+    /// Bytes per second, smoothed, or nil until two samples exist.
+    func observe(id: String, bytes: UInt64) -> Double? {
+        let now = Date()
+        defer { samples[id] = (bytes, now) }
+        guard let previous = samples[id] else { return rates[id] }
+        let elapsed = now.timeIntervalSince(previous.at)
+        guard elapsed > 0.5, bytes >= previous.bytes else { return rates[id] }
+        let instant = Double(bytes - previous.bytes) / elapsed
+        // Exponential smoothing: raw per-second deltas swing too much to read.
+        let smoothed = rates[id].map { $0 * 0.7 + instant * 0.3 } ?? instant
+        rates[id] = smoothed
+        return smoothed
+    }
+
+    func forget(_ id: String) {
+        samples[id] = nil
+        rates[id] = nil
+    }
+}
+
 /// One model: name, shape, fit verdict, and the action that applies to its
 /// current state.
 struct ModelCard: View {
@@ -312,14 +340,64 @@ struct ModelCard: View {
                 HUDLabel("verifying…")
             }
             if case .failed(let reason) = entry.state {
-                Text(reason)
-                    .font(.pocket(.caption))
-                    .foregroundStyle(PocketColor.statusBad)
+                HStack(alignment: .top, spacing: PocketSpacing.s8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(failureSummary(reason))
+                            .font(.pocket(.body))
+                        Text(reason)
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textTertiary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                    Button("Retry") {
+                        DownloadRates.shared.forget(entry.manifest.id)
+                        try? app.core.startDownload(modelId: entry.manifest.id)
+                    }
+                    .buttonStyle(.hud)
+                }
+                .padding(PocketSpacing.s8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .hudPanel(PocketColor.statusBad.opacity(0.08))
             }
             fitLine
+            HStack(spacing: PocketSpacing.s12) {
+                HUDLabel(entry.manifest.license.spdx.isEmpty
+                    ? "license unknown" : entry.manifest.license.spdx)
+                if !entry.manifest.license.commercialOk {
+                    HUDChip(text: "NON-COMMERCIAL", tint: PocketColor.statusWarn)
+                }
+                Spacer(minLength: 0)
+                if let url = URL(string: entry.manifest.license.url),
+                   !entry.manifest.license.url.isEmpty {
+                    Link("License", destination: url)
+                        .font(.pocket(.caption))
+                }
+                if !entry.manifest.hfRepo.isEmpty,
+                   let repo = URL(string: "https://huggingface.co/\(entry.manifest.hfRepo)") {
+                    Link("Source", destination: repo)
+                        .font(.pocket(.caption))
+                }
+            }
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+    }
+
+    /// Turns a raw download error into something actionable.
+    private func failureSummary(_ reason: String) -> String {
+        let lowered = reason.lowercased()
+        if lowered.contains("checksum") || lowered.contains("sha") {
+            return "The downloaded file didn't match its checksum. Retry to fetch it again."
+        }
+        if lowered.contains("space") || lowered.contains("disk") {
+            return "Not enough disk space for this model."
+        }
+        if lowered.contains("network") || lowered.contains("connection")
+            || lowered.contains("timed out") || lowered.contains("offline") {
+            return "The download lost its connection."
+        }
+        return "The download failed."
     }
 
     private var subtitle: String {
@@ -400,6 +478,7 @@ struct ModelCard: View {
                 .tint(PocketColor.accent)
             HStack {
                 HUDLabel("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
+                if let detail = rateAndETA { HUDLabel(detail) }
                 Spacer()
                 Button("Cancel") { try? app.core.cancelDownload(modelId: entry.manifest.id) }
                     .buttonStyle(.plain)
@@ -407,6 +486,25 @@ struct ModelCard: View {
                     .foregroundStyle(PocketColor.statusBad)
             }
         }
+    }
+
+    /// "12.4 MB/s · about 3 min left", once a rate can be measured.
+    private var rateAndETA: String? {
+        guard case .downloading = entry.state,
+              let rate = DownloadRates.shared.observe(
+                id: entry.manifest.id, bytes: entry.bytesDone),
+              rate > 0
+        else { return nil }
+        var parts = ["\(hudBytes(UInt64(rate)))/s"]
+        let remaining = Double(entry.fit.diskBytes) - Double(entry.bytesDone)
+        if remaining > 0 {
+            let seconds = remaining / rate
+            let formatter = DateComponentsFormatter()
+            formatter.allowedUnits = seconds < 3600 ? [.minute, .second] : [.hour, .minute]
+            formatter.unitsStyle = .abbreviated
+            if let left = formatter.string(from: seconds) { parts.append("\(left) left") }
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var fraction: Double {

@@ -1,3 +1,4 @@
+import AppKit
 import PocketKit
 import PocketLiveShortly
 import PocketUI
@@ -14,6 +15,8 @@ struct SidebarView: View {
     @State private var renaming: ConversationSummary?
     @State private var confirmDelete: ConversationSummary?
     @State private var newProject = false
+    @State private var pendingEndSession: LSSession?
+    @State private var pendingDeleteSession: LSSession?
     @State private var lastSessionLoad: Date?
 
     /// The sidebar shows only the newest few of each kind; the rest live
@@ -76,6 +79,40 @@ struct SidebarView: View {
                     name: name, instructions: instructions) {
                     reloadProjects()
                     app.selection = .project(project.id)
+                }
+            }
+        }
+        .confirmationDialog(
+            "End “\(pendingEndSession?.title ?? "session")”? The agent stops where it is.",
+            isPresented: Binding(
+                get: { pendingEndSession != nil },
+                set: { if !$0 { pendingEndSession = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("End session", role: .destructive) {
+                guard let target = pendingEndSession, let client = app.liveShortly.client
+                else { return }
+                Task {
+                    try? await client.stop(target.id)
+                    lastSessionLoad = nil
+                    reloadSessions()
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete “\(pendingDeleteSession?.title ?? "session")”? This cannot be undone.",
+            isPresented: Binding(
+                get: { pendingDeleteSession != nil },
+                set: { if !$0 { pendingDeleteSession = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete session", role: .destructive) {
+                guard let target = pendingDeleteSession, let client = app.liveShortly.client
+                else { return }
+                Task {
+                    try? await client.deleteSession(target.id)
+                    if app.selection == .session(target.id) { app.selection = nil }
+                    sessions.removeAll { $0.id == target.id }
                 }
             }
         }
@@ -160,6 +197,25 @@ struct SidebarView: View {
                 ForEach(orderedSessions.prefix(Self.recentLimit), id: \.id) { session in
                     SessionRow(session: session)
                         .tag(AppModel.Destination.session(session.id))
+                        .contextMenu {
+                            Button("Open") { app.selection = .session(session.id) }
+                            if let link = app.liveShortly.client?.sessionLink(session.id) {
+                                Button("Copy link") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(
+                                        link.absoluteString, forType: .string)
+                                }
+                            }
+                            Divider()
+                            if session.isLive {
+                                Button("End session", role: .destructive) {
+                                    pendingEndSession = session
+                                }
+                            }
+                            Button("Delete session", role: .destructive) {
+                                pendingDeleteSession = session
+                            }
+                        }
                 }
                 if sessions.count > Self.recentLimit {
                     Label(

@@ -16,6 +16,7 @@ struct ChatView: View {
     @State private var dictation = Dictation()
     @State private var pinnedToBottom = true
     @State private var attachmentRefusal: String?
+    @State private var chatExportError: String?
     @FocusState private var composerFocused: Bool
 
     let conversationId: String
@@ -102,6 +103,8 @@ struct ChatView: View {
                 Button("Rename…") { showRename = true }
                 Button("Regenerate reply") { chat.regenerate() }
                     .disabled(chat.isStreaming || chat.messages.isEmpty)
+                Button("Export transcript…") { exportTranscript(chat) }
+                    .disabled(chat.messages.isEmpty)
                 Divider()
                 Button("Archive") {
                     try? app.core.archiveConversation(id: conversationId, archived: true)
@@ -252,6 +255,11 @@ struct ChatView: View {
         VStack(spacing: 0) {
             HUDRule()
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                if let chatExportError {
+                    Text(chatExportError)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusBad)
+                }
                 if let attachmentRefusal {
                     HStack(spacing: PocketSpacing.s8) {
                         Image(systemName: "photo.badge.exclamationmark")
@@ -385,6 +393,33 @@ struct ChatView: View {
             return "This model can't read images. Switch to \(suggestion) to attach one."
         }
         return "This model can't read images. Install a vision model to attach one."
+    }
+
+    /// Writes the conversation out as Markdown. The desktop is where a
+    /// transcript actually leaves the app.
+    private func exportTranscript(_ chat: ChatModel) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = chat.title
+            .replacingOccurrences(of: "/", with: "-") + ".md"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        var lines = ["# \(chat.title)", ""]
+        for message in chat.messages {
+            let when = Date(timeIntervalSince1970: TimeInterval(message.createdAt))
+                .formatted(date: .abbreviated, time: .shortened)
+            lines.append("## \(message.isUser ? "You" : "Assistant") · \(when)")
+            lines.append("")
+            let body = message.plainText
+            if !body.isEmpty { lines.append(body) }
+            for path in message.imagePaths { lines.append("![attachment](\(path))") }
+            lines.append("")
+        }
+        do {
+            try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            chatExportError = "Couldn't save the transcript: \(error.localizedDescription)"
+        }
     }
 
     private func pickAttachment() {
