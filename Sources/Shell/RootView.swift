@@ -51,15 +51,6 @@ struct RootView: View {
                 CoreErrorBanner(message: error)
             }
         }
-        .onChange(of: app.pendingCommand) { _, command in
-            // Commands the shell owns; the rest are consumed by the chat view.
-            switch command {
-            case .newLiveSession:
-                app.selection = app.liveShortly.isConnected ? app.selection : app.selection
-            default:
-                break
-            }
-        }
     }
 
     @ViewBuilder private var detail: some View {

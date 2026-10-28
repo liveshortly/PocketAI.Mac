@@ -22,8 +22,8 @@ final class PocketAITests: XCTestCase {
         model.pendingCommand = .newChat
         XCTAssertEqual(model.pendingCommand, .newChat)
 
-        model.pendingCommand = .openTab(.models)
-        XCTAssertEqual(model.pendingCommand, .openTab(.models))
+        model.pendingCommand = .openConversation("c-1")
+        XCTAssertEqual(model.pendingCommand, .openConversation("c-1"))
 
         model.pendingCommand = .focusComposer
         XCTAssertEqual(model.pendingCommand, .focusComposer)

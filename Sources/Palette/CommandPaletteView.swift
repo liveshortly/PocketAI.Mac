@@ -100,11 +100,9 @@ struct CommandPaletteView: View {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         var items: [Item] = []
 
-        items.append(contentsOf: actions.filter {
-            q.isEmpty || $0.title.lowercased().contains(q)
-        })
+        items.append(contentsOf: actions.filter { fuzzyMatch(query: q, in: $0.title) })
         items.append(contentsOf: chats.filter {
-            q.isEmpty || ($0.title ?? "").lowercased().contains(q)
+            fuzzyMatch(query: q, in: $0.title ?? "")
         }.prefix(q.isEmpty ? 6 : 20).map { summary in
             Item(
                 id: "chat-\(summary.id)", kind: .chat,
@@ -115,7 +113,7 @@ struct CommandPaletteView: View {
             }
         })
         items.append(contentsOf: projects.filter {
-            q.isEmpty || $0.name.lowercased().contains(q)
+            fuzzyMatch(query: q, in: $0.name)
         }.map { project in
             Item(
                 id: "project-\(project.id)", kind: .project, title: project.name,
@@ -125,7 +123,7 @@ struct CommandPaletteView: View {
             }
         })
         items.append(contentsOf: sessions.filter {
-            q.isEmpty || $0.title.lowercased().contains(q)
+            fuzzyMatch(query: q, in: $0.title)
         }.map { session in
             Item(
                 id: "session-\(session.id)", kind: .session,
@@ -192,6 +190,20 @@ struct CommandPaletteView: View {
             Task { sessions = (try? await client.sessions(limit: 30)) ?? [] }
         }
     }
+}
+
+/// Subsequence match, the way every command palette worth using behaves:
+/// "nct" finds "New chat", "serv" finds "Local server". Case-insensitive, and
+/// an empty query matches everything.
+func fuzzyMatch(query: String, in candidate: String) -> Bool {
+    let needle = Array(query.lowercased())
+    guard !needle.isEmpty else { return true }
+    var index = needle.startIndex
+    for character in candidate.lowercased() where character == needle[index] {
+        index = needle.index(after: index)
+        if index == needle.endIndex { return true }
+    }
+    return false
 }
 
 struct PaletteRow: View {
