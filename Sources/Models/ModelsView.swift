@@ -359,6 +359,11 @@ struct ModelCard: View {
     /// control used to discard its error with `try?`, so a refused download,
     /// pause or cancel left a button that looked dead.
     @State private var actionError: String?
+    /// The model's last benchmark (read from the store on appear, replaced by a
+    /// fresh run) and whether one is running right now. A run generates real
+    /// tokens for a few seconds, so it has to be visible while it happens.
+    @State private var benchmark: Benchmark?
+    @State private var benchmarking = false
 
     private var isDefault: Bool { app.currentModelId == entry.manifest.id }
 
@@ -421,6 +426,7 @@ struct ModelCard: View {
                 .hudPanel(PocketColor.statusBad.opacity(0.08))
             }
             fitLine
+            benchmarkLine
             if let actionError {
                 HStack(alignment: .top, spacing: PocketSpacing.s8) {
                     Text(actionError)
@@ -455,6 +461,59 @@ struct ModelCard: View {
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+        .task(id: entry.manifest.id) {
+            // A cheap local read, not a run: shows the previous result so the
+            // user isn't made to re-measure to see a number they already have.
+            if entry.state == .installed, benchmark == nil {
+                benchmark = app.core.storedBenchmark(id: entry.manifest.id)
+            }
+        }
+    }
+
+    /// What this model actually did on this Mac, and the state of a run in
+    /// progress. Only installed models can be measured.
+    @ViewBuilder private var benchmarkLine: some View {
+        if benchmarking {
+            HStack(spacing: PocketSpacing.s8) {
+                ProgressView()
+                    .controlSize(.small)
+                HUDLabel("benchmarking… generating tokens on this Mac")
+            }
+        } else if let benchmark {
+            HStack(spacing: PocketSpacing.s12) {
+                HUDLabel("\(Int(benchmark.tps)) tok/s")
+                HUDLabel("\(benchmark.ttftMs) ms to first token")
+                if benchmark.peakBytes > 0 {
+                    HUDLabel("\(hudBytes(benchmark.peakBytes)) peak")
+                }
+                Spacer(minLength: 0)
+                Button("Re-run") { runBenchmark() }
+                    .buttonStyle(.plain)
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.accent)
+            }
+        }
+    }
+
+    /// Measures the model for real: seconds of inference behind a blocking FFI
+    /// call, so it runs off the main actor — inline it would freeze the window.
+    private func runBenchmark() {
+        guard !benchmarking else { return }
+        benchmarking = true
+        actionError = nil
+        let core = app.core
+        let id = entry.manifest.id
+        Task {
+            let outcome = await Task.detached { () -> Result<Benchmark, Error> in
+                do { return .success(try core.benchmarkModel(id: id)) } catch { return .failure(error) }
+            }.value
+            switch outcome {
+            case .success(let measured): benchmark = measured
+            case .failure(let error):
+                actionError = "Benchmark failed: " + error.localizedDescription
+            }
+            benchmarking = false
+        }
     }
 
     /// Turns a raw download error into something actionable.
@@ -517,6 +576,10 @@ struct ModelCard: View {
                         .buttonStyle(.hud)
                 }
                 Menu {
+                    Button(benchmark == nil ? "Benchmark on this Mac" : "Benchmark again") {
+                        runBenchmark()
+                    }
+                    .disabled(benchmarking)
                     Button("Unload from memory") {
                         attempt("Unload") { try app.core.unloadModel(id: entry.manifest.id) }
                     }
