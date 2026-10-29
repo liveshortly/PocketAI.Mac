@@ -14,8 +14,13 @@ OUT="build/dist"; rm -rf "$OUT"; mkdir -p "$OUT"
 
 echo "==> xcodegen + archive"
 xcodegen generate
+# ARCHS pinned here as well as in project.yml: the SwiftPM dependencies do not
+# inherit project build settings and would otherwise compile an x86_64 slice
+# that nothing links — several minutes of MLX built for an architecture the app
+# cannot run on.
 xcodebuild -scheme PocketAI -destination 'generic/platform=macOS' \
   -archivePath "$OUT/PocketAI.xcarchive" \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM_ID" \
   archive
 
@@ -35,7 +40,19 @@ xcodebuild -exportArchive -archivePath "$OUT/PocketAI.xcarchive" \
 APP="$OUT/export/PocketAI.app"
 echo "==> zip + notarize (waits for Apple)"
 ditto -c -k --keepParent "$APP" "$OUT/PocketAI.zip"
-xcrun notarytool submit "$OUT/PocketAI.zip" --keychain-profile "$NOTARY_PROFILE" --wait
+# `notarytool submit --wait` exits 0 even when Apple rejects the build, so the
+# status has to be read. Without this the script walked on and tried to staple
+# a ticket that was never issued.
+SUBMIT_JSON="$OUT/notarize.json"
+xcrun notarytool submit "$OUT/PocketAI.zip" --keychain-profile "$NOTARY_PROFILE" \
+  --wait --output-format json | tee "$SUBMIT_JSON"
+SUBMISSION_ID="$(/usr/bin/plutil -extract id raw -expect string - <<<"$(cat "$SUBMIT_JSON")" 2>/dev/null || python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])' < "$SUBMIT_JSON")"
+STATUS="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["status"])' < "$SUBMIT_JSON")"
+if [[ "$STATUS" != "Accepted" ]]; then
+  echo "error: notarization returned $STATUS — Apple's reasons follow" >&2
+  xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$NOTARY_PROFILE" >&2 || true
+  exit 1
+fi
 
 echo "==> staple + DMG"
 xcrun stapler staple "$APP"

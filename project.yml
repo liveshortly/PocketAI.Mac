@@ -6,6 +6,18 @@ options:
   # Resources/Localizable.xcstrings; shared components come localized from
   # PocketUI's own catalog.
   knownRegions: [en, hi, es, fr, de, ja, zh-Hans, pt-BR, Base]
+# Apple Silicon only, declared rather than discovered. The app runs MLX
+# models, which need a Metal GPU on Apple Silicon, and the Rust core ships a
+# macos-arm64 slice alone. A plain `xcodebuild archive` targets universal and
+# fails at the x86_64 link step with nothing obviously wrong — this makes the
+# real constraint explicit.
+settings:
+  base:
+    ARCHS: arm64
+    VALID_ARCHS: arm64
+    # Notarization refuses a binary without it: "The executable does not have
+    # the hardened runtime enabled." Required for any Developer ID build.
+    ENABLE_HARDENED_RUNTIME: YES
 packages:
   PocketCore:
     path: ../PocketAI.Core
