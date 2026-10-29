@@ -11,7 +11,12 @@ struct ImageGenView: View {
     @State private var prompt = ""
     @State private var negativePrompt = ""
     @State private var size = 512
+    /// Seeded from the installed model's own preset. A constant is wrong the
+    /// moment the model is not SDXL-Turbo: a full-schedule model wants ~50.
     @State private var steps = 2
+    @State private var maxSteps = 4
+    @State private var stepsHint = "SDXL Turbo is built for 1–4 steps. More is slower, not better."
+
     @State private var seedText = ""
     @State private var image: NSImage?
     @State private var preview: NSImage?
@@ -46,6 +51,7 @@ struct ImageGenView: View {
             }
         }
         .background(PocketColor.bgCanvas)
+        .task { adoptInstalledModelDefaults() }
         .onDisappear { task?.cancel() }
     }
 
@@ -84,9 +90,9 @@ struct ImageGenView: View {
                     Slider(
                         value: Binding(
                             get: { Double(steps) }, set: { steps = Int($0) }),
-                        in: 1...4, step: 1)
+                        in: 1...Double(maxSteps), step: 1)
                     .tint(PocketColor.accent)
-                    Text("SDXL Turbo is built for 1–4 steps. More is slower, not better.")
+                    Text(stepsHint)
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
                 }
@@ -171,6 +177,20 @@ struct ImageGenView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PocketColor.bgCanvas)
+    }
+
+    /// Reads the installed model's tuned schedule. Silent on failure — the
+    /// Turbo defaults stand and the generate path reports a missing model.
+    private func adoptInstalledModelDefaults() {
+        guard let installed = resolveInstalledImageModel(),
+              let preset = try? PocketImageGenerator.defaultSteps(forModelId: installed.modelId),
+              let ceiling = try? PocketImageGenerator.maxSteps(forModelId: installed.modelId)
+        else { return }
+        steps = preset
+        maxSteps = ceiling
+        stepsHint = ceiling <= 4
+            ? "This model is built for 1–\(ceiling) steps. More is slower, not better."
+            : "This model is tuned for \(preset) steps. Fewer is faster and rougher."
     }
 
     /// Directory and id of the installed image model. Mirrors the iPhone's
