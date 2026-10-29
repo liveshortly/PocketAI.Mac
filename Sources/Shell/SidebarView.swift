@@ -54,7 +54,8 @@ struct SidebarView: View {
         .onChange(of: app.commandSerial) { _, _ in
             switch app.pendingCommand {
             case .newLiveSession:
-                app.selection = .newSession()
+                // ⇧⌘N also fires from Settings; the form needs the focus.
+                app.reveal(.newSession())
                 app.clearCommand()
             case .refresh:
                 // Re-fetch both lists; a session or chat can land after load.
@@ -404,6 +405,13 @@ struct SessionRow: View {
 extension AppModel.Destination? {
     var isProject: Bool {
         if case .project = self { return true }
+        return false
+    }
+
+    /// True only for a local conversation — the one destination where
+    /// regenerating a reply means anything.
+    var isChat: Bool {
+        if case .chat = self { return true }
         return false
     }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import PocketKit
 import PocketLiveShortly
 import PocketUI
@@ -42,6 +43,9 @@ struct RootView: View {
                 CoreErrorBanner(message: error)
             }
         }
+        // Lets anything outside this window (Settings, the menu-bar panel, the
+        // app menus) bring the shell forward when it navigates it.
+        .background(WindowReader { app.shellWindow = $0 })
     }
 
     @ViewBuilder private var detail: some View {
@@ -129,6 +133,33 @@ struct CoreErrorBanner: View {
             .hudPanel(PocketColor.statusWarn.opacity(0.10))
             .padding(PocketSpacing.s12)
             .frame(maxWidth: 640)
+        }
+    }
+}
+
+/// Hands the enclosing `NSWindow` to whoever asks. SwiftUI has no API for it,
+/// and focusing the shell from another window needs the window itself.
+struct WindowReader: NSViewRepresentable {
+    let onWindow: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowSensingView()
+        view.onWindow = onWindow
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        (view as? WindowSensingView)?.onWindow = onWindow
+    }
+
+    /// `viewDidMoveToWindow` is the only moment the window is reliably known —
+    /// it is still nil while the representable is being made.
+    private final class WindowSensingView: NSView {
+        var onWindow: ((NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { onWindow?(window) }
         }
     }
 }

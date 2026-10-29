@@ -37,6 +37,24 @@ final class PocketAITests: XCTestCase {
         XCTAssertNil(model.pendingCommand)
     }
 
+    /// Opening a destination from another window (Settings, the menu-bar
+    /// panel) has to move the shell AND focus it. Focus needs a real window,
+    /// which a unit test has none of — so this pins the navigation half and
+    /// that asking with no shell registered is survivable.
+    func testRevealNavigatesWithoutAShellWindow() {
+        let model = AppModel()
+        XCTAssertNil(model.shellWindow)
+
+        model.reveal(.models)
+        XCTAssertEqual(model.selection, .models)
+
+        model.reveal(.devices)
+        XCTAssertEqual(model.selection, .devices)
+
+        model.focusShell()
+        XCTAssertEqual(model.selection, .devices, "focusing must not navigate")
+    }
+
     // MARK: - MAC-03: Chats and chat detail
     func testChatGroupingLogic() throws {
         let now = Date()

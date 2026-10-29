@@ -48,8 +48,13 @@ struct AppCommands: Commands {
                 .disabled(!app.liveShortly.isConnected)
         }
         CommandGroup(after: .toolbar) {
-            Button("Command Palette…") { app.showCommandPalette = true }
-                .keyboardShortcut("k", modifiers: .command)
+            // The palette is a sheet on the shell, so the shell has to be the
+            // key window first — otherwise ⌘K from Settings opens it behind.
+            Button("Command Palette…") {
+                app.focusShell()
+                app.showCommandPalette = true
+            }
+            .keyboardShortcut("k", modifiers: .command)
             // Re-fetch whatever this window is showing. Paired devices and new
             // sessions can land after a screen has loaded.
             Button("Refresh") { app.post(.refresh) }
@@ -65,13 +70,16 @@ struct AppCommands: Commands {
             Button("Stop Generating") { app.stopAllGeneration() }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(!app.isGenerating)
+            // Only a chat can regenerate: no view consumes this anywhere else,
+            // so outside one the item used to look live and do nothing.
             Button("Regenerate Reply") { app.post(.regenerate) }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(app.isGenerating)
+                .disabled(app.isGenerating || !app.selection.isChat)
             Divider()
-            Button("Model Library") { app.selection = .models }
-            Button("Devices") { app.selection = .devices }
-            Button("Local Server") { app.selection = .server }
+            // Menu items fire whichever window is focused, Settings included.
+            Button("Model Library") { app.reveal(.models) }
+            Button("Devices") { app.reveal(.devices) }
+            Button("Local Server") { app.reveal(.server) }
         }
     }
 }

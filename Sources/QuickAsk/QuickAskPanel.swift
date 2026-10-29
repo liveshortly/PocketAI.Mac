@@ -80,8 +80,9 @@ struct QuickAskPanel: View {
             Spacer()
             if let conversationId {
                 Button("Open in PocketAI") {
-                    app.selection = .chat(conversationId)
-                    NSApp.activate(ignoringOtherApps: true)
+                    // Activating the app is not enough when another window
+                    // (Settings) is frontmost: the shell itself must go key.
+                    app.reveal(.chat(conversationId))
                 }
                 .buttonStyle(.hud)
             }

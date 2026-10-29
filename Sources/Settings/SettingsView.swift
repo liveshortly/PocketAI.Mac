@@ -120,7 +120,9 @@ struct ModelSettings: View {
                         Text(ModelNaming.short(entry.manifest.displayName)).tag(entry.manifest.id)
                     }
                 }
-                Button("Open model library") { app.selection = .models }
+                // Settings is its own window: `reveal` brings the shell forward
+                // so the library it just opened is what the keyboard reaches.
+                Button("Open model library") { app.reveal(.models) }
                     .buttonStyle(.hud)
             } header: {
                 HUDLabel("Chat")

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import PocketKit
@@ -55,6 +56,27 @@ public final class AppModel {
 
     public var selection: Destination? {
         didSet { persistSelection() }
+    }
+
+    /// The window hosting the shell, registered by `RootView`. Settings, the
+    /// menu-bar panel, the app menus and App Intents all act from outside that
+    /// window, so changing `selection` there moved the shell without moving
+    /// keyboard focus to it — the opened surface needed a click first.
+    @ObservationIgnored public weak var shellWindow: NSWindow?
+
+    /// Brings the shell forward and gives it keyboard focus. A no-op when it
+    /// is already the key window.
+    public func focusShell() {
+        NSApp.activate(ignoringOtherApps: true)
+        shellWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Navigates the shell and focuses it. Everything that opens a destination
+    /// from outside the shell goes through here, so the surface that just
+    /// appeared is the one the keyboard talks to.
+    public func reveal(_ destination: Destination) {
+        selection = destination
+        focusShell()
     }
 
     public var showCommandPalette = false
@@ -303,7 +325,9 @@ public final class AppModel {
         guard let conversation = try? core.createConversation(input) else { return nil }
         // Picking a model for a new chat makes it the default for the next one.
         if let modelId, modelId != currentModelId { currentModelId = modelId }
-        selection = .chat(conversation.id)
+        // `reveal`, not a bare assignment: ⌘N fires from the app menu, which
+        // works while Settings or the menu-bar panel holds focus.
+        reveal(.chat(conversation.id))
         post(.focusComposer)
         return conversation.id
     }
