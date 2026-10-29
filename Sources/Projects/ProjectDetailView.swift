@@ -314,16 +314,18 @@ struct ProjectDetailView: View {
     /// edit lives in this window only — same limitation the iPhone app has.
     /// Said plainly rather than shown as a save that silently does nothing.
     private func saveInstructions() {
-        if var updated = project {
-            let trimmed = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-            updated.instructions = trimmed.isEmpty ? nil : trimmed
-            project = updated
+        guard let id = project?.id else { return }
+        do {
+            try app.core.setProjectInstructions(id: id, instructions: instructions)
+            reload()
+            instructionsDirty = false
+            instructionsNote = nil
+        } catch {
+            // Stays dirty: the text on screen is not what the store holds,
+            // and the whole point of these instructions is that the model
+            // actually receives them.
+            instructionsNote = "Couldn't save: \(error.localizedDescription)"
         }
-        instructionsDirty = false
-        instructionsNote = """
-            Kept for this window only — the core has no call to store project \
-            instructions yet, so this does not survive a relaunch.
-            """
     }
 
     private func addDocuments() {
