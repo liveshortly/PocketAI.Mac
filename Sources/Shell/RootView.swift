@@ -89,6 +89,7 @@ struct EmptyDetail: View {
     var body: some View {
         VStack(spacing: PocketSpacing.s12) {
             PocketMarkView(state: .idle, size: 44)
+                .accessibilityHidden(true)
             Text("Nothing open")
                 .font(.pocket(.title))
             Text(
@@ -117,6 +118,7 @@ struct CoreErrorBanner: View {
             HStack(alignment: .top, spacing: PocketSpacing.s8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(PocketColor.statusWarn)
+                    .accessibilityHidden(true)
                 Text(message)
                     .font(.pocket(.footnote))
                     .fixedSize(horizontal: false, vertical: true)
@@ -128,6 +130,7 @@ struct CoreErrorBanner: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(PocketColor.textTertiary)
+                .accessibilityLabel("Dismiss this warning")
             }
             .padding(PocketSpacing.s12)
             .hudPanel(PocketColor.statusWarn.opacity(0.10))

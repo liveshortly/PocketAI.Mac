@@ -26,9 +26,11 @@ struct RenameSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.hud)
+                    .keyboardShortcut(.cancelAction)
                 Button("Save") { commit() }
                     .buttonStyle(.hudProminent)
                     .disabled(trimmed.isEmpty)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(PocketSpacing.s16)
@@ -83,6 +85,7 @@ struct NewProjectSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.hud)
+                    .keyboardShortcut(.cancelAction)
                 Button("Create") {
                     let notes = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
                     create(trimmed, notes.isEmpty ? nil : notes)
@@ -111,6 +114,7 @@ struct PairingApprovalSheet: View {
             HStack(spacing: PocketSpacing.s8) {
                 Image(systemName: "iphone.and.arrow.forward")
                     .foregroundStyle(PocketColor.accent)
+                    .accessibilityHidden(true)
                 Text("Pair this device?")
                     .font(.pocket(.title))
             }
@@ -133,18 +137,23 @@ struct PairingApprovalSheet: View {
             }
             HStack {
                 Spacer()
+                // Escape denies. Approving a device is never the safe
+                // default, so Allow gets no keyboard shortcut.
                 Button("Deny") {
                     try? app.core.denyPairing(id: request.id)
                     app.pendingPairingRequest = nil
                     dismiss()
                 }
                 .buttonStyle(.hudDestructive)
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Deny \(request.deviceName)")
                 Button("Allow") {
                     try? app.core.approvePairing(id: request.id)
                     app.pendingPairingRequest = nil
                     dismiss()
                 }
                 .buttonStyle(.hudProminent)
+                .accessibilityLabel("Allow \(request.deviceName) to use this Mac")
             }
         }
         .padding(PocketSpacing.s16)

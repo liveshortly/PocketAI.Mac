@@ -52,12 +52,19 @@ struct ChatView: View {
             app.activeTokPerSec = rate
         }
         .onChange(of: chat?.isStreaming ?? false) { wasStreaming, streaming in
+            guard wasStreaming, !streaming else { return }
+            // A reply landing moves nothing on screen that VoiceOver follows,
+            // so say it happened.
+            AccessibilityNotification.Announcement("Reply finished").post()
             // Read the finished reply when the user asked for that.
-            guard autoSpeak, wasStreaming, !streaming,
-                  let last = chat?.messages.last, !last.isUser
-            else { return }
+            guard autoSpeak, let last = chat?.messages.last, !last.isUser else { return }
             let text = last.plainText
             if !text.isEmpty { ReadAloud.shared.toggle(text, id: last.id) }
+        }
+        .onChange(of: chat?.errorText) { _, error in
+            if let error, !error.isEmpty {
+                AccessibilityNotification.Announcement(error).post()
+            }
         }
         .onChange(of: app.commandSerial) { _, _ in
             guard let command = app.pendingCommand, let chat else { return }
@@ -102,17 +109,30 @@ struct ChatView: View {
 
     private func statusStrip(_ chat: ChatModel) -> some View {
         HStack(spacing: PocketSpacing.s12) {
-            Text(chat.title)
-                .font(.pocket(.headline))
-                .lineLimit(1)
-                .onTapGesture { showRename = true }
+            // A button, not a tappable Text: the title was unreachable by
+            // keyboard and invisible to VoiceOver as an action.
+            Button { showRename = true } label: {
+                Text(chat.title)
+                    .font(.pocket(.headline))
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Chat title, \(chat.title)")
+            .accessibilityHint("Rename this chat")
+            .help("Rename this chat")
             if chat.isStreaming {
                 HStack(spacing: PocketSpacing.s4) {
                     PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                        .accessibilityHidden(true)
                     Text(chat.tokensPerSecond > 0 ? "\(chat.tokensPerSecond) tok/s" : "working")
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    chat.tokensPerSecond > 0
+                        ? "Generating, \(chat.tokensPerSecond) tokens per second"
+                        : "Generating")
             }
             Spacer(minLength: 0)
             modelPicker(chat)
@@ -141,6 +161,7 @@ struct ChatView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .accessibilityLabel("Chat actions")
         }
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
@@ -183,6 +204,8 @@ struct ChatView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(chat.isStreaming)
+        .accessibilityLabel("Model for this chat, \(modelName(chat))")
+        .accessibilityHint("Choose a different model")
         .help(chat.isStreaming ? "Stop generating to switch models" : "Model for this chat")
     }
 
@@ -298,6 +321,7 @@ struct ChatView: View {
                     HStack(spacing: PocketSpacing.s8) {
                         Image(systemName: "photo.badge.exclamationmark")
                             .foregroundStyle(PocketColor.statusWarn)
+                            .accessibilityHidden(true)
                         Text(attachmentRefusal)
                             .font(.pocket(.caption))
                         Spacer(minLength: 0)
@@ -314,13 +338,16 @@ struct ChatView: View {
                         ForEach(attachments, id: \.self) { url in
                             HStack(spacing: 4) {
                                 Image(systemName: "paperclip")
+                                    .accessibilityHidden(true)
                                 Text(url.lastPathComponent).lineLimit(1)
+                                    .accessibilityLabel("Attachment \(url.lastPathComponent)")
                                 Button {
                                     attachments.removeAll { $0 == url }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Remove attachment \(url.lastPathComponent)")
                             }
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textSecondary)
@@ -349,6 +376,7 @@ struct ChatView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(PocketColor.statusBad)
+                        .accessibilityLabel("Stop generating")
                         .help("Stop generating (⌘.)")
                     } else {
                         Button {
@@ -363,6 +391,7 @@ struct ChatView: View {
                         .buttonStyle(.plain)
                         .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty
                             && attachments.isEmpty)
+                        .accessibilityLabel("Send message")
                         .help("Send (⏎)")
                     }
                 }
@@ -375,6 +404,8 @@ struct ChatView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(PocketColor.textTertiary)
                     .disabled(!attachmentsAllowed(chat))
+                    .accessibilityLabel("Attach an image")
+                    .accessibilityHint(attachmentsAllowed(chat) ? "" : visionWarning(chat))
                     .help(attachmentsAllowed(chat)
                         ? "Attach an image" : visionWarning(chat))
                     Button {
@@ -391,6 +422,7 @@ struct ChatView: View {
                                     .frame(width: 22, height: 22))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
                     .help(dictation.isRecording ? "Stop dictation" : "Dictate")
                     if dictation.permissionDenied {
                         HUDLabel("mic access denied", tint: PocketColor.statusBad)
@@ -413,9 +445,12 @@ struct ChatView: View {
         let text = draft
         let files = attachments
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty || !files.isEmpty else { return }
+        // Clear only once the turn is actually under way. Clearing first threw
+        // away what was typed whenever `send` refused it — no model installed,
+        // or a reply still arriving.
+        guard chat.send(text, attachments: files) else { return }
         draft = ""
         attachments = []
-        chat.send(text, attachments: files)
     }
 
     /// Images only make sense for a model that can read them; say so here
@@ -490,6 +525,7 @@ struct ChatEmptyState: View {
     var body: some View {
         VStack(spacing: PocketSpacing.s12) {
             PocketMarkView(state: .idle, size: 40)
+                .accessibilityHidden(true)
             Text("Ask anything — it runs on this Mac")
                 .font(.pocket(.title))
             Text("No account, no cloud. Your chats never leave this machine.")

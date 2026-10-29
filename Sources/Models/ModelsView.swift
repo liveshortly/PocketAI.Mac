@@ -19,6 +19,9 @@ struct ModelsView: View {
     /// A refused delete used to leave the row exactly where it was with no
     /// explanation; the reason belongs on screen.
     @State private var deleteError: String?
+    /// Previous state per model, so a transfer finishing (which moves no
+    /// focus) can be announced to VoiceOver.
+    @State private var lastStates: [String: ModelState] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -117,7 +120,9 @@ struct ModelsView: View {
                     .controlSize(.small)
                 HUDLabel("searching…")
             }
-            Picker("", selection: $formatFilter) {
+            // A named picker even with labels hidden: an empty title left this
+            // control anonymous to VoiceOver.
+            Picker("Engine", selection: $formatFilter) {
                 ForEach(FormatFilter.allCases, id: \.self) { filter in
                     Text(filter.label).tag(filter)
                 }
@@ -188,7 +193,28 @@ struct ModelsView: View {
     private func reload() {
         entries = app.core.catalog(
             filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
+        announceFinishedTransfers()
         resumeInterrupted()
+    }
+
+    /// A download reaching `installed` or `failed` changes the screen without
+    /// moving focus, which is silent to a screen reader.
+    private func announceFinishedTransfers() {
+        for entry in entries {
+            let id = entry.manifest.id
+            let previous = lastStates[id]
+            lastStates[id] = entry.state
+            guard let previous, previous != entry.state else { continue }
+            let name = ModelNaming.short(entry.manifest.displayName)
+            switch (previous, entry.state) {
+            case (.downloading, .installed), (.verifying, .installed), (.queued, .installed):
+                AccessibilityNotification.Announcement("\(name) finished downloading").post()
+            case (.downloading, .failed), (.queued, .failed), (.verifying, .failed):
+                AccessibilityNotification.Announcement("\(name) failed to download").post()
+            default:
+                break
+            }
+        }
     }
 
     /// Resumes transfers that stopped on their own. A download the user paused
@@ -349,6 +375,22 @@ final class DownloadRates {
     }
 }
 
+/// Turns a raw download error into something actionable.
+func failureSummary(_ reason: String) -> String {
+    let lowered = reason.lowercased()
+    if lowered.contains("checksum") || lowered.contains("sha") {
+        return "The downloaded file didn't match its checksum. Retry to fetch it again."
+    }
+    if lowered.contains("space") || lowered.contains("disk") {
+        return "Not enough disk space for this model."
+    }
+    if lowered.contains("network") || lowered.contains("connection")
+        || lowered.contains("timed out") || lowered.contains("offline") {
+        return "The download lost its connection."
+    }
+    return "The download failed."
+}
+
 /// One model: name, shape, fit verdict, and the action that applies to its
 /// current state.
 struct ModelCard: View {
@@ -420,6 +462,8 @@ struct ModelCard: View {
                         }
                     }
                     .buttonStyle(.hud)
+                    .accessibilityLabel(
+                        "Retry downloading \(ModelNaming.short(entry.manifest.displayName))")
                 }
                 .padding(PocketSpacing.s8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -461,6 +505,11 @@ struct ModelCard: View {
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+        // A card is a name, a shape, a verdict and a row of controls. As a
+        // container with its own label it reads as one model instead of a
+        // dozen loose strings.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(cardSummary)
         .task(id: entry.manifest.id) {
             // A cheap local read, not a run: shows the previous result so the
             // user isn't made to re-measure to see a number they already have.
@@ -491,6 +540,8 @@ struct ModelCard: View {
                     .buttonStyle(.plain)
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.accent)
+                    .accessibilityLabel(
+                        "Benchmark \(ModelNaming.short(entry.manifest.displayName)) again")
             }
         }
     }
@@ -516,20 +567,26 @@ struct ModelCard: View {
         }
     }
 
-    /// Turns a raw download error into something actionable.
-    private func failureSummary(_ reason: String) -> String {
-        let lowered = reason.lowercased()
-        if lowered.contains("checksum") || lowered.contains("sha") {
-            return "The downloaded file didn't match its checksum. Retry to fetch it again."
+    /// What this card is, said once: name, state, shape and fit verdict.
+    private var cardSummary: String {
+        var parts = [ModelNaming.short(entry.manifest.displayName), stateWord]
+        if isDefault { parts.append("default model") }
+        parts.append(entry.manifest.format.badge)
+        parts.append(subtitle)
+        parts.append(entry.fit.reason)
+        return parts.joined(separator: ", ")
+    }
+
+    private var stateWord: String {
+        switch entry.state {
+        case .installed: return "installed"
+        case .downloading: return "downloading"
+        case .queued: return "queued"
+        case .paused: return "paused"
+        case .verifying: return "verifying"
+        case .failed: return "download failed"
+        case .available: return "not installed"
         }
-        if lowered.contains("space") || lowered.contains("disk") {
-            return "Not enough disk space for this model."
-        }
-        if lowered.contains("network") || lowered.contains("connection")
-            || lowered.contains("timed out") || lowered.contains("offline") {
-            return "The download lost its connection."
-        }
-        return "The download failed."
     }
 
     private var subtitle: String {
@@ -567,13 +624,17 @@ struct ModelCard: View {
         }
     }
 
+    /// Icon-only and one-word controls need a label that says what they do to
+    /// which model — "Get" alone tells a screen reader nothing.
     @ViewBuilder private var actions: some View {
+        let name = ModelNaming.short(entry.manifest.displayName)
         switch entry.state {
         case .installed:
             HStack(spacing: PocketSpacing.s8) {
                 if !isDefault {
                     Button("Use") { app.currentModelId = entry.manifest.id }
                         .buttonStyle(.hud)
+                        .accessibilityLabel("Use \(name) for new chats")
                 }
                 Menu {
                     Button(benchmark == nil ? "Benchmark on this Mac" : "Benchmark again") {
@@ -590,17 +651,20 @@ struct ModelCard: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .accessibilityLabel("More actions for \(name)")
             }
         case .downloading, .queued:
             Button("Pause") {
                 attempt("Pause") { try app.core.pauseDownload(modelId: entry.manifest.id) }
             }
             .buttonStyle(.hud)
+            .accessibilityLabel("Pause downloading \(name)")
         case .paused:
             Button("Resume") {
                 attempt("Resume") { try app.core.resumeDownload(modelId: entry.manifest.id) }
             }
             .buttonStyle(.hud)
+            .accessibilityLabel("Resume downloading \(name)")
         case .verifying:
             EmptyView()
         case .available, .failed:
@@ -608,6 +672,8 @@ struct ModelCard: View {
                 attempt("Download") { try app.core.startDownload(modelId: entry.manifest.id) }
             }
             .buttonStyle(.hudProminent)
+            .accessibilityLabel("Download \(name)")
+            .accessibilityHint(entry.fit.verdict == .willNotFit ? entry.fit.reason : "")
         }
     }
 
@@ -616,6 +682,8 @@ struct ModelCard: View {
             ProgressView(value: fraction)
                 .progressViewStyle(.linear)
                 .tint(PocketColor.accent)
+                .accessibilityLabel("Download progress")
+                .accessibilityValue("\(Int(fraction * 100)) percent")
             HStack {
                 HUDLabel("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
                 if let detail = rateAndETA { HUDLabel(detail) }
@@ -626,6 +694,8 @@ struct ModelCard: View {
                 .buttonStyle(.plain)
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.statusBad)
+                    .accessibilityLabel(
+                        "Cancel downloading \(ModelNaming.short(entry.manifest.displayName))")
             }
         }
     }

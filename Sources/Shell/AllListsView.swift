@@ -70,8 +70,13 @@ struct AllChatsView: View {
                                             ? PocketColor.accent : PocketColor.lineStrong)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(
+                                    selected.contains(chat.id) ? "Deselect" : "Select")
+                                .accessibilityAddTraits(
+                                    selected.contains(chat.id) ? [.isSelected] : [])
                                 Image(systemName: "bubble.left")
                                     .foregroundStyle(PocketColor.textTertiary)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(chat.title?.isEmpty == false
                                         ? chat.title! : "Untitled chat")
@@ -88,6 +93,10 @@ struct AllChatsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            "Open \(chat.title?.isEmpty == false ? chat.title! : "Untitled chat")"
+                            + ", \(hudRelative(chat.updatedAt))"
+                            + (chat.archived ? ", archived" : ""))
                         .contextMenu {
                             Button(chat.archived ? "Unarchive" : "Archive") {
                                 try? app.core.archiveConversation(
@@ -245,6 +254,7 @@ struct AllSessionsView: View {
                                     .foregroundStyle(
                                         session.isLive
                                             ? LSColor.accent : PocketColor.textTertiary)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(session.title.isEmpty
                                         ? "Untitled session" : session.title)
@@ -262,6 +272,9 @@ struct AllSessionsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            "Open \(session.title.isEmpty ? "Untitled session" : session.title)"
+                            + ", \(session.isLive ? "live" : "ended"), \(subtitle(session))")
                         HUDRule()
                     }
                     if loading {

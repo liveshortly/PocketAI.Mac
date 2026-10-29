@@ -17,6 +17,7 @@ struct LSPermissionBar: View {
             HStack(spacing: PocketSpacing.s8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(PocketColor.statusWarn)
+                    .accessibilityHidden(true)
                 HUDLabel("permission requested", tint: PocketColor.statusWarn)
             }
             if let message = probe.payload["message"]?.stringValue {
@@ -29,6 +30,7 @@ struct LSPermissionBar: View {
                     HStack(spacing: PocketSpacing.s8) {
                         Image(systemName: "terminal")
                             .font(.pocket(.caption))
+                            .accessibilityHidden(true)
                         Text(lsToolSummaryText(toolCall))
                             .font(.pocket(.mono))
                             .lineLimit(1)
@@ -37,6 +39,7 @@ struct LSPermissionBar: View {
                         HUDLabel("review")
                         Image(systemName: "chevron.right")
                             .font(.pocket(.caption))
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(PocketColor.textSecondary)
                     .padding(PocketSpacing.s8)
@@ -44,12 +47,16 @@ struct LSPermissionBar: View {
                     .hudPanel(PocketColor.bgSunken)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Review \(lsToolSummaryText(toolCall))")
+                .accessibilityHint("Shows the exact command or change before you answer")
             }
             HStack(spacing: PocketSpacing.s8) {
                 Button("Allow") { answer("allow") }
                     .buttonStyle(.hudProminent)
+                    .accessibilityLabel("Allow this request")
                 Button("Deny") { answer("deny") }
                     .buttonStyle(.hudDestructive)
+                    .accessibilityLabel("Deny this request")
                 Spacer(minLength: 0)
             }
             .disabled(answering)
@@ -93,6 +100,7 @@ struct LSProbeDetailView: View {
                 Spacer()
                 Button("Close") { dismiss() }
                     .buttonStyle(.hud)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(PocketSpacing.s12)
             HUDRule()

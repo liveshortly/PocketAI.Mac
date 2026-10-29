@@ -65,6 +65,7 @@ struct LSNewSessionView: View {
         HStack(spacing: PocketSpacing.s12) {
             Image(systemName: "bolt")
                 .foregroundStyle(LSColor.accent)
+                .accessibilityHidden(true)
             Text(projectId == nil ? "New agent session" : "New agent session in this project")
                 .font(.pocket(.headline))
             Spacer(minLength: 0)
@@ -104,7 +105,7 @@ struct LSNewSessionView: View {
     private var form: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
             field("Machine") {
-                Picker("", selection: Binding(
+                Picker("Machine", selection: Binding(
                     get: { hostID ?? "" },
                     set: { newValue in
                         hostID = newValue
@@ -119,7 +120,7 @@ struct LSNewSessionView: View {
             }
             if let host {
                 field("Agent") {
-                    Picker("", selection: Binding(
+                    Picker("Agent", selection: Binding(
                         get: { agent ?? host.agents.first ?? "" },
                         set: { newAgent in
                             agent = newAgent
@@ -132,7 +133,7 @@ struct LSNewSessionView: View {
                     .labelsHidden()
                 }
                 field("Directory") {
-                    Picker("", selection: Binding(
+                    Picker("Directory", selection: Binding(
                         get: { cwd ?? host.dirs.first ?? "" },
                         set: { cwd = $0 })
                     ) {
@@ -143,7 +144,7 @@ struct LSNewSessionView: View {
                 let choices = host.models(forAgent: agent ?? host.agents.first ?? "")
                 if !choices.isEmpty {
                     field("Model") {
-                        Picker("", selection: Binding(
+                        Picker("Model", selection: Binding(
                             get: { model ?? "" },
                             set: { model = $0.isEmpty ? nil : $0 })
                         ) {
@@ -157,6 +158,7 @@ struct LSNewSessionView: View {
                     HStack(spacing: PocketSpacing.s8) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(PocketColor.statusWarn)
+                            .accessibilityHidden(true)
                         Text(
                             "This machine hasn't checked in recently. Starting a session "
                             + "may produce one with no agent attached."

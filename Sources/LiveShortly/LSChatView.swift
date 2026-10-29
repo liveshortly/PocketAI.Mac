@@ -72,6 +72,19 @@ struct LSChatView: View {
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { now in
             session?.expireTypers(now)
         }
+        // A session ending and a permission landing both change what this
+        // screen means without moving focus.
+        .onChange(of: session?.isLive ?? false) { wasLive, live in
+            if wasLive, !live {
+                AccessibilityNotification.Announcement("Session ended").post()
+            }
+        }
+        .onChange(of: session?.pendingProbe?.id) { _, probe in
+            if probe != nil {
+                AccessibilityNotification.Announcement(
+                    "The agent is asking for permission").post()
+            }
+        }
         .onChange(of: app.commandSerial) { _, _ in
             // ⌘L is a global menu item; a session composer is still a composer.
             if app.pendingCommand == .focusComposer {
@@ -123,19 +136,35 @@ struct LSChatView: View {
 
     private func statusStrip(_ session: LSSessionModel) -> some View {
         HStack(spacing: PocketSpacing.s12) {
-            Text(session.title)
-                .font(.pocket(.headline))
-                .lineLimit(1)
-                .onTapGesture { if session.detail?.isOwner == true { showRename = true } }
+            // A button when it does something, plain text when it does not —
+            // a tappable Text was mouse-only and silent to VoiceOver.
+            if session.detail?.isOwner == true {
+                Button { showRename = true } label: {
+                    Text(session.title)
+                        .font(.pocket(.headline))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Session title, \(session.title)")
+                .accessibilityHint("Rename this session")
+                .help("Rename this session")
+            } else {
+                Text(session.title)
+                    .font(.pocket(.headline))
+                    .lineLimit(1)
+            }
             if session.isLive {
                 HUDLiveBadge()
                 if session.agentBusy {
                     HStack(spacing: PocketSpacing.s4) {
                         PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                            .accessibilityHidden(true)
                         Text("working")
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textTertiary)
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Agent is working")
                 }
             } else {
                 HUDChip(text: "ENDED")
@@ -164,6 +193,8 @@ struct LSChatView: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .accessibilityLabel("Agent model, \(session.detail?.model ?? "default")")
+                .accessibilityHint("Switch the agent's model")
             }
             if session.detail?.isOwner == true {
                 Button {
@@ -199,6 +230,7 @@ struct LSChatView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .accessibilityLabel("Session actions")
         }
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
@@ -226,17 +258,21 @@ struct LSChatView: View {
                         HStack(spacing: PocketSpacing.s8) {
                             HUDLabel("◆ assistant", tint: LSColor.accent)
                             PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                                .accessibilityHidden(true)
                             Text("working")
                                 .font(.pocket(.caption))
                                 .foregroundStyle(PocketColor.textTertiary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .id("working")
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Agent is working")
                     }
                     if let error = session.errorText {
                         HStack(alignment: .top, spacing: PocketSpacing.s8) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(PocketColor.statusWarn)
+                                .accessibilityHidden(true)
                             Text(error)
                                 .font(.pocket(.footnote))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -290,6 +326,7 @@ struct LSChatView: View {
         VStack(spacing: PocketSpacing.s12) {
             PocketMarkView(
                 state: session.isLive ? .working(tokPerSec: nil) : .idle, size: 40)
+                .accessibilityHidden(true)
             Text(session.isLive ? "Session is live" : "No activity was recorded")
                 .font(.pocket(.title))
             Text(
@@ -334,6 +371,7 @@ struct LSChatView: View {
                             .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
                     .help(dictation.isRecording ? "Stop dictation" : "Dictate")
 
                     Button {
@@ -347,6 +385,8 @@ struct LSChatView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel("Send to this session")
+                    .help("Send (⏎)")
                 }
                 HUDLabel("⏎ send · ⇧⏎ newline · goes to the agent as a viewer message")
             }
@@ -430,6 +470,9 @@ struct LSItemView: View {
                 MarkdownText(lsBodyText(event))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Agent, \(event.ts.formatted(date: .omitted, time: .shortened)), "
+                + lsBodyText(event))
         case "input_requested", "viewer_decision":
             Text(systemLine(event))
                 .font(.pocket(.caption))
@@ -484,6 +527,10 @@ struct LSBubbleRow: View {
                             : LSColor.accent.opacity(0.12)))
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(lsHandleText(event)), \(event.ts.formatted(date: .omitted, time: .shortened)), "
+            + lsBodyText(event))
     }
 }
 
@@ -508,15 +555,20 @@ struct LSWorkRun: View {
                 HStack(spacing: PocketSpacing.s8) {
                     Image(systemName: "gearshape.2")
                         .font(.pocket(.caption))
+                        .accessibilityHidden(true)
                     HUDLabel("agent activity · \(run.count) step\(run.count == 1 ? "" : "s")")
                     Spacer(minLength: 0)
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
+                        .accessibilityHidden(true)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(
+                "Agent activity, \(run.count) step\(run.count == 1 ? "" : "s")")
+            .accessibilityHint(expanded ? "Collapse these steps" : "Expand these steps")
             .padding(.horizontal, PocketSpacing.s12)
             .padding(.top, PocketSpacing.s8)
             .padding(.bottom, PocketSpacing.s4)
@@ -536,6 +588,7 @@ struct LSWorkRun: View {
                 if running {
                     HStack(spacing: PocketSpacing.s4) {
                         PocketMarkView(state: .working(tokPerSec: nil), size: 12)
+                            .accessibilityHidden(true)
                         HUDLabel("running")
                     }
                     .padding(.top, 2)

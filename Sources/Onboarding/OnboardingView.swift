@@ -18,6 +18,7 @@ struct OnboardingView: View {
         VStack(spacing: PocketSpacing.s24) {
             Spacer()
             PocketMarkView(state: step == 1 ? .working(tokPerSec: nil) : .idle, size: 56)
+                .accessibilityHidden(true)
             switch step {
             case 0: welcome
             case 1: pickModel
@@ -32,6 +33,8 @@ struct OnboardingView: View {
                 }
             }
             .padding(.bottom, PocketSpacing.s16)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Step \(step + 1) of 3")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PocketColor.bgCanvas)
@@ -149,6 +152,8 @@ struct OnboardingView: View {
                     .progressViewStyle(.linear)
                     .frame(width: 110)
                     .tint(PocketColor.accent)
+                    .accessibilityLabel("Download progress")
+                    .accessibilityValue(hudBytes(entry.bytesDone))
                     HUDLabel(hudBytes(entry.bytesDone))
                 }
             default:
@@ -164,6 +169,8 @@ struct OnboardingView: View {
                     }
                 }
                 .buttonStyle(.hudProminent)
+                .accessibilityLabel(
+                    "Download \(ModelNaming.short(entry.manifest.displayName))")
             }
         }
         .padding(PocketSpacing.s12)
@@ -173,6 +180,7 @@ struct OnboardingView: View {
     private func bullet(_ text: String) -> some View {
         HStack(alignment: .top, spacing: PocketSpacing.s8) {
             Text("—").foregroundStyle(PocketColor.accent)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.pocket(.body))
                 .foregroundStyle(PocketColor.textSecondary)

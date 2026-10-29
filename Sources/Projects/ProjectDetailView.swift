@@ -64,6 +64,7 @@ struct ProjectDetailView: View {
         HStack(spacing: PocketSpacing.s12) {
             Image(systemName: "folder")
                 .foregroundStyle(PocketColor.accent)
+                .accessibilityHidden(true)
             Text(project?.name ?? "Project")
                 .font(.pocket(.headline))
             Spacer(minLength: 0)
@@ -86,6 +87,7 @@ struct ProjectDetailView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .accessibilityLabel("Project actions")
         }
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
@@ -146,6 +148,7 @@ struct ProjectDetailView: View {
                         HStack(spacing: PocketSpacing.s8) {
                             Image(systemName: "doc.text")
                                 .foregroundStyle(PocketColor.textTertiary)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(doc.name)
                                     .font(.pocket(.body))
@@ -171,6 +174,7 @@ struct ProjectDetailView: View {
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(PocketColor.textTertiary)
+                            .accessibilityLabel("Remove \(doc.name) from this project")
                         }
                         .padding(PocketSpacing.s8)
                     }
@@ -214,11 +218,15 @@ struct ProjectDetailView: View {
                                 Image(systemName: "chevron.right")
                                     .foregroundStyle(PocketColor.textTertiary)
                                     .font(.pocket(.caption))
+                                    .accessibilityHidden(true)
                             }
                             .padding(PocketSpacing.s8)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            "Open \(chat.title?.isEmpty == false ? chat.title! : "Untitled chat")"
+                            + ", \(hudRelative(chat.updatedAt))")
                     }
                 }
                 .hudPanel()
@@ -256,6 +264,7 @@ struct ProjectDetailView: View {
                                 Image(systemName: "dot.radiowaves.left.and.right")
                                     .foregroundStyle(session.isLive
                                         ? LSColor.accent : PocketColor.textTertiary)
+                                    .accessibilityHidden(true)
                                 Text(session.title.isEmpty ? "Untitled session" : session.title)
                                     .font(.pocket(.body))
                                     .lineLimit(1)
@@ -266,6 +275,9 @@ struct ProjectDetailView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            "Open \(session.title.isEmpty ? "Untitled session" : session.title)"
+                            + ", \(session.isLive ? "live" : "ended")")
                         .contextMenu {
                             Button("Remove from project") {
                                 ProjectSessions.unlink(session.id, from: projectId)

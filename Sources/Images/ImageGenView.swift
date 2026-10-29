@@ -71,7 +71,7 @@ struct ImageGenView: View {
                 }
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
                     HUDLabel("Size")
-                    Picker("", selection: $size) {
+                    Picker("Image size", selection: $size) {
                         ForEach([512, 768, 1024], id: \.self) { value in
                             Text("\(value)²").tag(value)
                         }
@@ -121,6 +121,10 @@ struct ImageGenView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: 640, maxHeight: 640)
+                    .accessibilityLabel(
+                        image == nil
+                            ? "Preview of the image being generated"
+                            : "Generated image for: \(prompt)")
                     .clipShape(RoundedRectangle(cornerRadius: HUD.radius, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: HUD.radius, style: .continuous)
@@ -130,6 +134,7 @@ struct ImageGenView: View {
                     Image(systemName: "photo")
                         .font(.system(size: 34))
                         .foregroundStyle(PocketColor.textTertiary)
+                        .accessibilityHidden(true)
                     Text("Describe an image and generate it here.")
                         .font(.pocket(.footnote))
                         .foregroundStyle(PocketColor.textSecondary)
@@ -144,6 +149,8 @@ struct ImageGenView: View {
                         .progressViewStyle(.linear)
                         .frame(width: 240)
                         .tint(PocketColor.accent)
+                        .accessibilityLabel("Generation progress")
+                        .accessibilityValue(statusText ?? "\(Int(progress * 100)) percent")
                     if let statusText { HUDLabel(statusText) }
                 }
             }
@@ -151,11 +158,13 @@ struct ImageGenView: View {
                 HStack(spacing: PocketSpacing.s8) {
                     Button("Save…") { save(image) }
                         .buttonStyle(.hud)
+                        .accessibilityLabel("Save this image")
                     Button("Copy") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.writeObjects([image])
                     }
                     .buttonStyle(.hud)
+                    .accessibilityLabel("Copy this image")
                 }
             }
             Spacer()

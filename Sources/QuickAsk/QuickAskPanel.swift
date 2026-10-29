@@ -20,6 +20,7 @@ struct QuickAskPanel: View {
             HStack(spacing: PocketSpacing.s8) {
                 PocketMarkView(
                     state: isStreaming ? .working(tokPerSec: nil) : .idle, size: 18)
+                    .accessibilityHidden(true)
                 TextField("Ask PocketAI…", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.pocket(.body))
@@ -34,6 +35,7 @@ struct QuickAskPanel: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(PocketColor.statusBad)
+                    .accessibilityLabel("Stop generating")
                 }
             }
             .padding(PocketSpacing.s8)
@@ -70,6 +72,7 @@ struct QuickAskPanel: View {
             HUDLabel(app.currentModelDisplayName)
             if app.serverStatus.running {
                 HUDDot(pulsing: true)
+                HUDLabel("serving")
             }
         }
     }

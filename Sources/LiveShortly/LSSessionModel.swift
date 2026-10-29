@@ -136,7 +136,10 @@ final class LSSessionModel {
         }
     }
 
-    private func ingest(_ event: LSEvent) {
+    /// Internal rather than private only so the transcript fold can be driven
+    /// from tests the way the stream drives it — this is the real entry point
+    /// for every streamed frame, not a test-only door.
+    func ingest(_ event: LSEvent) {
         var removedEcho = false
         if event.eventType == "viewer_comment",
            let (localID, _) = echoes.first(where: { $0.value == lsBodyText(event) }) {

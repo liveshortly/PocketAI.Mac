@@ -300,16 +300,22 @@ struct SidebarView: View {
                     tint: app.serverStatus.running
                         ? PocketColor.statusOk : PocketColor.textTertiary,
                     pulsing: app.serverStatus.running)
+                // The dot carries the server state visually and is hidden from
+                // VoiceOver, so this line has to say it.
                 Text(app.currentModelDisplayName)
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textSecondary)
                     .lineLimit(1)
+                    .accessibilityLabel(
+                        "Current model \(app.currentModelDisplayName), local server "
+                        + (app.serverStatus.running ? "running" : "stopped"))
                 Spacer(minLength: 0)
                 SettingsLink {
                     Image(systemName: "gearshape")
                         .foregroundStyle(PocketColor.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
             .padding(.horizontal, PocketSpacing.s12)
             .padding(.vertical, PocketSpacing.s8)
@@ -372,6 +378,11 @@ struct ChatRow: View {
                 .foregroundStyle(PocketColor.textTertiary)
         }
         .padding(.vertical, 1)
+        // Title and timestamp as one row, not two unrelated strings.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(summary.title?.isEmpty == false ? summary.title! : "Untitled chat"), "
+            + hudRelative(summary.updatedAt))
     }
 }
 
@@ -403,6 +414,18 @@ struct SessionRow: View {
             if session.isLive { HUDDot(pulsing: true) }
         }
         .padding(.vertical, 1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(rowLabel)
+    }
+
+    /// The whole row in one sentence — the live dot and the unread capsule are
+    /// otherwise either silent or read out of order.
+    private var rowLabel: String {
+        var parts = [session.title.isEmpty ? "Untitled session" : session.title]
+        parts.append(session.isLive ? "live" : "ended")
+        if unread > 0 { parts.append("\(unread) new events") }
+        parts.append(subtitle)
+        return parts.joined(separator: ", ")
     }
 
     /// Events since this session was last opened here. Sessions never opened

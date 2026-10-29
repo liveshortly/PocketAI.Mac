@@ -55,11 +55,13 @@ struct LSShareSheet: View {
         HStack {
             Image(systemName: "person.2")
                 .foregroundStyle(LSColor.accent)
+                .accessibilityHidden(true)
             Text("Share session")
                 .font(.pocket(.headline))
             Spacer()
             Button("Done") { dismiss() }
                 .buttonStyle(.hud)
+                .keyboardShortcut(.cancelAction)
         }
         .padding(PocketSpacing.s12)
         .background(PocketColor.bgSurface)
@@ -80,6 +82,7 @@ struct LSShareSheet: View {
                             .foregroundStyle(
                                 visibility == option.key
                                     ? LSColor.accent : PocketColor.textTertiary)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(option.title).font(.pocket(.body))
                             Text(option.blurb)
@@ -93,6 +96,12 @@ struct LSShareSheet: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
+                // The filled circle is the only thing that said "chosen"; a
+                // selected trait says it to VoiceOver too.
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(option.title). \(option.blurb)")
+                .accessibilityAddTraits(
+                    visibility == option.key ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(PocketSpacing.s12)
@@ -197,7 +206,7 @@ struct LSShareSheet: View {
                     .font(.pocket(.body))
                     .padding(PocketSpacing.s8)
                     .hudPanel(PocketColor.bgCanvas)
-                Picker("", selection: $inviteRole) {
+                Picker("Invited role", selection: $inviteRole) {
                     Text("Watch").tag("viewer")
                     Text("Comment").tag("commenter")
                 }
@@ -205,6 +214,7 @@ struct LSShareSheet: View {
                 .fixedSize()
                 Button("Invite") { invite() }
                     .buttonStyle(.hudProminent)
+                    .accessibilityLabel("Invite this person")
                     .disabled(busy || !inviteEmail.contains("@"))
             }
             if shares.isEmpty {
@@ -218,6 +228,7 @@ struct LSShareSheet: View {
                         HStack(spacing: PocketSpacing.s8) {
                             Image(systemName: "person.crop.circle")
                                 .foregroundStyle(PocketColor.textTertiary)
+                                .accessibilityHidden(true)
                             Text(share.granteeEmail ?? "unknown")
                                 .font(.pocket(.body))
                                 .lineLimit(1)
@@ -230,6 +241,8 @@ struct LSShareSheet: View {
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(PocketColor.textTertiary)
+                            .accessibilityLabel(
+                                "Remove access for \(share.granteeEmail ?? "this person")")
                             .help("Remove access")
                         }
                         .padding(.vertical, PocketSpacing.s4)

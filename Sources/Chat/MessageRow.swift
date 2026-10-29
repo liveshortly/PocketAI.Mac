@@ -53,6 +53,8 @@ struct UserTurn: View {
                                 .frame(width: 92, height: 92)
                                 .clipShape(
                                     RoundedRectangle(cornerRadius: HUD.radius, style: .continuous))
+                                .accessibilityLabel(
+                                    "Attached image \((path as NSString).lastPathComponent)")
                         }
                     }
                 }
@@ -67,6 +69,22 @@ struct UserTurn: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+        // Three separate unlabelled texts read as a wall; one element reads as
+        // one turn: "You, 10:42, <message>".
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        let when = Date(timeIntervalSince1970: TimeInterval(message.createdAt))
+            .formatted(date: .omitted, time: .shortened)
+        var parts = ["You", when]
+        if !message.imagePaths.isEmpty {
+            parts.append("\(message.imagePaths.count) attached image"
+                + (message.imagePaths.count == 1 ? "" : "s"))
+        }
+        if !message.plainText.isEmpty { parts.append(message.plainText) }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -103,6 +121,9 @@ struct AssistantTurn: View {
                                 ? PocketColor.statusBad : PocketColor.textTertiary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        speech.speakingId == messageId
+                            ? "Stop reading this reply" : "Read this reply aloud")
                     .help("Read this reply aloud")
                     Button {
                         copy()
@@ -110,6 +131,7 @@ struct AssistantTurn: View {
                         HUDLabel(copied ? "copied" : "copy")
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Copy this reply")
                     .help("Copy this reply")
                 }
             }
@@ -157,7 +179,10 @@ struct StreamingRow: View {
             HStack(spacing: PocketSpacing.s8) {
                 HUDLabel("◆ assistant", tint: PocketColor.accent)
                 PocketMarkView(state: .working(tokPerSec: nil), size: 12)
+                    .accessibilityHidden(true)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Assistant, replying")
             if text.isEmpty && reasoning.isEmpty {
                 HUDLabel("thinking…")
             } else {
@@ -178,6 +203,7 @@ struct ChatErrorRow: View {
         HStack(alignment: .top, spacing: PocketSpacing.s8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(PocketColor.statusWarn)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(friendly)
                     .font(.pocket(.body))
@@ -192,35 +218,38 @@ struct ChatErrorRow: View {
             Spacer(minLength: 0)
             Button("Retry", action: retry)
                 .buttonStyle(.hud)
+                .accessibilityLabel("Retry this reply")
         }
         .padding(PocketSpacing.s12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .hudPanel(PocketColor.statusWarn.opacity(0.10))
     }
 
-    /// Maps the handful of failures users actually hit onto plain sentences.
-    private var friendly: String {
-        let lowered = message.lowercased()
-        if lowered.contains("no model") || lowered.contains("not installed") {
-            return "No model is installed yet. Open the model library and download one."
-        }
-        if lowered.contains("memory") || lowered.contains("resource") {
-            return "This Mac ran out of memory for that model. Try a smaller one, "
-                + "or unload other models first."
-        }
-        if lowered.contains("cancel") {
-            return "That reply was stopped."
-        }
-        if lowered.contains("context") || lowered.contains("too long") {
-            return "The conversation is longer than this model's context. "
-                + "Start a new chat to continue."
-        }
-        if lowered.contains("network") || lowered.contains("offline")
-            || lowered.contains("connection") {
-            return "Couldn't reach the network. Local models still work offline."
-        }
-        return message
+    private var friendly: String { chatFriendlyError(message) }
+}
+
+/// Maps the handful of failures users actually hit onto plain sentences.
+func chatFriendlyError(_ message: String) -> String {
+    let lowered = message.lowercased()
+    if lowered.contains("no model") || lowered.contains("not installed") {
+        return "No model is installed yet. Open the model library and download one."
     }
+    if lowered.contains("memory") || lowered.contains("resource") {
+        return "This Mac ran out of memory for that model. Try a smaller one, "
+            + "or unload other models first."
+    }
+    if lowered.contains("cancel") {
+        return "That reply was stopped."
+    }
+    if lowered.contains("context") || lowered.contains("too long") {
+        return "The conversation is longer than this model's context. "
+            + "Start a new chat to continue."
+    }
+    if lowered.contains("network") || lowered.contains("offline")
+        || lowered.contains("connection") {
+        return "Couldn't reach the network. Local models still work offline."
+    }
+    return message
 }
 
 /// Renders assistant text: fenced code becomes `CodeBlock`, the rest is

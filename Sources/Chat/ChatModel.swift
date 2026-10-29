@@ -52,19 +52,24 @@ final class ChatModel {
 
     // MARK: - Sending
 
-    func send(_ text: String, attachments: [URL] = []) {
+    /// Sends a turn. Returns false when the turn was refused, so the composer
+    /// can keep what was typed: it used to clear the box first and call this
+    /// second, which destroyed the message whenever no model was installed.
+    @discardableResult
+    func send(_ text: String, attachments: [URL] = []) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
         // `run` cancels our reader but not the core's generation, so starting a
         // second turn mid-stream would leave the first decoding unattended.
-        guard !isStreaming else { return }
-        guard rebindModelIfMissing() else { return }
+        guard !isStreaming else { return false }
+        guard rebindModelIfMissing() else { return false }
 
         var parts: [ContentPart] = attachments.map { .imageRef(path: $0.path) }
         if !trimmed.isEmpty { parts.append(.text(text: trimmed)) }
         run { [core, conversationId] in
             core.sendMessage(conversationId: conversationId, input: UserInput(parts: parts))
         }
+        return true
     }
 
     /// A chat remembers the model it was created with, which may since have
@@ -124,6 +129,11 @@ final class ChatModel {
         core.cancelConversation(id: conversationId)
         streamTask?.cancel()
         finishStream()
+        // The core persists whatever was decoded as a cancelled message.
+        // Without re-reading it, Stop wiped the partial reply off the
+        // transcript and it only came back after navigating away and back.
+        messages = core.messages(conversationId: conversationId)
+        conversation = core.conversation(id: conversationId)
     }
 
     func setModel(_ modelId: String) {

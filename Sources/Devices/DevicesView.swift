@@ -85,6 +85,7 @@ struct DevicesView: View {
         HStack(spacing: PocketSpacing.s8) {
             Image(systemName: "info.circle")
                 .foregroundStyle(PocketColor.statusWarn)
+                .accessibilityHidden(true)
             Text("Start the local server before pairing — a device connects to it directly.")
                 .font(.pocket(.footnote))
             Spacer(minLength: 0)
@@ -101,6 +102,9 @@ struct DevicesView: View {
             HStack(alignment: .top, spacing: PocketSpacing.s16) {
                 QRCodeImage(text: qr)
                     .frame(width: 180, height: 180)
+                    .accessibilityLabel(
+                        "Pairing QR code. Scan it with PocketAI on your iPhone, "
+                        + "under Settings, Devices, Pair with a Mac.")
                 VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                     Text("PocketAI on iPhone → Settings → Devices → Pair with a Mac.")
                         .font(.pocket(.footnote))
@@ -121,6 +125,7 @@ struct DevicesView: View {
         HStack(spacing: PocketSpacing.s12) {
             Image(systemName: "iphone")
                 .foregroundStyle(PocketColor.accent)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(device.name).font(.pocket(.body))
                 Text(deviceSubtitle(device))
@@ -130,6 +135,7 @@ struct DevicesView: View {
             Spacer(minLength: 0)
             Button("Revoke") { confirmRevoke = device }
                 .buttonStyle(.hud)
+                .accessibilityLabel("Revoke access for \(device.name)")
         }
         .padding(PocketSpacing.s8)
     }
@@ -145,6 +151,7 @@ struct DevicesView: View {
         HStack(spacing: PocketSpacing.s12) {
             Image(systemName: "desktopcomputer")
                 .foregroundStyle(PocketColor.textTertiary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(peer.name).font(.pocket(.body))
                 Text((peer.addrs.first ?? "—") + ":\(peer.port)")
@@ -157,6 +164,7 @@ struct DevicesView: View {
                 reload()
             }
             .buttonStyle(.hud)
+            .accessibilityLabel("Forget \(peer.name)")
         }
         .padding(PocketSpacing.s8)
     }

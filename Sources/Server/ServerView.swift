@@ -61,6 +61,7 @@ struct ServerView: View {
                     tint: app.serverStatus.running
                         ? PocketColor.statusOk : PocketColor.textTertiary,
                     pulsing: app.serverStatus.running)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(app.serverStatus.running ? "Running" : "Stopped")
                         .font(.pocket(.headline))
@@ -152,6 +153,8 @@ struct ServerView: View {
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(value)")
     }
 
     private func generateKey() {
@@ -236,6 +239,12 @@ struct PrivacyView: View {
                                             .monospacedDigit()
                                     }
                                     .padding(PocketSpacing.s8)
+                                    .accessibilityElement(children: .combine)
+                                    .accessibilityLabel(
+                                        "\(entry.host), \(entry.purpose), started by "
+                                        + "\(entry.initiatedBy), "
+                                        + "\(hudBytes(entry.bytesOut)) sent, "
+                                        + "\(hudBytes(entry.bytesIn)) received")
                                 }
                             }
                             .hudPanel()
@@ -262,6 +271,10 @@ struct PrivacyView: View {
                                             .foregroundStyle(PocketColor.textTertiary)
                                     }
                                     .padding(PocketSpacing.s8)
+                                    .accessibilityElement(children: .combine)
+                                    .accessibilityLabel(
+                                        "\(entry.action), \(entry.target), "
+                                        + hudRelative(entry.ts))
                                     HUDRule()
                                 }
                             }

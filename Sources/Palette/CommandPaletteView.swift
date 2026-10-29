@@ -21,6 +21,7 @@ struct CommandPaletteView: View {
                 Image(systemName: "chevron.right")
                     .foregroundStyle(PocketColor.accent)
                     .font(.pocket(.caption))
+                    .accessibilityHidden(true)
                 TextField("Jump to a chat, project, session or action", text: $query)
                     .textFieldStyle(.plain)
                     .font(.pocket(.body))
@@ -215,6 +216,7 @@ struct PaletteRow: View {
             Image(systemName: item.symbol)
                 .foregroundStyle(selected ? PocketColor.accent : PocketColor.textTertiary)
                 .frame(width: 18)
+                .accessibilityHidden(true)
             Text(item.title)
                 .font(.pocket(.body))
                 .lineLimit(1)
@@ -228,5 +230,12 @@ struct PaletteRow: View {
         .padding(.horizontal, PocketSpacing.s12)
         .padding(.vertical, PocketSpacing.s8)
         .background(selected ? PocketColor.accentSoft : Color.clear)
+        // Highlighting is the palette's whole interaction model and was
+        // carried by background colour alone.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            [item.title, item.live ? "live" : "", item.subtitle]
+                .filter { !$0.isEmpty }.joined(separator: ", "))
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
