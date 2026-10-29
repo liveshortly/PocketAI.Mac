@@ -18,6 +18,10 @@ struct SidebarView: View {
     @State private var pendingEndSession: LSSession?
     @State private var pendingDeleteSession: LSSession?
     @State private var lastSessionLoad: Date?
+    /// Why the last session action didn't take. Ending and deleting both
+    /// dropped their error, and delete removed the row even when the server
+    /// had refused — so the list told a story the server disagreed with.
+    @State private var sessionActionError: String?
 
     /// The sidebar shows only the newest few of each kind; the rest live
     /// in the full lists (and ⌘K reaches any of them directly).
@@ -94,7 +98,13 @@ struct SidebarView: View {
                 guard let target = pendingEndSession, let client = app.liveShortly.client
                 else { return }
                 Task {
-                    try? await client.stop(target.id)
+                    do {
+                        try await client.stop(target.id)
+                        sessionActionError = nil
+                    } catch {
+                        sessionActionError =
+                            "Couldn't end that session: \(error.localizedDescription)"
+                    }
                     lastSessionLoad = nil
                     reloadSessions()
                 }
@@ -111,9 +121,15 @@ struct SidebarView: View {
                 guard let target = pendingDeleteSession, let client = app.liveShortly.client
                 else { return }
                 Task {
-                    try? await client.deleteSession(target.id)
-                    if app.selection == .session(target.id) { app.selection = nil }
-                    sessions.removeAll { $0.id == target.id }
+                    do {
+                        try await client.deleteSession(target.id)
+                        sessionActionError = nil
+                        if app.selection == .session(target.id) { app.selection = nil }
+                        sessions.removeAll { $0.id == target.id }
+                    } catch {
+                        sessionActionError =
+                            "Couldn't delete that session: \(error.localizedDescription)"
+                    }
                 }
             }
         }
@@ -235,6 +251,12 @@ struct SidebarView: View {
                     .font(.pocket(.footnote))
                     .foregroundStyle(PocketColor.textTertiary)
                     .tag(AppModel.Destination.newSession())
+                if let sessionActionError {
+                    Text(sessionActionError)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusBad)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
                     Text("Not connected on this Mac")

@@ -156,7 +156,15 @@ struct ProjectDetailView: View {
                             }
                             Spacer(minLength: 0)
                             Button {
-                                try? app.core.deleteDocument(id: doc.id)
+                                // A refused delete left the row in place with
+                                // nothing said; the reason goes under the list.
+                                do {
+                                    try app.core.deleteDocument(id: doc.id)
+                                    importError = nil
+                                } catch {
+                                    importError = "Couldn't remove \(doc.name): "
+                                        + error.localizedDescription
+                                }
                                 reload()
                             } label: {
                                 Image(systemName: "trash")

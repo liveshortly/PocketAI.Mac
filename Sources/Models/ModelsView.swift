@@ -16,6 +16,9 @@ struct ModelsView: View {
     @State private var searching = false
     @State private var autoResumed: Set<String> = []
     @State private var confirmDelete: CatalogEntry?
+    /// A refused delete used to leave the row exactly where it was with no
+    /// explanation; the reason belongs on screen.
+    @State private var deleteError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +26,12 @@ struct ModelsView: View {
             HUDRule()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                    if let deleteError {
+                        Text(deleteError)
+                            .font(.pocket(.footnote))
+                            .foregroundStyle(PocketColor.statusBad)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if !downloading.isEmpty {
                         HUDLabel("Downloading")
                         ForEach(downloading, id: \.manifest.id) { entry in
@@ -76,7 +85,13 @@ struct ModelsView: View {
         ) {
             Button("Delete model", role: .destructive) {
                 guard let target = confirmDelete else { return }
-                try? app.core.deleteModel(modelId: target.manifest.id)
+                do {
+                    try app.core.deleteModel(modelId: target.manifest.id)
+                    deleteError = nil
+                } catch {
+                    deleteError = "Couldn't delete \(target.manifest.displayName): "
+                        + error.localizedDescription
+                }
                 reload()
             }
         }
@@ -95,6 +110,13 @@ struct ModelsView: View {
                 .padding(.vertical, 5)
                 .hudPanel(PocketColor.bgCanvas)
                 .onSubmit(searchHub)
+            // A Hugging Face search is a network round trip per format and was
+            // tracked but never shown, so ⏎ looked like it did nothing.
+            if searching {
+                ProgressView()
+                    .controlSize(.small)
+                HUDLabel("searching…")
+            }
             Picker("", selection: $formatFilter) {
                 ForEach(FormatFilter.allCases, id: \.self) { filter in
                     Text(filter.label).tag(filter)
@@ -207,6 +229,9 @@ struct ModelsView: View {
         let query = search.trimmingCharacters(in: .whitespaces)
         guard query.count > 2 else {
             hubResults = []
+            // Say why nothing happened; ⏎ on "qw" used to be a silent no-op.
+            hubError = query.isEmpty
+                ? nil : "Type at least three characters to search Hugging Face."
             return
         }
         hubError = nil
@@ -330,8 +355,23 @@ struct ModelCard: View {
     @Environment(AppModel.self) private var app
     let entry: CatalogEntry
     let onDelete: (CatalogEntry) -> Void
+    /// What went wrong with the last action on this card. Every transfer
+    /// control used to discard its error with `try?`, so a refused download,
+    /// pause or cancel left a button that looked dead.
+    @State private var actionError: String?
 
     private var isDefault: Bool { app.currentModelId == entry.manifest.id }
+
+    /// Runs a core call and keeps its failure on the card instead of dropping
+    /// it. `what` names the action in the user's words ("Pause").
+    private func attempt(_ what: String, _ work: () throws -> Void) {
+        do {
+            try work()
+            actionError = nil
+        } catch {
+            actionError = "\(what) failed: \(error.localizedDescription)"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
@@ -370,7 +410,9 @@ struct ModelCard: View {
                     Spacer(minLength: 0)
                     Button("Retry") {
                         DownloadRates.shared.forget(entry.manifest.id)
-                        try? app.core.startDownload(modelId: entry.manifest.id)
+                        attempt("Retry") {
+                            try app.core.startDownload(modelId: entry.manifest.id)
+                        }
                     }
                     .buttonStyle(.hud)
                 }
@@ -379,6 +421,19 @@ struct ModelCard: View {
                 .hudPanel(PocketColor.statusBad.opacity(0.08))
             }
             fitLine
+            if let actionError {
+                HStack(alignment: .top, spacing: PocketSpacing.s8) {
+                    Text(actionError)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusBad)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Dismiss") { self.actionError = nil }
+                        .buttonStyle(.plain)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textTertiary)
+                }
+            }
             HStack(spacing: PocketSpacing.s12) {
                 HUDLabel(entry.manifest.license.spdx.isEmpty
                     ? "license unknown" : entry.manifest.license.spdx)
@@ -463,7 +518,7 @@ struct ModelCard: View {
                 }
                 Menu {
                     Button("Unload from memory") {
-                        try? app.core.unloadModel(id: entry.manifest.id)
+                        attempt("Unload") { try app.core.unloadModel(id: entry.manifest.id) }
                     }
                     Divider()
                     Button("Delete…", role: .destructive) { onDelete(entry) }
@@ -474,16 +529,20 @@ struct ModelCard: View {
                 .fixedSize()
             }
         case .downloading, .queued:
-            Button("Pause") { try? app.core.pauseDownload(modelId: entry.manifest.id) }
-                .buttonStyle(.hud)
+            Button("Pause") {
+                attempt("Pause") { try app.core.pauseDownload(modelId: entry.manifest.id) }
+            }
+            .buttonStyle(.hud)
         case .paused:
-            Button("Resume") { try? app.core.resumeDownload(modelId: entry.manifest.id) }
-                .buttonStyle(.hud)
+            Button("Resume") {
+                attempt("Resume") { try app.core.resumeDownload(modelId: entry.manifest.id) }
+            }
+            .buttonStyle(.hud)
         case .verifying:
             EmptyView()
         case .available, .failed:
             Button(entry.fit.verdict == .willNotFit ? "Get anyway" : "Get") {
-                try? app.core.startDownload(modelId: entry.manifest.id)
+                attempt("Download") { try app.core.startDownload(modelId: entry.manifest.id) }
             }
             .buttonStyle(.hudProminent)
         }
@@ -498,8 +557,10 @@ struct ModelCard: View {
                 HUDLabel("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
                 if let detail = rateAndETA { HUDLabel(detail) }
                 Spacer()
-                Button("Cancel") { try? app.core.cancelDownload(modelId: entry.manifest.id) }
-                    .buttonStyle(.plain)
+                Button("Cancel") {
+                    attempt("Cancel") { try app.core.cancelDownload(modelId: entry.manifest.id) }
+                }
+                .buttonStyle(.plain)
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.statusBad)
             }

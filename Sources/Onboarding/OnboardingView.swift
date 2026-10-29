@@ -10,6 +10,9 @@ struct OnboardingView: View {
     @State private var downloadId: String?
     @State private var pollTask: Task<Void, Never>?
     @State private var entries: [CatalogEntry] = []
+    /// Why the download didn't start. Discarding this with `try?` left "Get"
+    /// looking broken on the very first screen of the app.
+    @State private var downloadError: String?
 
     var body: some View {
         VStack(spacing: PocketSpacing.s24) {
@@ -66,6 +69,13 @@ struct OnboardingView: View {
             VStack(spacing: PocketSpacing.s8) {
                 ForEach(recommended, id: \.manifest.id) { entry in
                     onboardingModelRow(entry)
+                }
+                if let downloadError {
+                    Text(downloadError)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.statusBad)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: 520)
@@ -143,9 +153,15 @@ struct OnboardingView: View {
                 }
             default:
                 Button("Get") {
-                    try? app.core.startDownload(modelId: entry.manifest.id)
-                    downloadId = entry.manifest.id
-                    startPolling()
+                    do {
+                        try app.core.startDownload(modelId: entry.manifest.id)
+                        downloadError = nil
+                        downloadId = entry.manifest.id
+                        startPolling()
+                    } catch {
+                        downloadError =
+                            "Couldn't start that download: \(error.localizedDescription)"
+                    }
                 }
                 .buttonStyle(.hudProminent)
             }
@@ -187,10 +203,19 @@ struct OnboardingView: View {
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 guard !Task.isCancelled else { return }
                 reload()
-                if let id = downloadId,
-                   entries.first(where: { $0.manifest.id == id })?.state == .installed {
+                guard let id = downloadId,
+                      let state = entries.first(where: { $0.manifest.id == id })?.state
+                else { continue }
+                if state == .installed {
                     app.currentModelId = id
                     step = 2
+                    return
+                }
+                // A download that died leaves the row offering "Get" again;
+                // without this the screen polls forever saying nothing.
+                if case .failed(let reason) = state {
+                    downloadError = "That download failed: \(reason)"
+                    downloadId = nil
                     return
                 }
             }

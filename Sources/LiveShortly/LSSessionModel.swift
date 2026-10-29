@@ -213,21 +213,42 @@ final class LSSessionModel {
         }
     }
 
+    /// Switches the agent's model. The chip reads `detail.model`, so without
+    /// writing it back the menu pick looked like it did nothing — and a
+    /// refused change said nothing at all.
     func setModel(_ model: String) {
-        Task { try? await client.setModel(sessionID, model: model) }
+        Task {
+            do {
+                try await client.setModel(sessionID, model: model)
+                detail?.model = model
+            } catch {
+                errorText = "Couldn't switch model: \(error.localizedDescription)"
+            }
+        }
     }
 
     func rename(_ title: String) {
         Task {
-            try? await client.rename(sessionID, title: title)
-            detail?.title = title
+            do {
+                try await client.rename(sessionID, title: title)
+                detail?.title = title
+            } catch {
+                errorText = "Couldn't rename this session: \(error.localizedDescription)"
+            }
         }
     }
 
+    /// Ends the session. Only a verdict from the server flips `isLive` —
+    /// marking it ended regardless hid a failure behind an "ENDED" chip while
+    /// the agent carried on working.
     func endSession() {
         Task {
-            try? await client.stop(sessionID)
-            isLive = false
+            do {
+                try await client.stop(sessionID)
+                isLive = false
+            } catch {
+                errorText = "Couldn't end this session: \(error.localizedDescription)"
+            }
         }
     }
 

@@ -68,7 +68,9 @@ struct LSNewSessionView: View {
             Text(projectId == nil ? "New agent session" : "New agent session in this project")
                 .font(.pocket(.headline))
             Spacer(minLength: 0)
-            Button("Start session") { start() }
+            // Creating a session is a round trip to the machine: say that it is
+            // happening rather than greying the button out in silence.
+            Button(starting ? "Starting…" : "Start session") { start() }
                 .buttonStyle(.hudProminent)
                 .disabled(!canStart || starting)
         }
@@ -92,7 +94,7 @@ struct LSNewSessionView: View {
                 .padding(PocketSpacing.s8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .hudPanel(PocketColor.bgSunken)
-            Button("Check again") { Task { await load(force: true) } }
+            Button("Check again") { Task { await load() } }
                 .buttonStyle(.hud)
         }
         .padding(PocketSpacing.s12)
@@ -208,7 +210,7 @@ struct LSNewSessionView: View {
         model = nil
     }
 
-    private func load(force: Bool = false) async {
+    private func load() async {
         guard let client = app.liveShortly.client else {
             loading = false
             return
