@@ -5,6 +5,7 @@ import PocketKit
 import PocketLiveShortly
 import PocketMLX
 import SwiftUI
+import UserNotifications
 
 /// Root application state: the Rust core handle, what the sidebar has
 /// selected, and the command bus the menus and keyboard shortcuts fire into.
@@ -145,6 +146,7 @@ public final class AppModel {
     /// approval sheet can present from any screen.
     public var pendingPairingRequest: PairingRequest?
     private var pairingPollTask: Task<Void, Never>?
+    private let pairingNotifier = PairingNotifier()
     private let advertiser = Advertiser()
     public private(set) var activeServerActivity: NSObjectProtocol?
 
@@ -219,6 +221,7 @@ public final class AppModel {
         refreshCurrentModelDisplayName()
         restoreSelection()
 
+        pairingNotifier.onTap = { [weak self] in self?.focusShell() }
         pairingPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -226,6 +229,14 @@ public final class AppModel {
                 if self.pendingPairingRequest == nil, self.serverStatus.running,
                    let request = self.core.pendingPairings().first {
                     self.pendingPairingRequest = request
+                    // The sheet belongs to the shell window, so when Settings
+                    // (its own scene) is in front it is presented behind and
+                    // never seen — pairing just never completes on the phone.
+                    // This arrives unasked, so it gets a notification rather
+                    // than stealing focus from whatever is being typed.
+                    if self.shellWindow?.isKeyWindow != true {
+                        self.pairingNotifier.notify(deviceName: request.deviceName)
+                    }
                 }
             }
         }
@@ -408,5 +419,59 @@ public final class AppModel {
 
     public func saveLicenseKey(_ key: String) {
         _ = hooks.keychainSet(key: Self.licenseKeychainKey, value: Data(key.utf8))
+    }
+}
+
+/// Tells you a phone is waiting to pair when the shell is not the window you
+/// are looking at, and brings the shell forward when you act on it. The
+/// approval sheet is already on the shell by then, so a tap is only a focus.
+///
+/// Authorization is asked for at the first pairing request, not at launch:
+/// nothing else here notifies, so an earlier prompt would arrive with no story
+/// behind it. Refusal costs nothing new — the sheet stays queued on the shell,
+/// which is exactly the behaviour this replaces.
+@MainActor
+final class PairingNotifier: NSObject, UNUserNotificationCenterDelegate {
+    var onTap: (@MainActor () -> Void)?
+
+    func notify(deviceName: String) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        Task {
+            // Idempotent after the first call: a denied app gets `false` back
+            // without being prompted again.
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true
+            else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Pair this device?"
+            content.body = "\(deviceName) wants to use this Mac's models."
+            content.sound = .default
+            try? await center.add(
+                UNNotificationRequest(
+                    identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+    }
+
+    /// PocketAI is normally the active app when this fires — Settings has the
+    /// focus — and macOS drops notifications for the active app unless they
+    /// are asked for explicitly.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) ->
+            Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        Task { @MainActor in
+            onTap?()
+            completionHandler()
+        }
     }
 }
