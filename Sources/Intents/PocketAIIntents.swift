@@ -60,7 +60,8 @@ enum PocketAIIntentRunner {
     @MainActor
     static func run(prompt: String, title: String) async throws -> String {
         guard let app = AppModel.shared else {
-            throw PocketAIIntentError("PocketAI isn't running yet. Open it once and try again.")
+            throw PocketAIIntentError(String(
+                localized: "PocketAI isn't running yet. Open it once and try again."))
         }
         let core = app.core
         let conversation: Conversation
@@ -68,8 +69,9 @@ enum PocketAIIntentRunner {
             conversation = try core.createConversation(
                 NewConversation(title: title, projectId: nil, modelId: app.currentModelId))
         } catch {
-            throw PocketAIIntentError(
-                "PocketAI couldn't start a conversation: \(error.localizedDescription)")
+            throw PocketAIIntentError(String(
+                localized:
+                    "PocketAI couldn't start a conversation: \(error.localizedDescription)"))
         }
         try? core.archiveConversation(id: conversation.id, archived: true)
 
@@ -81,12 +83,13 @@ enum PocketAIIntentRunner {
                 if case .delta(let delta) = event { answer += delta.text }
             }
         } catch {
-            throw PocketAIIntentError(
-                "PocketAI couldn't generate a response: \(error.localizedDescription)")
+            throw PocketAIIntentError(String(
+                localized:
+                    "PocketAI couldn't generate a response: \(error.localizedDescription)"))
         }
         let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            throw PocketAIIntentError("PocketAI returned an empty response.")
+            throw PocketAIIntentError(String(localized: "PocketAI returned an empty response."))
         }
         return trimmed
     }

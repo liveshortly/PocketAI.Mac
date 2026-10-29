@@ -24,7 +24,7 @@ struct LSNewSessionView: View {
 
     private func hostLabel(_ host: LSHost) -> String {
         let base = "\(host.name) · \(host.os) \(host.arch)"
-        return host.isOnline ? base : base + " · offline"
+        return host.isOnline ? base : base + String(localized: " · offline")
     }
 
     var body: some View {
@@ -104,7 +104,7 @@ struct LSNewSessionView: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
-            field("Machine") {
+            field(String(localized: "Machine")) {
                 Picker("Machine", selection: Binding(
                     get: { hostID ?? "" },
                     set: { newValue in
@@ -119,7 +119,7 @@ struct LSNewSessionView: View {
                 .labelsHidden()
             }
             if let host {
-                field("Agent") {
+                field(String(localized: "Agent")) {
                     Picker("Agent", selection: Binding(
                         get: { agent ?? host.agents.first ?? "" },
                         set: { newAgent in
@@ -132,7 +132,7 @@ struct LSNewSessionView: View {
                     }
                     .labelsHidden()
                 }
-                field("Directory") {
+                field(String(localized: "Directory")) {
                     Picker("Directory", selection: Binding(
                         get: { cwd ?? host.dirs.first ?? "" },
                         set: { cwd = $0 })
@@ -143,7 +143,7 @@ struct LSNewSessionView: View {
                 }
                 let choices = host.models(forAgent: agent ?? host.agents.first ?? "")
                 if !choices.isEmpty {
-                    field("Model") {
+                    field(String(localized: "Model")) {
                         Picker("Model", selection: Binding(
                             get: { model ?? "" },
                             set: { model = $0.isEmpty ? nil : $0 })
@@ -160,8 +160,10 @@ struct LSNewSessionView: View {
                             .foregroundStyle(PocketColor.statusWarn)
                             .accessibilityHidden(true)
                         Text(
-                            "This machine hasn't checked in recently. Starting a session "
-                            + "may produce one with no agent attached."
+                            String(
+                                localized:
+                                    "This machine hasn't checked in recently. Starting a session may produce one with no agent attached."
+                            )
                         )
                         .font(.pocket(.caption))
                         .fixedSize(horizontal: false, vertical: true)
@@ -226,7 +228,8 @@ struct LSNewSessionView: View {
             }
             errorText = nil
         } catch {
-            errorText = "Couldn't load your machines: \(error.localizedDescription)"
+            errorText = String(
+                localized: "Couldn't load your machines: \(error.localizedDescription)")
         }
         loading = false
     }
@@ -246,9 +249,10 @@ struct LSNewSessionView: View {
                     // Stay on this screen so the reason is readable: navigating
                     // would destroy the view showing it and drop the user into
                     // an empty session with no agent behind it.
-                    errorText = "The session was created, but the machine refused to start "
-                        + "the agent: \(spawn.error ?? "unknown error"). "
-                        + "It is in the sidebar if you still want to open it."
+                    errorText = String(
+                        localized:
+                            "The session was created, but the machine refused to start the agent: \(spawn.error ?? String(localized: "unknown error")). It is in the sidebar if you still want to open it."
+                    )
                 } else {
                     if let projectId {
                         ProjectSessions.link(created.id, to: projectId)
@@ -257,7 +261,8 @@ struct LSNewSessionView: View {
                     app.selection = .session(created.id)
                 }
             } catch {
-                errorText = "Couldn't start the session: \(error.localizedDescription)"
+                errorText = String(
+                    localized: "Couldn't start the session: \(error.localizedDescription)")
             }
             starting = false
         }

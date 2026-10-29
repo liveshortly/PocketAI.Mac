@@ -15,7 +15,8 @@ struct ImageGenView: View {
     /// moment the model is not SDXL-Turbo: a full-schedule model wants ~50.
     @State private var steps = 2
     @State private var maxSteps = 4
-    @State private var stepsHint = "SDXL Turbo is built for 1–4 steps. More is slower, not better."
+    @State private var stepsHint = String(
+        localized: "SDXL Turbo is built for 1–4 steps. More is slower, not better.")
 
     @State private var seedText = ""
     @State private var image: NSImage?
@@ -59,7 +60,7 @@ struct ImageGenView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: PocketSpacing.s12) {
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                    HUDLabel("Prompt")
+                    HUDLabel(String(localized: "Prompt"))
                     TextEditor(text: $prompt)
                         .font(.pocket(.body))
                         .scrollContentBackground(.hidden)
@@ -68,7 +69,7 @@ struct ImageGenView: View {
                         .hudPanel(PocketColor.bgCanvas)
                 }
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                    HUDLabel("Avoid · optional")
+                    HUDLabel(String(localized: "Avoid · optional"))
                     TextField("blurry, watermark", text: $negativePrompt)
                         .textFieldStyle(.plain)
                         .font(.pocket(.body))
@@ -76,7 +77,7 @@ struct ImageGenView: View {
                         .hudPanel(PocketColor.bgCanvas)
                 }
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                    HUDLabel("Size")
+                    HUDLabel(String(localized: "Size"))
                     Picker("Image size", selection: $size) {
                         ForEach([512, 768, 1024], id: \.self) { value in
                             Text("\(value)²").tag(value)
@@ -86,7 +87,7 @@ struct ImageGenView: View {
                     .labelsHidden()
                 }
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                    HUDLabel("Steps · \(steps)")
+                    HUDLabel(String(localized: "Steps · \(steps)"))
                     Slider(
                         value: Binding(
                             get: { Double(steps) }, set: { steps = Int($0) }),
@@ -97,7 +98,7 @@ struct ImageGenView: View {
                         .foregroundStyle(PocketColor.textTertiary)
                 }
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                    HUDLabel("Seed · optional")
+                    HUDLabel(String(localized: "Seed · optional"))
                     TextField("random", text: $seedText)
                         .textFieldStyle(.plain)
                         .font(.pocket(.mono))
@@ -156,7 +157,8 @@ struct ImageGenView: View {
                         .frame(width: 240)
                         .tint(PocketColor.accent)
                         .accessibilityLabel("Generation progress")
-                        .accessibilityValue(statusText ?? "\(Int(progress * 100)) percent")
+                        .accessibilityValue(
+                            statusText ?? String(localized: "\(Int(progress * 100)) percent"))
                     if let statusText { HUDLabel(statusText) }
                 }
             }
@@ -189,8 +191,10 @@ struct ImageGenView: View {
         steps = preset
         maxSteps = ceiling
         stepsHint = ceiling <= 4
-            ? "This model is built for 1–\(ceiling) steps. More is slower, not better."
-            : "This model is tuned for \(preset) steps. Fewer is faster and rougher."
+            ? String(
+                localized: "This model is built for 1–\(ceiling) steps. More is slower, not better.")
+            : String(
+                localized: "This model is tuned for \(preset) steps. Fewer is faster and rougher.")
     }
 
     /// Directory and id of the installed image model. Mirrors the iPhone's
@@ -215,7 +219,7 @@ struct ImageGenView: View {
         image = nil
         preview = nil
         progress = 0
-        statusText = "Loading the image model…"
+        statusText = String(localized: "Loading the image model…")
         isGenerating = true
 
         let negative = negativePrompt.trimmingCharacters(in: .whitespaces)
@@ -248,7 +252,7 @@ struct ImageGenView: View {
                 ) { step, total, previewImage in
                     Task { @MainActor in
                         progress = total > 0 ? Double(step) / Double(total) : 0
-                        statusText = "Step \(step) of \(total)"
+                        statusText = String(localized: "Step \(step) of \(total)")
                         if let previewImage {
                             preview = NSImage(
                                 cgImage: previewImage,
@@ -263,7 +267,7 @@ struct ImageGenView: View {
                 statusText = nil
             } catch is CancellationError {
             } catch {
-                errorText = "Generation failed: \(error.localizedDescription)"
+                errorText = String(localized: "Generation failed: \(error.localizedDescription)")
             }
             isGenerating = false
         }
@@ -284,13 +288,13 @@ struct ImageGenView: View {
               let rep = NSBitmapImageRep(data: tiff),
               let data = rep.representation(using: .png, properties: [:])
         else {
-            errorText = "Couldn't encode the image as PNG."
+            errorText = String(localized: "Couldn't encode the image as PNG.")
             return
         }
         do {
             try data.write(to: url)
         } catch {
-            errorText = "Couldn't save: \(error.localizedDescription)"
+            errorText = String(localized: "Couldn't save: \(error.localizedDescription)")
         }
     }
 }

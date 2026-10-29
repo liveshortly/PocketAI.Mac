@@ -14,7 +14,7 @@ struct RenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
-            HUDLabel("Title")
+            HUDLabel(String(localized: "Title"))
             TextField("Untitled", text: $title)
                 .textFieldStyle(.plain)
                 .font(.pocket(.body))
@@ -61,7 +61,7 @@ struct NewProjectSheet: View {
             Text("New project")
                 .font(.pocket(.title))
             VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                HUDLabel("Name")
+                HUDLabel(String(localized: "Name"))
                 TextField("Client work", text: $name)
                     .textFieldStyle(.plain)
                     .font(.pocket(.body))
@@ -70,7 +70,7 @@ struct NewProjectSheet: View {
                     .hudPanel(PocketColor.bgCanvas)
             }
             VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                HUDLabel("Instructions · optional")
+                HUDLabel(String(localized: "Instructions · optional"))
                 TextEditor(text: $instructions)
                     .font(.pocket(.body))
                     .scrollContentBackground(.hidden)
@@ -121,7 +121,7 @@ struct PairingApprovalSheet: View {
             Text("\(request.deviceName) wants to use this Mac's models.")
                 .font(.pocket(.body))
             VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                HUDLabel("Device")
+                HUDLabel(String(localized: "Device"))
                 HStack {
                     Text(request.deviceName)
                         .font(.pocket(.mono))

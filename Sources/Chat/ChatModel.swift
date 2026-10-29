@@ -45,7 +45,7 @@ final class ChatModel {
             let text = first.plainText
             if !text.isEmpty { return String(text.prefix(48)) }
         }
-        return "New chat"
+        return String(localized: "New chat")
     }
 
     var isEmpty: Bool { messages.isEmpty && !isStreaming }
@@ -94,7 +94,8 @@ final class ChatModel {
                 setModel(AppleFoundationModelsEngine.modelId)
                 return true
             }
-            errorText = "No model is installed yet — open the model library and download one."
+            errorText = String(
+                localized: "No model is installed yet — open the model library and download one.")
             return false
         }
         let current = conversation?.modelId

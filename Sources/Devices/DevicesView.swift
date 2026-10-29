@@ -43,13 +43,19 @@ struct DevicesView: View {
                             .font(.pocket(.footnote))
                             .foregroundStyle(PocketColor.statusBad)
                     }
-                    section("Devices using this Mac", devices.isEmpty ? "None paired yet" : nil) {
+                    section(
+                        String(localized: "Devices using this Mac"),
+                        devices.isEmpty ? String(localized: "None paired yet") : nil
+                    ) {
                         ForEach(Array(devices.enumerated()), id: \.element.id) { index, device in
                             if index > 0 { HUDRule() }
                             deviceRow(device)
                         }
                     }
-                    section("Macs this app can borrow", peers.isEmpty ? "None" : nil) {
+                    section(
+                        String(localized: "Macs this app can borrow"),
+                        peers.isEmpty ? String(localized: "None") : nil
+                    ) {
                         ForEach(Array(peers.enumerated()), id: \.element.id) { index, peer in
                             if index > 0 { HUDRule() }
                             peerRow(peer)
@@ -67,7 +73,7 @@ struct DevicesView: View {
             if app.pendingCommand == .refresh { reload() }
         }
         .confirmationDialog(
-            "Revoke \(confirmRevoke?.name ?? "device")? It loses access to this Mac's models.",
+            "Revoke \(confirmRevoke?.name ?? String(localized: "device"))? It loses access to this Mac's models.",
             isPresented: Binding(
                 get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }),
             titleVisibility: .visible
@@ -98,13 +104,13 @@ struct DevicesView: View {
 
     private func qrCard(_ qr: String) -> some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Scan on the iPhone")
+            HUDLabel(String(localized: "Scan on the iPhone"))
             HStack(alignment: .top, spacing: PocketSpacing.s16) {
                 QRCodeImage(text: qr)
                     .frame(width: 180, height: 180)
-                    .accessibilityLabel(
-                        "Pairing QR code. Scan it with PocketAI on your iPhone, "
-                        + "under Settings, Devices, Pair with a Mac.")
+                    .accessibilityLabel(String(
+                        localized:
+                            "Pairing QR code. Scan it with PocketAI on your iPhone, under Settings, Devices, Pair with a Mac."))
                 VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                     Text("PocketAI on iPhone → Settings → Devices → Pair with a Mac.")
                         .font(.pocket(.footnote))
@@ -142,7 +148,9 @@ struct DevicesView: View {
 
     private func deviceSubtitle(_ device: PairedDevice) -> String {
         var bits = ["\(device.platform)", device.role]
-        if let seen = device.lastSeenAt { bits.append("seen \(hudRelative(seen))") }
+        if let seen = device.lastSeenAt {
+            bits.append(String(localized: "seen \(hudRelative(seen))"))
+        }
         if let addr = device.lastAddr { bits.append(addr) }
         return bits.joined(separator: " · ")
     }
@@ -209,17 +217,17 @@ struct DevicesView: View {
             app.startServer(lan: true)
         }
         guard app.serverStatus.running else {
-            qrError = """
-                The local server didn't start, so there is nothing for a device to pair with. \
-                Open Local server and start it there to see why.
-                """
+            qrError = String(
+                localized:
+                    "The local server didn't start, so there is nothing for a device to pair with. Open Local server and start it there to see why.")
             return
         }
         do {
             qrString = try app.core.pairingOfferQrString()
         } catch {
             qrString = nil
-            qrError = "Couldn't create a pairing code: \(error.localizedDescription)"
+            qrError = String(
+                localized: "Couldn't create a pairing code: \(error.localizedDescription)")
         }
     }
 }

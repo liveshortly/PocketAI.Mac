@@ -72,14 +72,14 @@ struct QuickAskPanel: View {
             HUDLabel(app.currentModelDisplayName)
             if app.serverStatus.running {
                 HUDDot(pulsing: true)
-                HUDLabel("serving")
+                HUDLabel(String(localized: "serving"))
             }
         }
     }
 
     private var footer: some View {
         HStack(spacing: PocketSpacing.s8) {
-            HUDLabel("⏎ ask")
+            HUDLabel(String(localized: "⏎ ask"))
             Spacer()
             if let conversationId {
                 Button("Open in PocketAI") {
@@ -110,7 +110,7 @@ struct QuickAskPanel: View {
                     title: String(text.prefix(48)), projectId: nil,
                     modelId: app.currentModelId))
             else {
-                errorText = "Couldn't start a conversation."
+                errorText = String(localized: "Couldn't start a conversation.")
                 return
             }
             id = created.id

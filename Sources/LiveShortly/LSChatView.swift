@@ -76,13 +76,13 @@ struct LSChatView: View {
         // screen means without moving focus.
         .onChange(of: session?.isLive ?? false) { wasLive, live in
             if wasLive, !live {
-                AccessibilityNotification.Announcement("Session ended").post()
+                AccessibilityNotification.Announcement(String(localized: "Session ended")).post()
             }
         }
         .onChange(of: session?.pendingProbe?.id) { _, probe in
             if probe != nil {
                 AccessibilityNotification.Announcement(
-                    "The agent is asking for permission").post()
+                    String(localized: "The agent is asking for permission")).post()
             }
         }
         .onChange(of: app.commandSerial) { _, _ in
@@ -167,10 +167,10 @@ struct LSChatView: View {
                     .accessibilityLabel("Agent is working")
                 }
             } else {
-                HUDChip(text: "ENDED")
+                HUDChip(text: String(localized: "ENDED"))
             }
             if session.watchers > 1 {
-                HUDLabel("\(session.watchers) watching")
+                HUDLabel(String(localized: "\(session.watchers) watching"))
             }
             // Who can see this is worth knowing without opening a dialog.
             if let visibility = session.detail?.visibility, visibility != "private" {
@@ -178,7 +178,7 @@ struct LSChatView: View {
                     .help("Anyone with the link can open this session")
             }
             if session.detail?.publishedAt != nil {
-                HUDChip(text: "ON FEED", tint: LSColor.accent)
+                HUDChip(text: String(localized: "ON FEED"), tint: LSColor.accent)
             }
             Spacer(minLength: 0)
             if let framework = session.detail?.framework, framework == "claude-code",
@@ -188,12 +188,15 @@ struct LSChatView: View {
                         Button(model) { session.setModel(model) }
                     }
                 } label: {
-                    HUDChip(text: session.detail?.model ?? "model", tint: LSColor.accent)
+                    HUDChip(
+                        text: session.detail?.model ?? String(localized: "model"),
+                        tint: LSColor.accent)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .accessibilityLabel("Agent model, \(session.detail?.model ?? "default")")
+                .accessibilityLabel(
+                    "Agent model, \(session.detail?.model ?? String(localized: "default"))")
                 .accessibilityHint("Switch the agent's model")
             }
             if session.detail?.isOwner == true {
@@ -256,7 +259,7 @@ struct LSChatView: View {
                     // dead gap between sending and the agent's first step.
                     if session.isLive, session.agentBusy {
                         HStack(spacing: PocketSpacing.s8) {
-                            HUDLabel("◆ assistant", tint: LSColor.accent)
+                            HUDLabel(String(localized: "◆ assistant"), tint: LSColor.accent)
                             PocketMarkView(state: .working(tokPerSec: nil), size: 14)
                                 .accessibilityHidden(true)
                             Text("working")
@@ -351,7 +354,7 @@ struct LSChatView: View {
                 HStack(alignment: .bottom, spacing: PocketSpacing.s8) {
                     ComposerTextView(
                         text: $draft,
-                        placeholder: "Message this session…",
+                        placeholder: String(localized: "Message this session…"),
                         focusRequest: focusRequest,
                         onSubmit: { send(session) },
                         onEdit: { session.noteTyping() }
@@ -388,7 +391,9 @@ struct LSChatView: View {
                     .accessibilityLabel("Send to this session")
                     .help("Send (⏎)")
                 }
-                HUDLabel("⏎ send · ⇧⏎ newline · goes to the agent as a viewer message")
+                HUDLabel(
+                    String(
+                        localized: "⏎ send · ⇧⏎ newline · goes to the agent as a viewer message"))
             }
             .padding(PocketSpacing.s12)
         }
@@ -461,7 +466,7 @@ struct LSItemView: View {
             VStack(alignment: .leading, spacing: PocketSpacing.s4) {
                 if !item.grouped {
                     HStack(spacing: PocketSpacing.s8) {
-                        HUDLabel("◆ agent", tint: LSColor.accent)
+                        HUDLabel(String(localized: "◆ agent"), tint: LSColor.accent)
                         Text(event.ts.formatted(date: .omitted, time: .shortened))
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textTertiary)
@@ -471,7 +476,9 @@ struct LSItemView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Agent, \(event.ts.formatted(date: .omitted, time: .shortened)), "
+            .accessibilityLabel(
+                String(
+                    localized: "Agent, \(event.ts.formatted(date: .omitted, time: .shortened)), ")
                 + lsBodyText(event))
         case "input_requested", "viewer_decision":
             Text(systemLine(event))
@@ -486,12 +493,14 @@ struct LSItemView: View {
     private func systemLine(_ event: LSEvent) -> String {
         switch event.eventType {
         case "input_requested":
-            let kind = event.payload["kind"]?.stringValue == "permission" ? "permission" : "input"
-            return "awaiting \(kind)"
+            let kind = event.payload["kind"]?.stringValue == "permission"
+                ? String(localized: "permission") : String(localized: "input")
+            return String(localized: "awaiting \(kind)")
         case "viewer_decision":
-            let who = event.payload["username"]?.stringValue ?? "viewer"
-            let what = event.payload["decision"]?.stringValue == "deny" ? "denied" : "allowed"
-            return "\(who) \(what) the request"
+            let who = event.payload["username"]?.stringValue ?? String(localized: "viewer")
+            let what = event.payload["decision"]?.stringValue == "deny"
+                ? String(localized: "denied") : String(localized: "allowed")
+            return String(localized: "\(who) \(what) the request")
         default:
             return event.eventType
         }
@@ -556,7 +565,10 @@ struct LSWorkRun: View {
                     Image(systemName: "gearshape.2")
                         .font(.pocket(.caption))
                         .accessibilityHidden(true)
-                    HUDLabel("agent activity · \(run.count) step\(run.count == 1 ? "" : "s")")
+                    HUDLabel(
+                        String(
+                            localized:
+                                "agent activity · \(run.count) step\(run.count == 1 ? "" : "s")"))
                     Spacer(minLength: 0)
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
                         .font(.pocket(.caption))
@@ -575,7 +587,8 @@ struct LSWorkRun: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 if !expanded, run.count > Self.collapsedTail {
-                    HUDLabel("… \(run.count - Self.collapsedTail) earlier steps")
+                    HUDLabel(
+                        String(localized: "… \(run.count - Self.collapsedTail) earlier steps"))
                 }
                 ForEach(shown) { event in
                     Text(line(event))
@@ -589,7 +602,7 @@ struct LSWorkRun: View {
                     HStack(spacing: PocketSpacing.s4) {
                         PocketMarkView(state: .working(tokPerSec: nil), size: 12)
                             .accessibilityHidden(true)
-                        HUDLabel("running")
+                        HUDLabel(String(localized: "running"))
                     }
                     .padding(.top, 2)
                 }

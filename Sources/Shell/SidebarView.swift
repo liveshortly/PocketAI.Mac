@@ -88,7 +88,7 @@ struct SidebarView: View {
             }
         }
         .confirmationDialog(
-            "End “\(pendingEndSession?.title ?? "session")”? The agent stops where it is.",
+            "End “\(pendingEndSession?.title ?? String(localized: "session"))”? The agent stops where it is.",
             isPresented: Binding(
                 get: { pendingEndSession != nil },
                 set: { if !$0 { pendingEndSession = nil } }),
@@ -102,8 +102,8 @@ struct SidebarView: View {
                         try await client.stop(target.id)
                         sessionActionError = nil
                     } catch {
-                        sessionActionError =
-                            "Couldn't end that session: \(error.localizedDescription)"
+                        sessionActionError = String(
+                            localized: "Couldn't end that session: \(error.localizedDescription)")
                     }
                     lastSessionLoad = nil
                     reloadSessions()
@@ -111,7 +111,7 @@ struct SidebarView: View {
             }
         }
         .confirmationDialog(
-            "Delete “\(pendingDeleteSession?.title ?? "session")”? This cannot be undone.",
+            "Delete “\(pendingDeleteSession?.title ?? String(localized: "session"))”? This cannot be undone.",
             isPresented: Binding(
                 get: { pendingDeleteSession != nil },
                 set: { if !$0 { pendingDeleteSession = nil } }),
@@ -127,14 +127,15 @@ struct SidebarView: View {
                         if app.selection == .session(target.id) { app.selection = nil }
                         sessions.removeAll { $0.id == target.id }
                     } catch {
-                        sessionActionError =
-                            "Couldn't delete that session: \(error.localizedDescription)"
+                        sessionActionError = String(
+                            localized:
+                                "Couldn't delete that session: \(error.localizedDescription)")
                     }
                 }
             }
         }
         .confirmationDialog(
-            "Delete “\(confirmDelete?.title ?? "chat")”? This cannot be undone.",
+            "Delete “\(confirmDelete?.title ?? String(localized: "chat"))”? This cannot be undone.",
             isPresented: Binding(
                 get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
             titleVisibility: .visible
@@ -182,7 +183,7 @@ struct SidebarView: View {
                     .tag(AppModel.Destination.allChats)
             }
         } header: {
-            HUDLabel("Chats")
+            HUDLabel(String(localized: "Chats"))
         }
     }
 
@@ -201,7 +202,7 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
         } header: {
-            HUDLabel("Projects")
+            HUDLabel(String(localized: "Projects"))
         }
     }
 
@@ -288,7 +289,7 @@ struct SidebarView: View {
             Label("Local server", systemImage: "server.rack").tag(AppModel.Destination.server)
             Label("Privacy", systemImage: "hand.raised").tag(AppModel.Destination.privacy)
         } header: {
-            HUDLabel("Tools")
+            HUDLabel(String(localized: "Tools"))
         }
     }
 
@@ -307,8 +308,11 @@ struct SidebarView: View {
                     .foregroundStyle(PocketColor.textSecondary)
                     .lineLimit(1)
                     .accessibilityLabel(
-                        "Current model \(app.currentModelDisplayName), local server "
-                        + (app.serverStatus.running ? "running" : "stopped"))
+                        String(
+                            localized:
+                                "Current model \(app.currentModelDisplayName), local server ")
+                        + (app.serverStatus.running
+                            ? String(localized: "running") : String(localized: "stopped")))
                 Spacer(minLength: 0)
                 SettingsLink {
                     Image(systemName: "gearshape")
@@ -370,7 +374,7 @@ struct ChatRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(summary.title?.isEmpty == false ? summary.title! : "Untitled chat")
+            Text(title)
                 .font(.pocket(.body))
                 .lineLimit(1)
             Text(hudRelative(summary.updatedAt))
@@ -380,9 +384,11 @@ struct ChatRow: View {
         .padding(.vertical, 1)
         // Title and timestamp as one row, not two unrelated strings.
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(summary.title?.isEmpty == false ? summary.title! : "Untitled chat"), "
-            + hudRelative(summary.updatedAt))
+        .accessibilityLabel("\(title), " + hudRelative(summary.updatedAt))
+    }
+
+    private var title: String {
+        summary.title?.isEmpty == false ? summary.title! : String(localized: "Untitled chat")
     }
 }
 
@@ -393,7 +399,8 @@ struct SessionRow: View {
     var body: some View {
         HStack(spacing: PocketSpacing.s8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.title.isEmpty ? "Untitled session" : session.title)
+                Text(session.title.isEmpty
+                    ? String(localized: "Untitled session") : session.title)
                     .font(.pocket(.body))
                     .lineLimit(1)
                 Text(subtitle)
@@ -421,9 +428,11 @@ struct SessionRow: View {
     /// The whole row in one sentence — the live dot and the unread capsule are
     /// otherwise either silent or read out of order.
     private var rowLabel: String {
-        var parts = [session.title.isEmpty ? "Untitled session" : session.title]
-        parts.append(session.isLive ? "live" : "ended")
-        if unread > 0 { parts.append("\(unread) new events") }
+        var parts = [
+            session.title.isEmpty ? String(localized: "Untitled session") : session.title
+        ]
+        parts.append(session.isLive ? String(localized: "live") : String(localized: "ended"))
+        if unread > 0 { parts.append(String(localized: "\(unread) new events")) }
         parts.append(subtitle)
         return parts.joined(separator: ", ")
     }
@@ -442,7 +451,7 @@ struct SessionRow: View {
         }
         var bits: [String] = []
         if let framework = session.framework, !framework.isEmpty { bits.append(framework) }
-        bits.append("\(session.eventCount) events")
+        bits.append(String(localized: "\(session.eventCount) events"))
         return bits.joined(separator: " · ")
     }
 }

@@ -89,7 +89,7 @@ struct ServerView: View {
 
     private var accessCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Access")
+            HUDLabel(String(localized: "Access"))
             Toggle("Allow devices on this network", isOn: $lanEnabled)
                 .toggleStyle(.switch)
                 .tint(PocketColor.accent)
@@ -119,16 +119,16 @@ struct ServerView: View {
 
     private var endpointCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("For other apps")
-            row("Base URL", app.serverStatus.running
+            HUDLabel(String(localized: "For other apps"))
+            row(String(localized: "Base URL"), app.serverStatus.running
                 ? "http://127.0.0.1:\(app.serverStatus.port)/v1" : "—")
-            row("Model", app.currentModelId)
+            row(String(localized: "Model"), app.currentModelId)
             HStack {
                 Text("API key")
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
                 Spacer(minLength: PocketSpacing.s8)
-                Text(apiKey ?? "not generated")
+                Text(apiKey ?? String(localized: "not generated"))
                     .font(.pocket(.mono))
                 Button(copied ? "Copied" : "Generate & copy") { generateKey() }
                     .buttonStyle(.hud)
@@ -218,9 +218,9 @@ struct PrivacyView: View {
                     .hudPanel()
 
                     VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                        HUDLabel("Network activity · \(egress.count)")
+                        HUDLabel(String(localized: "Network activity · \(egress.count)"))
                         if egress.isEmpty {
-                            emptyNote("Nothing has left this Mac.")
+                            emptyNote(String(localized: "Nothing has left this Mac."))
                         } else {
                             VStack(spacing: 0) {
                                 ForEach(Array(egress.enumerated()), id: \.offset) { index, entry in
@@ -240,11 +240,9 @@ struct PrivacyView: View {
                                     }
                                     .padding(PocketSpacing.s8)
                                     .accessibilityElement(children: .combine)
-                                    .accessibilityLabel(
-                                        "\(entry.host), \(entry.purpose), started by "
-                                        + "\(entry.initiatedBy), "
-                                        + "\(hudBytes(entry.bytesOut)) sent, "
-                                        + "\(hudBytes(entry.bytesIn)) received")
+                                    .accessibilityLabel(String(
+                                        localized:
+                                            "\(entry.host), \(entry.purpose), started by \(entry.initiatedBy), \(hudBytes(entry.bytesOut)) sent, \(hudBytes(entry.bytesIn)) received"))
                                 }
                             }
                             .hudPanel()
@@ -252,9 +250,9 @@ struct PrivacyView: View {
                     }
 
                     VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                        HUDLabel("Audit log · \(audit.count)")
+                        HUDLabel(String(localized: "Audit log · \(audit.count)"))
                         if audit.isEmpty {
-                            emptyNote("No recorded actions yet.")
+                            emptyNote(String(localized: "No recorded actions yet."))
                         } else {
                             VStack(spacing: 0) {
                                 ForEach(audit, id: \.id) { entry in

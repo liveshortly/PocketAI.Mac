@@ -183,10 +183,9 @@ public final class AppModel {
                 live.registerEngine(RoutingEngine())
                 core = live
             } catch {
-                coreOpenError = """
-                    PocketAI's on-device engine couldn't start. Please restart the app; \
-                    if it keeps happening, reinstall. (\(error.localizedDescription))
-                    """
+                coreOpenError = String(
+                    localized:
+                        "PocketAI's on-device engine couldn't start. Please restart the app; if it keeps happening, reinstall. (\(error.localizedDescription))")
                 core = PreviewCore()
             }
         }
@@ -448,8 +447,9 @@ final class PairingNotifier: NSObject, UNUserNotificationCenterDelegate {
             guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true
             else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Pair this device?"
-            content.body = "\(deviceName) wants to use this Mac's models."
+            content.title = String(localized: "Pair this device?")
+            content.body = String(
+                localized: "\(deviceName) wants to use this Mac's models.")
             content.sound = .default
             try? await center.add(
                 UNNotificationRequest(

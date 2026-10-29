@@ -55,7 +55,7 @@ struct ChatView: View {
             guard wasStreaming, !streaming else { return }
             // A reply landing moves nothing on screen that VoiceOver follows,
             // so say it happened.
-            AccessibilityNotification.Announcement("Reply finished").post()
+            AccessibilityNotification.Announcement(String(localized: "Reply finished")).post()
             // Read the finished reply when the user asked for that.
             guard autoSpeak, let last = chat?.messages.last, !last.isUser else { return }
             let text = last.plainText
@@ -407,7 +407,7 @@ struct ChatView: View {
                     .accessibilityLabel("Attach an image")
                     .accessibilityHint(attachmentsAllowed(chat) ? "" : visionWarning(chat))
                     .help(attachmentsAllowed(chat)
-                        ? "Attach an image" : visionWarning(chat))
+                        ? String(localized: "Attach an image") : visionWarning(chat))
                     Button {
                         dictation.toggle(base: draft) { draft = $0 }
                     } label: {
@@ -425,13 +425,16 @@ struct ChatView: View {
                     .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
                     .help(dictation.isRecording ? "Stop dictation" : "Dictate")
                     if dictation.permissionDenied {
-                        HUDLabel("mic access denied", tint: PocketColor.statusBad)
+                        HUDLabel(
+                            String(localized: "mic access denied"),
+                            tint: PocketColor.statusBad)
                     } else {
-                        HUDLabel("⏎ send · ⇧⏎ newline")
+                        HUDLabel(String(localized: "⏎ send · ⇧⏎ newline"))
                     }
                     Spacer(minLength: 0)
                     if let stats = chat.lastStats, !chat.isStreaming {
-                        HUDLabel("\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens")
+                        HUDLabel(String(
+                            localized: "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens"))
                     }
                 }
             }
@@ -459,9 +462,11 @@ struct ChatView: View {
 
     private func visionWarning(_ chat: ChatModel) -> String {
         if let suggestion = chat.suggestedVisionModel {
-            return "This model can't read images. Switch to \(suggestion) to attach one."
+            return String(
+                localized: "This model can't read images. Switch to \(suggestion) to attach one.")
         }
-        return "This model can't read images. Install a vision model to attach one."
+        return String(
+            localized: "This model can't read images. Install a vision model to attach one.")
     }
 
     /// Writes the conversation out as Markdown. The desktop is where a
@@ -477,7 +482,9 @@ struct ChatView: View {
         for message in chat.messages {
             let when = Date(timeIntervalSince1970: TimeInterval(message.createdAt))
                 .formatted(date: .abbreviated, time: .shortened)
-            lines.append("## \(message.isUser ? "You" : "Assistant") · \(when)")
+            let who = message.isUser
+                ? String(localized: "You") : String(localized: "Assistant")
+            lines.append("## \(who) · \(when)")
             lines.append("")
             let body = message.plainText
             if !body.isEmpty { lines.append(body) }
@@ -487,7 +494,8 @@ struct ChatView: View {
         do {
             try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            chatExportError = "Couldn't save the transcript: \(error.localizedDescription)"
+            chatExportError = String(
+                localized: "Couldn't save the transcript: \(error.localizedDescription)")
         }
     }
 
@@ -517,9 +525,9 @@ struct ChatEmptyState: View {
     let onSuggestion: (String) -> Void
 
     private let suggestions = [
-        "Explain this error message",
-        "Summarise the text I paste next",
-        "Draft a commit message for these changes",
+        String(localized: "Explain this error message"),
+        String(localized: "Summarise the text I paste next"),
+        String(localized: "Draft a commit message for these changes"),
     ]
 
     var body: some View {

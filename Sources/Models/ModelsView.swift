@@ -36,12 +36,14 @@ struct ModelsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if !downloading.isEmpty {
-                        HUDLabel("Downloading")
+                        HUDLabel(String(localized: "Downloading"))
                         ForEach(downloading, id: \.manifest.id) { entry in
                             ModelCard(entry: entry, onDelete: { confirmDelete = $0 })
                         }
                     }
-                    HUDLabel(showInstalledOnly ? "Installed" : "Library")
+                    HUDLabel(
+                        showInstalledOnly
+                            ? String(localized: "Installed") : String(localized: "Library"))
                     ForEach(filtered, id: \.manifest.id) { entry in
                         ModelCard(entry: entry, onDelete: { confirmDelete = $0 })
                     }
@@ -56,7 +58,7 @@ struct ModelsView: View {
                         .padding(.vertical, PocketSpacing.s8)
                     }
                     if !hubResults.isEmpty {
-                        HUDLabel("Hugging Face")
+                        HUDLabel(String(localized: "Hugging Face"))
                         ForEach(hubResults, id: \.manifest.id) { entry in
                             ModelCard(entry: entry, onDelete: { confirmDelete = $0 })
                         }
@@ -81,7 +83,7 @@ struct ModelsView: View {
         }
         .onDisappear { refreshTask?.cancel() }
         .confirmationDialog(
-            "Delete \(confirmDelete?.manifest.displayName ?? "model")? The files are removed from this Mac.",
+            "Delete \(confirmDelete?.manifest.displayName ?? String(localized: "model"))? The files are removed from this Mac.",
             isPresented: Binding(
                 get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
             titleVisibility: .visible
@@ -92,8 +94,9 @@ struct ModelsView: View {
                     try app.core.deleteModel(modelId: target.manifest.id)
                     deleteError = nil
                 } catch {
-                    deleteError = "Couldn't delete \(target.manifest.displayName): "
-                        + error.localizedDescription
+                    deleteError = String(
+                        localized:
+                            "Couldn't delete \(target.manifest.displayName): \(error.localizedDescription)")
                 }
                 reload()
             }
@@ -118,7 +121,7 @@ struct ModelsView: View {
             if searching {
                 ProgressView()
                     .controlSize(.small)
-                HUDLabel("searching…")
+                HUDLabel(String(localized: "searching…"))
             }
             // A named picker even with labels hidden: an empty title left this
             // control anonymous to VoiceOver.
@@ -143,12 +146,13 @@ struct ModelsView: View {
 
     private var diskBar: some View {
         HStack(spacing: PocketSpacing.s12) {
-            HUDLabel("On disk")
+            HUDLabel(String(localized: "On disk"))
             Text(hudBytes(installedBytes))
                 .font(.pocket(.caption))
                 .monospacedDigit()
             Spacer(minLength: 0)
-            HUDLabel("\(installed.count) installed · \(entries.count) in catalog")
+            HUDLabel(
+                String(localized: "\(installed.count) installed · \(entries.count) in catalog"))
         }
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
@@ -208,9 +212,11 @@ struct ModelsView: View {
             let name = ModelNaming.short(entry.manifest.displayName)
             switch (previous, entry.state) {
             case (.downloading, .installed), (.verifying, .installed), (.queued, .installed):
-                AccessibilityNotification.Announcement("\(name) finished downloading").post()
+                AccessibilityNotification.Announcement(
+                    String(localized: "\(name) finished downloading")).post()
             case (.downloading, .failed), (.queued, .failed), (.verifying, .failed):
-                AccessibilityNotification.Announcement("\(name) failed to download").post()
+                AccessibilityNotification.Announcement(
+                    String(localized: "\(name) failed to download")).post()
             default:
                 break
             }
@@ -257,7 +263,8 @@ struct ModelsView: View {
             hubResults = []
             // Say why nothing happened; ⏎ on "qw" used to be a silent no-op.
             hubError = query.isEmpty
-                ? nil : "Type at least three characters to search Hugging Face."
+                ? nil
+                : String(localized: "Type at least three characters to search Hugging Face.")
             return
         }
         hubError = nil
@@ -290,7 +297,7 @@ struct ModelsView: View {
         let known = Set(entries.map(\.manifest.id))
         hubResults = found.filter { !known.contains($0.manifest.id) }
         hubError = found.isEmpty && !failures.isEmpty
-            ? "Hugging Face search failed: \(failures[0])" : nil
+            ? String(localized: "Hugging Face search failed: \(failures[0])") : nil
     }
 }
 
@@ -301,7 +308,7 @@ enum FormatFilter: CaseIterable, Hashable {
 
     var label: String {
         switch self {
-        case .all: return "All"
+        case .all: return String(localized: "All")
         case .mlx: return "MLX"
         case .gguf: return "GGUF"
         }
@@ -339,10 +346,10 @@ extension ModelFormat {
     /// What actually runs this model, said plainly for a tooltip.
     var engineDescription: String {
         switch self {
-        case .mlxSafetensors: return "Runs on Apple's MLX runtime"
-        case .gguf: return "Runs on the built-in llama.cpp engine"
-        case .coreMlPackage: return "Runs on Core ML"
-        case .whisperKit: return "Speech model, runs on WhisperKit"
+        case .mlxSafetensors: return String(localized: "Runs on Apple's MLX runtime")
+        case .gguf: return String(localized: "Runs on the built-in llama.cpp engine")
+        case .coreMlPackage: return String(localized: "Runs on Core ML")
+        case .whisperKit: return String(localized: "Speech model, runs on WhisperKit")
         }
     }
 }
@@ -379,16 +386,17 @@ final class DownloadRates {
 func failureSummary(_ reason: String) -> String {
     let lowered = reason.lowercased()
     if lowered.contains("checksum") || lowered.contains("sha") {
-        return "The downloaded file didn't match its checksum. Retry to fetch it again."
+        return String(
+            localized: "The downloaded file didn't match its checksum. Retry to fetch it again.")
     }
     if lowered.contains("space") || lowered.contains("disk") {
-        return "Not enough disk space for this model."
+        return String(localized: "Not enough disk space for this model.")
     }
     if lowered.contains("network") || lowered.contains("connection")
         || lowered.contains("timed out") || lowered.contains("offline") {
-        return "The download lost its connection."
+        return String(localized: "The download lost its connection.")
     }
-    return "The download failed."
+    return String(localized: "The download failed.")
 }
 
 /// One model: name, shape, fit verdict, and the action that applies to its
@@ -416,7 +424,7 @@ struct ModelCard: View {
             try work()
             actionError = nil
         } catch {
-            actionError = "\(what) failed: \(error.localizedDescription)"
+            actionError = String(localized: "\(what) failed: \(error.localizedDescription)")
         }
     }
 
@@ -429,7 +437,9 @@ struct ModelCard: View {
                             .font(.pocket(.headline))
                         HUDChip(text: entry.manifest.format.badge)
                             .help(entry.manifest.format.engineDescription)
-                        if isDefault { HUDChip(text: "DEFAULT", filled: true) }
+                        if isDefault {
+                            HUDChip(text: String(localized: "DEFAULT"), filled: true)
+                        }
                     }
                     Text(subtitle)
                         .font(.pocket(.caption))
@@ -442,7 +452,7 @@ struct ModelCard: View {
             if case .queued = entry.state { progress }
             if case .paused = entry.state { progress }
             if case .verifying = entry.state {
-                HUDLabel("verifying…")
+                HUDLabel(String(localized: "verifying…"))
             }
             if case .failed(let reason) = entry.state {
                 HStack(alignment: .top, spacing: PocketSpacing.s8) {
@@ -457,7 +467,7 @@ struct ModelCard: View {
                     Spacer(minLength: 0)
                     Button("Retry") {
                         DownloadRates.shared.forget(entry.manifest.id)
-                        attempt("Retry") {
+                        attempt(String(localized: "Retry")) {
                             try app.core.startDownload(modelId: entry.manifest.id)
                         }
                     }
@@ -486,9 +496,11 @@ struct ModelCard: View {
             }
             HStack(spacing: PocketSpacing.s12) {
                 HUDLabel(entry.manifest.license.spdx.isEmpty
-                    ? "license unknown" : entry.manifest.license.spdx)
+                    ? String(localized: "license unknown") : entry.manifest.license.spdx)
                 if !entry.manifest.license.commercialOk {
-                    HUDChip(text: "NON-COMMERCIAL", tint: PocketColor.statusWarn)
+                    HUDChip(
+                        text: String(localized: "NON-COMMERCIAL"),
+                        tint: PocketColor.statusWarn)
                 }
                 Spacer(minLength: 0)
                 if let url = URL(string: entry.manifest.license.url),
@@ -526,14 +538,14 @@ struct ModelCard: View {
             HStack(spacing: PocketSpacing.s8) {
                 ProgressView()
                     .controlSize(.small)
-                HUDLabel("benchmarking… generating tokens on this Mac")
+                HUDLabel(String(localized: "benchmarking… generating tokens on this Mac"))
             }
         } else if let benchmark {
             HStack(spacing: PocketSpacing.s12) {
-                HUDLabel("\(Int(benchmark.tps)) tok/s")
-                HUDLabel("\(benchmark.ttftMs) ms to first token")
+                HUDLabel(String(localized: "\(Int(benchmark.tps)) tok/s"))
+                HUDLabel(String(localized: "\(benchmark.ttftMs) ms to first token"))
                 if benchmark.peakBytes > 0 {
-                    HUDLabel("\(hudBytes(benchmark.peakBytes)) peak")
+                    HUDLabel(String(localized: "\(hudBytes(benchmark.peakBytes)) peak"))
                 }
                 Spacer(minLength: 0)
                 Button("Re-run") { runBenchmark() }
@@ -561,7 +573,7 @@ struct ModelCard: View {
             switch outcome {
             case .success(let measured): benchmark = measured
             case .failure(let error):
-                actionError = "Benchmark failed: " + error.localizedDescription
+                actionError = String(localized: "Benchmark failed: \(error.localizedDescription)")
             }
             benchmarking = false
         }
@@ -570,7 +582,7 @@ struct ModelCard: View {
     /// What this card is, said once: name, state, shape and fit verdict.
     private var cardSummary: String {
         var parts = [ModelNaming.short(entry.manifest.displayName), stateWord]
-        if isDefault { parts.append("default model") }
+        if isDefault { parts.append(String(localized: "default model")) }
         parts.append(entry.manifest.format.badge)
         parts.append(subtitle)
         parts.append(entry.fit.reason)
@@ -579,13 +591,13 @@ struct ModelCard: View {
 
     private var stateWord: String {
         switch entry.state {
-        case .installed: return "installed"
-        case .downloading: return "downloading"
-        case .queued: return "queued"
-        case .paused: return "paused"
-        case .verifying: return "verifying"
-        case .failed: return "download failed"
-        case .available: return "not installed"
+        case .installed: return String(localized: "installed")
+        case .downloading: return String(localized: "downloading")
+        case .queued: return String(localized: "queued")
+        case .paused: return String(localized: "paused")
+        case .verifying: return String(localized: "verifying")
+        case .failed: return String(localized: "download failed")
+        case .available: return String(localized: "not installed")
         }
     }
 
@@ -595,7 +607,7 @@ struct ModelCard: View {
         if entry.manifest.paramsB > 0 {
             bits.append(String(format: "%.1fB", entry.manifest.paramsB))
         }
-        bits.append("\(entry.manifest.contextLength) ctx")
+        bits.append(String(localized: "\(entry.manifest.contextLength) ctx"))
         bits.append(hudBytes(entry.fit.diskBytes))
         return bits.filter { !$0.isEmpty }.joined(separator: " · ")
     }
@@ -609,9 +621,9 @@ struct ModelCard: View {
                 .lineLimit(2)
             Spacer(minLength: 0)
             if let measured = entry.fit.measuredTokensPerSec {
-                HUDLabel("\(Int(measured)) tok/s measured")
+                HUDLabel(String(localized: "\(Int(measured)) tok/s measured"))
             } else if let est = entry.fit.estTokensPerSec {
-                HUDLabel("~\(Int(est)) tok/s est.")
+                HUDLabel(String(localized: "~\(Int(est)) tok/s est."))
             }
         }
     }
@@ -642,7 +654,9 @@ struct ModelCard: View {
                     }
                     .disabled(benchmarking)
                     Button("Unload from memory") {
-                        attempt("Unload") { try app.core.unloadModel(id: entry.manifest.id) }
+                        attempt(String(localized: "Unload")) {
+                            try app.core.unloadModel(id: entry.manifest.id)
+                        }
                     }
                     Divider()
                     Button("Delete…", role: .destructive) { onDelete(entry) }
@@ -655,13 +669,17 @@ struct ModelCard: View {
             }
         case .downloading, .queued:
             Button("Pause") {
-                attempt("Pause") { try app.core.pauseDownload(modelId: entry.manifest.id) }
+                attempt(String(localized: "Pause")) {
+                    try app.core.pauseDownload(modelId: entry.manifest.id)
+                }
             }
             .buttonStyle(.hud)
             .accessibilityLabel("Pause downloading \(name)")
         case .paused:
             Button("Resume") {
-                attempt("Resume") { try app.core.resumeDownload(modelId: entry.manifest.id) }
+                attempt(String(localized: "Resume")) {
+                    try app.core.resumeDownload(modelId: entry.manifest.id)
+                }
             }
             .buttonStyle(.hud)
             .accessibilityLabel("Resume downloading \(name)")
@@ -669,7 +687,9 @@ struct ModelCard: View {
             EmptyView()
         case .available, .failed:
             Button(entry.fit.verdict == .willNotFit ? "Get anyway" : "Get") {
-                attempt("Download") { try app.core.startDownload(modelId: entry.manifest.id) }
+                attempt(String(localized: "Download")) {
+                    try app.core.startDownload(modelId: entry.manifest.id)
+                }
             }
             .buttonStyle(.hudProminent)
             .accessibilityLabel("Download \(name)")
@@ -685,11 +705,16 @@ struct ModelCard: View {
                 .accessibilityLabel("Download progress")
                 .accessibilityValue("\(Int(fraction * 100)) percent")
             HStack {
-                HUDLabel("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
+                HUDLabel(
+                    String(
+                        localized: "\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))"
+                    ))
                 if let detail = rateAndETA { HUDLabel(detail) }
                 Spacer()
                 Button("Cancel") {
-                    attempt("Cancel") { try app.core.cancelDownload(modelId: entry.manifest.id) }
+                    attempt(String(localized: "Cancel")) {
+                        try app.core.cancelDownload(modelId: entry.manifest.id)
+                    }
                 }
                 .buttonStyle(.plain)
                     .font(.pocket(.caption))
@@ -707,14 +732,16 @@ struct ModelCard: View {
                 id: entry.manifest.id, bytes: entry.bytesDone),
               rate > 0
         else { return nil }
-        var parts = ["\(hudBytes(UInt64(rate)))/s"]
+        var parts = [String(localized: "\(hudBytes(UInt64(rate)))/s")]
         let remaining = Double(entry.fit.diskBytes) - Double(entry.bytesDone)
         if remaining > 0 {
             let seconds = remaining / rate
             let formatter = DateComponentsFormatter()
             formatter.allowedUnits = seconds < 3600 ? [.minute, .second] : [.hour, .minute]
             formatter.unitsStyle = .abbreviated
-            if let left = formatter.string(from: seconds) { parts.append("\(left) left") }
+            if let left = formatter.string(from: seconds) {
+                parts.append(String(localized: "\(left) left"))
+            }
         }
         return parts.joined(separator: " · ")
     }

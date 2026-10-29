@@ -12,7 +12,7 @@ import SwiftUI
 /// editing (undo, select all, paste, spell check) just works.
 struct ComposerTextView: NSViewRepresentable {
     @Binding var text: String
-    var placeholder: String = "Message…"
+    var placeholder: String = String(localized: "Message…")
     var minHeight: CGFloat = 20
     var maxHeight: CGFloat = 180
     /// A counter, not a flag: every increment is one request to take the

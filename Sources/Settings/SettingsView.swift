@@ -50,7 +50,7 @@ struct GeneralSettings: View {
                 }
                 .pickerStyle(.segmented)
             } header: {
-                HUDLabel("Window")
+                HUDLabel(String(localized: "Window"))
             }
             Section {
                 Toggle("Offline mode", isOn: Binding(
@@ -60,7 +60,7 @@ struct GeneralSettings: View {
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
             } header: {
-                HUDLabel("Privacy")
+                HUDLabel(String(localized: "Privacy"))
             }
             Section {
                 Button("Stop everything") { app.stopEverything() }
@@ -69,7 +69,7 @@ struct GeneralSettings: View {
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
             } header: {
-                HUDLabel("Panic")
+                HUDLabel(String(localized: "Panic"))
             }
         }
         .formStyle(.grouped)
@@ -96,9 +96,9 @@ struct GeneralSettings: View {
             loginItemError = nil
         } catch {
             launchAtLogin = SMAppService.mainApp.status == .enabled
-            loginItemError =
-                "macOS refused to change this: \(error.localizedDescription). "
-                + "A signed build is usually required."
+            loginItemError = String(
+                localized:
+                    "macOS refused to change this: \(error.localizedDescription). A signed build is usually required.")
         }
     }
 }
@@ -122,7 +122,7 @@ struct ModelSettings: View {
                 Button("Open model library") { app.reveal(.models) }
                     .buttonStyle(.hud)
             } header: {
-                HUDLabel("Chat")
+                HUDLabel(String(localized: "Chat"))
             }
             Section {
                 LabeledContent("Installed") {
@@ -134,7 +134,7 @@ struct ModelSettings: View {
                 }
                 .buttonStyle(.hud)
             } header: {
-                HUDLabel("Memory")
+                HUDLabel(String(localized: "Memory"))
             }
         }
         .formStyle(.grouped)
@@ -163,11 +163,12 @@ struct VoiceSettings: View {
                 }
                 Button("Preview") {
                     speech.toggle(
-                        "This is how replies will sound.", id: "settings-preview")
+                        String(localized: "This is how replies will sound."),
+                        id: "settings-preview")
                 }
                 .buttonStyle(.hud)
             } header: {
-                HUDLabel("Read aloud")
+                HUDLabel(String(localized: "Read aloud"))
             }
             Section {
                 Toggle("Speak replies automatically", isOn: $autoSpeak)
@@ -210,17 +211,19 @@ struct AboutSettings: View {
                     Text(app.core.entitlements().pro ? "Pro" : "Free")
                 }
             } header: {
-                HUDLabel("PocketAI for Mac")
+                HUDLabel(String(localized: "PocketAI for Mac"))
             }
             Section {
-                engineRow("MLX", "Apple silicon, .safetensors models")
-                engineRow("llama.cpp", "GGUF models, built in")
-                engineRow("Apple Intelligence", "System model, macOS 15.1+ on supported Macs")
+                engineRow("MLX", String(localized: "Apple silicon, .safetensors models"))
+                engineRow("llama.cpp", String(localized: "GGUF models, built in"))
+                engineRow(
+                    "Apple Intelligence",
+                    String(localized: "System model, macOS 15.1+ on supported Macs"))
                 Text("A model's badge in the library says which engine runs it.")
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
             } header: {
-                HUDLabel("Engines")
+                HUDLabel(String(localized: "Engines"))
             }
             Section {
                 TextField("License key", text: $licenseKey)
@@ -234,7 +237,7 @@ struct AboutSettings: View {
                         .foregroundStyle(PocketColor.textSecondary)
                 }
             } header: {
-                HUDLabel("License")
+                HUDLabel(String(localized: "License"))
             }
         }
         .formStyle(.grouped)
@@ -260,9 +263,11 @@ struct AboutSettings: View {
             let entitlements = try app.core.activateLicense(key: key)
             app.saveLicenseKey(key)
             activationMessage = entitlements.pro
-                ? "Pro activated on this Mac." : "That key did not unlock Pro."
+                ? String(localized: "Pro activated on this Mac.")
+                : String(localized: "That key did not unlock Pro.")
         } catch {
-            activationMessage = "Activation failed: \(error.localizedDescription)"
+            activationMessage = String(
+                localized: "Activation failed: \(error.localizedDescription)")
         }
     }
 }

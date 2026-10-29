@@ -71,7 +71,7 @@ struct LSShareSheet: View {
 
     private var accessCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Who can open it")
+            HUDLabel(String(localized: "Who can open it"))
             ForEach(Self.visibilities, id: \.key) { option in
                 Button {
                     setVisibility(visibility: option.key)
@@ -110,17 +110,29 @@ struct LSShareSheet: View {
     }
 
     private static let visibilities: [(key: String, title: String, blurb: String)] = [
-        ("private", "Private", "Only you and people you invite below."),
-        ("link", "Anyone with the link", "Not listed anywhere; the link is the key."),
-        ("public", "Public", "Anyone with the link, and it can appear on the feed."),
-        ("open", "Open", "Readable without signing in at all."),
+        (
+            "private", String(localized: "Private"),
+            String(localized: "Only you and people you invite below.")
+        ),
+        (
+            "link", String(localized: "Anyone with the link"),
+            String(localized: "Not listed anywhere; the link is the key.")
+        ),
+        (
+            "public", String(localized: "Public"),
+            String(localized: "Anyone with the link, and it can appear on the feed.")
+        ),
+        (
+            "open", String(localized: "Open"),
+            String(localized: "Readable without signing in at all.")
+        ),
     ]
 
     // MARK: - Link
 
     private var linkCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Link")
+            HUDLabel(String(localized: "Link"))
             HStack(spacing: PocketSpacing.s8) {
                 Text(linkString)
                     .font(.pocket(.mono))
@@ -175,7 +187,7 @@ struct LSShareSheet: View {
     private var feedCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s4) {
             HStack {
-                HUDLabel("Public feed")
+                HUDLabel(String(localized: "Public feed"))
                 Spacer()
                 Button(isPublished ? "Remove" : "Publish") { toggleFeed() }
                     .buttonStyle(isPublished ? .hud : .hudProminent)
@@ -199,7 +211,7 @@ struct LSShareSheet: View {
 
     private var peopleCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Invited people · \(shares.count)")
+            HUDLabel(String(localized: "Invited people · \(shares.count)"))
             HStack(spacing: PocketSpacing.s8) {
                 TextField("name@example.com", text: $inviteEmail)
                     .textFieldStyle(.plain)
@@ -229,11 +241,13 @@ struct LSShareSheet: View {
                             Image(systemName: "person.crop.circle")
                                 .foregroundStyle(PocketColor.textTertiary)
                                 .accessibilityHidden(true)
-                            Text(share.granteeEmail ?? "unknown")
+                            Text(share.granteeEmail ?? String(localized: "unknown"))
                                 .font(.pocket(.body))
                                 .lineLimit(1)
                             Spacer(minLength: PocketSpacing.s8)
-                            HUDChip(text: share.role == "commenter" ? "COMMENT" : "WATCH")
+                            HUDChip(
+                                text: share.role == "commenter"
+                                    ? String(localized: "COMMENT") : String(localized: "WATCH"))
                             Button {
                                 revoke(share)
                             } label: {
@@ -242,7 +256,7 @@ struct LSShareSheet: View {
                             .buttonStyle(.plain)
                             .foregroundStyle(PocketColor.textTertiary)
                             .accessibilityLabel(
-                                "Remove access for \(share.granteeEmail ?? "this person")")
+                                "Remove access for \(share.granteeEmail ?? String(localized: "this person"))")
                             .help("Remove access")
                         }
                         .padding(.vertical, PocketSpacing.s4)
@@ -279,7 +293,8 @@ struct LSShareSheet: View {
                 if let linkRole { detail?.linkRole = linkRole }
                 errorText = nil
             } catch {
-                errorText = "Couldn't change access: \(error.localizedDescription)"
+                errorText = String(
+                    localized: "Couldn't change access: \(error.localizedDescription)")
             }
             busy = false
         }
@@ -300,7 +315,8 @@ struct LSShareSheet: View {
                 }
                 errorText = nil
             } catch {
-                errorText = "Couldn't update the feed: \(error.localizedDescription)"
+                errorText = String(
+                    localized: "Couldn't update the feed: \(error.localizedDescription)")
             }
             busy = false
         }
@@ -318,7 +334,8 @@ struct LSShareSheet: View {
                 inviteEmail = ""
                 errorText = nil
             } catch {
-                errorText = "Couldn't invite \(email): \(error.localizedDescription)"
+                errorText = String(
+                    localized: "Couldn't invite \(email): \(error.localizedDescription)")
             }
             busy = false
         }
@@ -333,7 +350,8 @@ struct LSShareSheet: View {
                 shares.removeAll { $0.id == share.id }
                 errorText = nil
             } catch {
-                errorText = "Couldn't remove access: \(error.localizedDescription)"
+                errorText = String(
+                    localized: "Couldn't remove access: \(error.localizedDescription)")
             }
             busy = false
         }

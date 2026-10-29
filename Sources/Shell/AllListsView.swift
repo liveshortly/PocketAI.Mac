@@ -53,6 +53,8 @@ struct AllChatsView: View {
                     ForEach(sections, id: \.title) { section in
                         Section {
                             ForEach(section.chats, id: \.id) { chat in
+                        let title = chat.title?.isEmpty == false
+                            ? chat.title! : String(localized: "Untitled chat")
                         Button {
                             app.selection = .chat(chat.id)
                         } label: {
@@ -78,15 +80,16 @@ struct AllChatsView: View {
                                     .foregroundStyle(PocketColor.textTertiary)
                                     .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(chat.title?.isEmpty == false
-                                        ? chat.title! : "Untitled chat")
+                                    Text(title)
                                         .font(.pocket(.body))
                                     Text(hudRelative(chat.updatedAt))
                                         .font(.pocket(.caption))
                                         .foregroundStyle(PocketColor.textTertiary)
                                 }
                                 Spacer(minLength: 0)
-                                if chat.archived { HUDChip(text: "ARCHIVED") }
+                                if chat.archived {
+                                    HUDChip(text: String(localized: "ARCHIVED"))
+                                }
                             }
                             .padding(.horizontal, PocketSpacing.s12)
                             .padding(.vertical, PocketSpacing.s8)
@@ -94,9 +97,9 @@ struct AllChatsView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            "Open \(chat.title?.isEmpty == false ? chat.title! : "Untitled chat")"
+                            String(localized: "Open \(title)")
                             + ", \(hudRelative(chat.updatedAt))"
-                            + (chat.archived ? ", archived" : ""))
+                            + (chat.archived ? String(localized: ", archived") : ""))
                         .contextMenu {
                             Button(chat.archived ? "Unarchive" : "Archive") {
                                 try? app.core.archiveConversation(
@@ -154,7 +157,7 @@ struct AllChatsView: View {
             }
         }
         .confirmationDialog(
-            "Delete “\(confirmDelete?.title ?? "chat")”? This cannot be undone.",
+            "Delete “\(confirmDelete?.title ?? String(localized: "chat"))”? This cannot be undone.",
             isPresented: Binding(
                 get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
             titleVisibility: .visible
@@ -195,10 +198,17 @@ struct AllChatsView: View {
             }
             buckets[title, default: []].append(chat)
         }
+        // The bucket keys stay unlocalized so the grouping above keeps working;
+        // only the header shown next to each group is translated.
         let order = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"]
-        return order.compactMap { title in
-            guard let group = buckets[title], !group.isEmpty else { return nil }
-            return (title, group.sorted { $0.updatedAt > $1.updatedAt })
+        let labels = [
+            String(localized: "Today"), String(localized: "Yesterday"),
+            String(localized: "Previous 7 days"), String(localized: "Previous 30 days"),
+            String(localized: "Older"),
+        ]
+        return zip(order, labels).compactMap { key, label in
+            guard let group = buckets[key], !group.isEmpty else { return nil }
+            return (label, group.sorted { $0.updatedAt > $1.updatedAt })
         }
     }
 
@@ -246,6 +256,8 @@ struct AllSessionsView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(filtered, id: \.id) { session in
+                        let title = session.title.isEmpty
+                            ? String(localized: "Untitled session") : session.title
                         Button {
                             app.selection = .session(session.id)
                         } label: {
@@ -256,8 +268,7 @@ struct AllSessionsView: View {
                                             ? LSColor.accent : PocketColor.textTertiary)
                                     .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(session.title.isEmpty
-                                        ? "Untitled session" : session.title)
+                                    Text(title)
                                         .font(.pocket(.body))
                                     Text(subtitle(session))
                                         .font(.pocket(.caption))
@@ -273,8 +284,11 @@ struct AllSessionsView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            "Open \(session.title.isEmpty ? "Untitled session" : session.title)"
-                            + ", \(session.isLive ? "live" : "ended"), \(subtitle(session))")
+                            String(localized: "Open \(title)")
+                            + ", "
+                            + (session.isLive
+                                ? String(localized: "live") : String(localized: "ended"))
+                            + ", \(subtitle(session))")
                         HUDRule()
                     }
                     if loading {
@@ -325,9 +339,10 @@ struct AllSessionsView: View {
         }
         var bits: [String] = []
         if let framework = session.framework, !framework.isEmpty { bits.append(framework) }
-        bits.append("\(session.eventCount) events")
+        bits.append(String(localized: "\(session.eventCount) events"))
         if !session.isLive, let ended = session.endedAt {
-            bits.append("ended \(ended.formatted(.relative(presentation: .named)))")
+            bits.append(
+                String(localized: "ended \(ended.formatted(.relative(presentation: .named)))"))
         }
         return bits.joined(separator: " · ")
     }
@@ -342,7 +357,7 @@ struct AllSessionsView: View {
             sessions = try await client.sessions(limit: 200)
             errorText = nil
         } catch {
-            errorText = "Couldn't load sessions: \(error.localizedDescription)"
+            errorText = String(localized: "Couldn't load sessions: \(error.localizedDescription)")
         }
         loading = false
     }

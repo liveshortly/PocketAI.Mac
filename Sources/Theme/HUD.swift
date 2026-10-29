@@ -186,7 +186,7 @@ func hudBytes(_ bytes: UInt64) -> String {
 /// Relative timestamp for list rows ("2h ago", "just now").
 func hudRelative(_ epochSeconds: Int64) -> String {
     let date = Date(timeIntervalSince1970: TimeInterval(epochSeconds))
-    if Date().timeIntervalSince(date) < 60 { return "just now" }
+    if Date().timeIntervalSince(date) < 60 { return String(localized: "just now") }
     let f = RelativeDateTimeFormatter()
     f.unitsStyle = .abbreviated
     return f.localizedString(for: date, relativeTo: Date())

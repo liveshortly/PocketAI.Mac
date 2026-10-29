@@ -34,7 +34,7 @@ struct UserTurn: View {
         VStack(alignment: .trailing, spacing: PocketSpacing.s4) {
             if !grouped {
                 HStack(spacing: PocketSpacing.s8) {
-                    HUDLabel("you")
+                    HUDLabel(String(localized: "you"))
                     Text(
                         Date(timeIntervalSince1970: TimeInterval(message.createdAt))
                             .formatted(date: .omitted, time: .shortened)
@@ -78,10 +78,11 @@ struct UserTurn: View {
     private var accessibilityText: String {
         let when = Date(timeIntervalSince1970: TimeInterval(message.createdAt))
             .formatted(date: .omitted, time: .shortened)
-        var parts = ["You", when]
+        var parts = [String(localized: "You"), when]
         if !message.imagePaths.isEmpty {
-            parts.append("\(message.imagePaths.count) attached image"
-                + (message.imagePaths.count == 1 ? "" : "s"))
+            parts.append(message.imagePaths.count == 1
+                ? String(localized: "1 attached image")
+                : String(localized: "\(message.imagePaths.count) attached images"))
         }
         if !message.plainText.isEmpty { parts.append(message.plainText) }
         return parts.joined(separator: ", ")
@@ -103,12 +104,12 @@ struct AssistantTurn: View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack(spacing: PocketSpacing.s8) {
                 if !grouped {
-                    HUDLabel("◆ assistant", tint: PocketColor.accent)
+                    HUDLabel(String(localized: "◆ assistant"), tint: PocketColor.accent)
                 }
                 if status == .cancelled {
-                    HUDChip(text: "stopped")
+                    HUDChip(text: String(localized: "stopped"))
                 } else if status == .error {
-                    HUDChip(text: "failed", tint: PocketColor.statusBad)
+                    HUDChip(text: String(localized: "failed"), tint: PocketColor.statusBad)
                 }
                 Spacer(minLength: 0)
                 if !text.isEmpty {
@@ -116,7 +117,8 @@ struct AssistantTurn: View {
                         speech.toggle(text, id: messageId)
                     } label: {
                         HUDLabel(
-                            speech.speakingId == messageId ? "stop" : "read aloud",
+                            speech.speakingId == messageId
+                                ? String(localized: "stop") : String(localized: "read aloud"),
                             tint: speech.speakingId == messageId
                                 ? PocketColor.statusBad : PocketColor.textTertiary)
                     }
@@ -128,7 +130,8 @@ struct AssistantTurn: View {
                     Button {
                         copy()
                     } label: {
-                        HUDLabel(copied ? "copied" : "copy")
+                        HUDLabel(copied
+                            ? String(localized: "copied") : String(localized: "copy"))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Copy this reply")
@@ -143,16 +146,16 @@ struct AssistantTurn: View {
                         .textSelection(.enabled)
                         .padding(.top, PocketSpacing.s4)
                 } label: {
-                    HUDLabel("reasoning")
+                    HUDLabel(String(localized: "reasoning"))
                 }
                 .padding(PocketSpacing.s8)
                 .hudPanel(PocketColor.bgSunken)
             }
             MarkdownText(text)
             if let stats {
-                HUDLabel(
-                    "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens · \(stats.ttftMs) ms to first token"
-                )
+                HUDLabel(String(
+                    localized: "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens · \(stats.ttftMs) ms to first token"
+                ))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -177,14 +180,14 @@ struct StreamingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack(spacing: PocketSpacing.s8) {
-                HUDLabel("◆ assistant", tint: PocketColor.accent)
+                HUDLabel(String(localized: "◆ assistant"), tint: PocketColor.accent)
                 PocketMarkView(state: .working(tokPerSec: nil), size: 12)
                     .accessibilityHidden(true)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Assistant, replying")
             if text.isEmpty && reasoning.isEmpty {
-                HUDLabel("thinking…")
+                HUDLabel(String(localized: "thinking…"))
             } else {
                 MarkdownText(text, caret: true)
             }
@@ -232,22 +235,20 @@ struct ChatErrorRow: View {
 func chatFriendlyError(_ message: String) -> String {
     let lowered = message.lowercased()
     if lowered.contains("no model") || lowered.contains("not installed") {
-        return "No model is installed yet. Open the model library and download one."
+        return String(localized: "No model is installed yet. Open the model library and download one.")
     }
     if lowered.contains("memory") || lowered.contains("resource") {
-        return "This Mac ran out of memory for that model. Try a smaller one, "
-            + "or unload other models first."
+        return String(localized: "This Mac ran out of memory for that model. Try a smaller one, or unload other models first.")
     }
     if lowered.contains("cancel") {
-        return "That reply was stopped."
+        return String(localized: "That reply was stopped.")
     }
     if lowered.contains("context") || lowered.contains("too long") {
-        return "The conversation is longer than this model's context. "
-            + "Start a new chat to continue."
+        return String(localized: "The conversation is longer than this model's context. Start a new chat to continue.")
     }
     if lowered.contains("network") || lowered.contains("offline")
         || lowered.contains("connection") {
-        return "Couldn't reach the network. Local models still work offline."
+        return String(localized: "Couldn't reach the network. Local models still work offline.")
     }
     return message
 }

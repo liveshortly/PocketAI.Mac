@@ -50,9 +50,11 @@ struct OnboardingView: View {
                 .font(.pocket(.title))
                 .foregroundStyle(PocketColor.textSecondary)
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                bullet("No account, no cloud — your chats never leave this machine.")
-                bullet("Models run on Apple silicon through MLX.")
-                bullet("Pair your iPhone later and it can use this Mac's models.")
+                bullet(String(
+                    localized: "No account, no cloud — your chats never leave this machine."))
+                bullet(String(localized: "Models run on Apple silicon through MLX."))
+                bullet(String(
+                    localized: "Pair your iPhone later and it can use this Mac's models."))
             }
             .frame(maxWidth: 440, alignment: .leading)
             .padding(.top, PocketSpacing.s8)
@@ -99,13 +101,15 @@ struct OnboardingView: View {
             Text("You're set")
                 .font(.pocket(.title))
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                bullet("⌘N starts a chat, ⌘K jumps to anything.")
-                bullet("The menu bar icon asks from any app.")
-                bullet("Connect LiveShortly in Settings to watch your coding agents.")
+                bullet(String(localized: "⌘N starts a chat, ⌘K jumps to anything."))
+                bullet(String(localized: "The menu bar icon asks from any app."))
+                bullet(String(
+                    localized:
+                        "Connect LiveShortly in Settings to watch your coding agents."))
             }
             .frame(maxWidth: 440, alignment: .leading)
             VStack(spacing: PocketSpacing.s8) {
-                HUDLabel("Try one")
+                HUDLabel(String(localized: "Try one"))
                 ForEach(Self.starters, id: \.self) { starter in
                     Button {
                         finish(starter: starter)
@@ -164,8 +168,9 @@ struct OnboardingView: View {
                         downloadId = entry.manifest.id
                         startPolling()
                     } catch {
-                        downloadError =
-                            "Couldn't start that download: \(error.localizedDescription)"
+                        downloadError = String(
+                            localized:
+                                "Couldn't start that download: \(error.localizedDescription)")
                     }
                 }
                 .buttonStyle(.hudProminent)
@@ -222,7 +227,7 @@ struct OnboardingView: View {
                 // A download that died leaves the row offering "Get" again;
                 // without this the screen polls forever saying nothing.
                 if case .failed(let reason) = state {
-                    downloadError = "That download failed: \(reason)"
+                    downloadError = String(localized: "That download failed: \(reason)")
                     downloadId = nil
                     return
                 }
@@ -231,9 +236,9 @@ struct OnboardingView: View {
     }
 
     private static let starters = [
-        "Explain what this app can do, briefly.",
-        "Summarise the text I paste next.",
-        "Draft a commit message from a diff I'll paste.",
+        String(localized: "Explain what this app can do, briefly."),
+        String(localized: "Summarise the text I paste next."),
+        String(localized: "Draft a commit message from a diff I'll paste."),
     ]
 
     /// Finishing with a starter opens a chat already holding the question, so

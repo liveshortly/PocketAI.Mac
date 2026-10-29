@@ -59,9 +59,9 @@ struct CommandPaletteView: View {
             }
             HUDRule()
             HStack {
-                HUDLabel("↑↓ move · ⏎ open · esc close")
+                HUDLabel(String(localized: "↑↓ move · ⏎ open · esc close"))
                 Spacer()
-                HUDLabel("\(results.count) results")
+                HUDLabel(String(localized: "\(results.count) results"))
             }
             .padding(.horizontal, PocketSpacing.s12)
             .padding(.vertical, PocketSpacing.s8)
@@ -107,7 +107,8 @@ struct CommandPaletteView: View {
         }.prefix(q.isEmpty ? 6 : 20).map { summary in
             Item(
                 id: "chat-\(summary.id)", kind: .chat,
-                title: summary.title?.isEmpty == false ? summary.title! : "Untitled chat",
+                title: summary.title?.isEmpty == false
+                    ? summary.title! : String(localized: "Untitled chat"),
                 subtitle: hudRelative(summary.updatedAt), symbol: "bubble.left", live: false
             ) {
                 app.selection = .chat(summary.id)
@@ -118,7 +119,7 @@ struct CommandPaletteView: View {
         }.map { project in
             Item(
                 id: "project-\(project.id)", kind: .project, title: project.name,
-                subtitle: "Project", symbol: "folder", live: false
+                subtitle: String(localized: "Project"), symbol: "folder", live: false
             ) {
                 app.selection = .project(project.id)
             }
@@ -128,8 +129,10 @@ struct CommandPaletteView: View {
         }.map { session in
             Item(
                 id: "session-\(session.id)", kind: .session,
-                title: session.title.isEmpty ? "Untitled session" : session.title,
-                subtitle: session.isLive ? "LiveShortly · live" : "LiveShortly",
+                title: session.title.isEmpty
+                    ? String(localized: "Untitled session") : session.title,
+                subtitle: session.isLive
+                    ? String(localized: "LiveShortly · live") : "LiveShortly",
                 symbol: "dot.radiowaves.left.and.right", live: session.isLive
             ) {
                 app.selection = .session(session.id)
@@ -141,35 +144,39 @@ struct CommandPaletteView: View {
     private var actions: [Item] {
         var list: [Item] = [
             Item(
-                id: "action-new-chat", kind: .action, title: "New chat",
+                id: "action-new-chat", kind: .action, title: String(localized: "New chat"),
                 subtitle: "⌘N", symbol: "plus.circle", live: false
             ) { app.newChat() },
             Item(
-                id: "action-models", kind: .action, title: "Model library",
-                subtitle: "Download and switch models", symbol: "cpu", live: false
+                id: "action-models", kind: .action, title: String(localized: "Model library"),
+                subtitle: String(localized: "Download and switch models"),
+                symbol: "cpu", live: false
             ) { app.selection = .models },
             Item(
-                id: "action-images", kind: .action, title: "Generate an image",
-                subtitle: "On-device SDXL Turbo", symbol: "photo", live: false
+                id: "action-images", kind: .action, title: String(localized: "Generate an image"),
+                subtitle: String(localized: "On-device SDXL Turbo"), symbol: "photo", live: false
             ) { app.selection = .images },
             Item(
-                id: "action-devices", kind: .action, title: "Devices",
-                subtitle: "Pair an iPhone", symbol: "iphone", live: false
+                id: "action-devices", kind: .action, title: String(localized: "Devices"),
+                subtitle: String(localized: "Pair an iPhone"), symbol: "iphone", live: false
             ) { app.selection = .devices },
             Item(
-                id: "action-server", kind: .action, title: "Local server",
-                subtitle: app.serverStatus.running ? "Running" : "Stopped",
+                id: "action-server", kind: .action, title: String(localized: "Local server"),
+                subtitle: app.serverStatus.running
+                    ? String(localized: "Running") : String(localized: "Stopped"),
                 symbol: "server.rack", live: app.serverStatus.running
             ) { app.selection = .server },
             Item(
-                id: "action-privacy", kind: .action, title: "Privacy",
-                subtitle: "Offline mode and logs", symbol: "hand.raised", live: false
+                id: "action-privacy", kind: .action, title: String(localized: "Privacy"),
+                subtitle: String(localized: "Offline mode and logs"),
+                symbol: "hand.raised", live: false
             ) { app.selection = .privacy },
         ]
         if app.liveShortly.isConnected {
             list.insert(
                 Item(
-                    id: "action-new-session", kind: .action, title: "New LiveShortly session",
+                    id: "action-new-session", kind: .action,
+                    title: String(localized: "New LiveShortly session"),
                     subtitle: "⇧⌘N", symbol: "bolt", live: false
                 ) { app.post(.newLiveSession) },
                 at: 1)
@@ -234,7 +241,7 @@ struct PaletteRow: View {
         // carried by background colour alone.
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            [item.title, item.live ? "live" : "", item.subtitle]
+            [item.title, item.live ? String(localized: "live") : "", item.subtitle]
                 .filter { !$0.isEmpty }.joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }

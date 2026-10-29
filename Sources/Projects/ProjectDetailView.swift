@@ -50,7 +50,7 @@ struct ProjectDetailView: View {
             }
         }
         .confirmationDialog(
-            "Delete “\(project?.name ?? "project")”? Its documents are removed; its chats are kept.",
+            "Delete “\(project?.name ?? String(localized: "project"))”? Its documents are removed; its chats are kept.",
             isPresented: $confirmDelete, titleVisibility: .visible
         ) {
             Button("Delete project", role: .destructive) {
@@ -65,7 +65,7 @@ struct ProjectDetailView: View {
             Image(systemName: "folder")
                 .foregroundStyle(PocketColor.accent)
                 .accessibilityHidden(true)
-            Text(project?.name ?? "Project")
+            Text(project?.name ?? String(localized: "Project"))
                 .font(.pocket(.headline))
             Spacer(minLength: 0)
             if app.liveShortly.isConnected {
@@ -97,7 +97,7 @@ struct ProjectDetailView: View {
     private var instructionsCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack {
-                HUDLabel("Instructions")
+                HUDLabel(String(localized: "Instructions"))
                 Spacer()
                 if instructionsDirty {
                     Button("Save") { saveInstructions() }
@@ -129,7 +129,7 @@ struct ProjectDetailView: View {
     private var documentsCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack {
-                HUDLabel("Documents · \(documents.count)")
+                HUDLabel(String(localized: "Documents · \(documents.count)"))
                 Spacer()
                 Button("Add files…") { addDocuments() }
                     .buttonStyle(.hud)
@@ -165,7 +165,8 @@ struct ProjectDetailView: View {
                                     try app.core.deleteDocument(id: doc.id)
                                     importError = nil
                                 } catch {
-                                    importError = "Couldn't remove \(doc.name): "
+                                    importError = String(
+                                        localized: "Couldn't remove \(doc.name): ")
                                         + error.localizedDescription
                                 }
                                 reload()
@@ -191,7 +192,7 @@ struct ProjectDetailView: View {
 
     private var chatsCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Chats in this project · \(chats.count)")
+            HUDLabel(String(localized: "Chats in this project · \(chats.count)"))
             if chats.isEmpty {
                 Text("No chats yet — start one and it stays scoped to this project.")
                     .font(.pocket(.footnote))
@@ -202,13 +203,15 @@ struct ProjectDetailView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(chats.enumerated()), id: \.element.id) { index, chat in
+                        let title = chat.title?.isEmpty == false
+                            ? chat.title! : String(localized: "Untitled chat")
                         if index > 0 { HUDRule() }
                         Button {
                             app.selection = .chat(chat.id)
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(chat.title?.isEmpty == false ? chat.title! : "Untitled chat")
+                                    Text(title)
                                         .font(.pocket(.body))
                                     Text(hudRelative(chat.updatedAt))
                                         .font(.pocket(.caption))
@@ -225,7 +228,7 @@ struct ProjectDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            "Open \(chat.title?.isEmpty == false ? chat.title! : "Untitled chat")"
+                            String(localized: "Open \(title)")
                             + ", \(hudRelative(chat.updatedAt))")
                     }
                 }
@@ -238,7 +241,7 @@ struct ProjectDetailView: View {
     /// this Mac — the server does not know about projects.
     private var sessionsCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("LiveShortly sessions · \(linkedSessions.count)")
+            HUDLabel(String(localized: "LiveShortly sessions · \(linkedSessions.count)"))
             if !app.liveShortly.isConnected {
                 Text("Connect LiveShortly in Settings to run agent sessions for this project.")
                     .font(.pocket(.footnote))
@@ -256,6 +259,8 @@ struct ProjectDetailView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(linkedSessions.enumerated()), id: \.element.id) { index, session in
+                        let title = session.title.isEmpty
+                            ? String(localized: "Untitled session") : session.title
                         if index > 0 { HUDRule() }
                         Button {
                             app.selection = .session(session.id)
@@ -265,7 +270,7 @@ struct ProjectDetailView: View {
                                     .foregroundStyle(session.isLive
                                         ? LSColor.accent : PocketColor.textTertiary)
                                     .accessibilityHidden(true)
-                                Text(session.title.isEmpty ? "Untitled session" : session.title)
+                                Text(title)
                                     .font(.pocket(.body))
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
@@ -276,8 +281,8 @@ struct ProjectDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            "Open \(session.title.isEmpty ? "Untitled session" : session.title)"
-                            + ", \(session.isLive ? "live" : "ended")")
+                            String(localized: "Open \(title)")
+                            + ", \(session.isLive ? String(localized: "live") : String(localized: "ended"))")
                         .contextMenu {
                             Button("Remove from project") {
                                 ProjectSessions.unlink(session.id, from: projectId)
@@ -336,7 +341,7 @@ struct ProjectDetailView: View {
             // Stays dirty: the text on screen is not what the store holds,
             // and the whole point of these instructions is that the model
             // actually receives them.
-            instructionsNote = "Couldn't save: \(error.localizedDescription)"
+            instructionsNote = String(localized: "Couldn't save: \(error.localizedDescription)")
         }
     }
 
@@ -366,8 +371,8 @@ struct ProjectDetailView: View {
                             projectId: id, name: name, mime: mime, pages: pages)
                     }.value
                 } catch {
-                    importError =
-                        "Couldn't add \(url.lastPathComponent): \(error.localizedDescription)"
+                    importError = String(
+                        localized: "Couldn't add \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
             reload()
