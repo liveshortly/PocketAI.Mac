@@ -32,11 +32,6 @@ struct GeneralSettings: View {
     /// actually does rather than what was last tapped.
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
-    /// Mirrors the core's offline flag. `core.isOffline()` is a plain call on a
-    /// non-observable client, so a binding reading it straight never
-    /// re-rendered: the switch showed whatever it showed when the tab was
-    /// built, including after Privacy changed the same setting.
-    @State private var offline = false
 
     var body: some View {
         Form {
@@ -58,8 +53,9 @@ struct GeneralSettings: View {
                 HUDLabel("Window")
             }
             Section {
-                Toggle("Offline mode", isOn: $offline)
-                    .onChange(of: offline) { _, on in app.core.setOfflineMode(on: on) }
+                Toggle("Offline mode", isOn: Binding(
+                    get: { app.offlineMode.isOn },
+                    set: { app.offlineMode.set($0) }))
                 Text("Blocks every outbound request, including model downloads.")
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
@@ -79,7 +75,6 @@ struct GeneralSettings: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(PocketColor.bgCanvas)
-        .task { offline = app.core.isOffline() }
         .onChange(of: appearance) { _, value in
             NSApp.appearance = switch value {
             case "light": NSAppearance(named: .aqua)

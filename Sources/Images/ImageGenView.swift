@@ -1,5 +1,6 @@
 import AppKit
 import PocketImageGen
+import PocketKit
 import PocketUI
 import SwiftUI
 
@@ -163,6 +164,21 @@ struct ImageGenView: View {
         .background(PocketColor.bgCanvas)
     }
 
+    /// Directory and id of the installed image model. Mirrors the iPhone's
+    /// resolver — both return the id alongside the path so the loader can pick
+    /// the matching Stable Diffusion preset.
+    private func resolveInstalledImageModel() -> (url: URL, modelId: String)? {
+        let catalog = app.core.catalog(
+            filter: CatalogFilter(modality: .image, curatedOnly: false, installedOnly: true))
+        guard let entry = catalog.first(where: { $0.state == .installed }) else { return nil }
+        guard let liveCore = app.core as? LiveCore,
+              let plan = try? liveCore.rawCore.planDownload(id: entry.manifest.id)
+        else { return nil }
+        let candidate = URL(fileURLWithPath: plan.destDir)
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+        return (candidate, entry.manifest.id)
+    }
+
     private func generate() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -186,6 +202,14 @@ struct ImageGenView: View {
                     generator = PocketImageGenerator(conserveMemory: false)
                 }
                 guard let generator else { return }
+
+                // This was missing entirely: the generator was built and then
+                // asked to generate, so every attempt threw .notLoaded.
+                guard let installed = resolveInstalledImageModel() else {
+                    throw ImageGenError.modelNotFound("no image model installed")
+                }
+                try await generator.load(
+                    modelDirectory: installed.url, modelId: installed.modelId)
                 let cgImage = try await generator.generate(
                     prompt: text,
                     negativePrompt: negative.isEmpty ? nil : negative,

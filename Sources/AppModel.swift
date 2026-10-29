@@ -20,6 +20,9 @@ public final class AppModel {
     public private(set) static var shared: AppModel?
 
     public let core: CoreClient
+    /// The offline switch, owned once. Three screens used to keep their own
+    /// copy of `core.isOffline()` and they drifted apart.
+    public private(set) var offlineMode: OfflineMode!
     public let hooks: PlatformHooks
     /// LiveShortly integration (opt-in; connected from Settings → LiveShortly).
     public let liveShortly = LSAccountModel()
@@ -187,6 +190,8 @@ public final class AppModel {
                 core = PreviewCore()
             }
         }
+
+        offlineMode = OfflineMode(core: core)
 
         // Re-activate a saved license so Pro survives a relaunch. Offline or
         // transient failure is non-fatal — it retries next launch.

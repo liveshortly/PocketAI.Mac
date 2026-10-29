@@ -183,7 +183,6 @@ struct PrivacyView: View {
     @Environment(AppModel.self) private var app
     @State private var egress: [EgressEntry] = []
     @State private var audit: [AuditEntry] = []
-    @State private var offline = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -202,11 +201,12 @@ struct PrivacyView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: PocketSpacing.s16) {
                     VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                        Toggle("Offline mode", isOn: $offline)
+                        Toggle("Offline mode", isOn: Binding(
+                            get: { app.offlineMode.isOn },
+                            set: { app.offlineMode.set($0) }))
                             .toggleStyle(.switch)
                             .tint(PocketColor.accent)
                             .font(.pocket(.body))
-                            .onChange(of: offline) { _, on in app.core.setOfflineMode(on: on) }
                         Text("Blocks every outbound request, model downloads included.")
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textTertiary)
@@ -275,10 +275,7 @@ struct PrivacyView: View {
             }
         }
         .background(PocketColor.bgCanvas)
-        .task {
-            offline = app.core.isOffline()
-            reload()
-        }
+        .task { reload() }
     }
 
     private func emptyNote(_ text: String) -> some View {
