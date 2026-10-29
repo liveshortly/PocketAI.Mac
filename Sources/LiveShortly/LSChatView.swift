@@ -19,7 +19,8 @@ struct LSChatView: View {
     @State private var showShare = false
     @State private var confirmEnd = false
     @State private var confirmDelete = false
-    @FocusState private var composerFocused: Bool
+    /// Counter, not a flag — see `ComposerTextView.focusRequest`.
+    @State private var focusRequest = 0
 
     let sessionID: String
 
@@ -56,7 +57,7 @@ struct LSChatView: View {
                 sessionID: sessionID, client: client, myHandle: app.liveShortly.handle)
             session = model
             await model.open()
-            composerFocused = true
+            focusRequest += 1
         }
         .onAppear { scrollActivity.start() }
         .onDisappear {
@@ -70,6 +71,13 @@ struct LSChatView: View {
         }
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { now in
             session?.expireTypers(now)
+        }
+        .onChange(of: app.commandSerial) { _, _ in
+            // ⌘L is a global menu item; a session composer is still a composer.
+            if app.pendingCommand == .focusComposer {
+                focusRequest += 1
+                app.clearCommand()
+            }
         }
         .sheet(isPresented: $showRename) {
             if let session {
@@ -307,7 +315,7 @@ struct LSChatView: View {
                     ComposerTextView(
                         text: $draft,
                         placeholder: "Message this session…",
-                        isFocused: composerFocused,
+                        focusRequest: focusRequest,
                         onSubmit: { send(session) },
                         onEdit: { session.noteTyping() }
                     )

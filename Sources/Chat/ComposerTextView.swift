@@ -15,7 +15,11 @@ struct ComposerTextView: NSViewRepresentable {
     var placeholder: String = "Message…"
     var minHeight: CGFloat = 20
     var maxHeight: CGFloat = 180
-    var isFocused: Bool = false
+    /// A counter, not a flag: every increment is one request to take the
+    /// caret. A `Bool` latched true, so after the first grab (or after the
+    /// user clicked away) ⌘L and the empty-state suggestions had nothing left
+    /// to change and silently did nothing.
+    var focusRequest: Int = 0
     var onSubmit: () -> Void
     var onEdit: () -> Void = {}
 
@@ -66,12 +70,12 @@ struct ComposerTextView: NSViewRepresentable {
         // Claim focus only on a fresh request. Re-asserting it on every
         // update stole the caret back from wherever the user had clicked —
         // once per streamed token.
-        if isFocused, !context.coordinator.didTakeFocus,
-           textView.window?.firstResponder !== textView {
-            context.coordinator.didTakeFocus = true
-            DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+        if focusRequest != context.coordinator.servedFocusRequest {
+            context.coordinator.servedFocusRequest = focusRequest
+            if focusRequest > 0, textView.window?.firstResponder !== textView {
+                DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+            }
         }
-        if !isFocused { context.coordinator.didTakeFocus = false }
         context.coordinator.resize()
     }
 
@@ -81,8 +85,9 @@ struct ComposerTextView: NSViewRepresentable {
         var parent: ComposerTextView
         weak var textView: ComposerNSTextView?
         weak var scrollView: NSScrollView?
-        /// Guards against re-stealing first responder on every update.
-        var didTakeFocus = false
+        /// The last focus request acted on, so an update that carries no new
+        /// request never re-steals first responder.
+        var servedFocusRequest = 0
 
         init(_ parent: ComposerTextView) {
             self.parent = parent

@@ -19,7 +19,10 @@ struct ChatView: View {
     @State private var attachmentRefusal: String?
     @State private var chatExportError: String?
     @AppStorage("app.getpocketai.mac.autoSpeak") private var autoSpeak = false
-    @FocusState private var composerFocused: Bool
+    /// Bumped to ask the composer for the caret. `@FocusState` was never bound
+    /// to anything here — the composer is an `NSTextView` — so it latched true
+    /// and every later request was a no-op.
+    @State private var focusRequest = 0
 
     let conversationId: String
 
@@ -39,7 +42,7 @@ struct ChatView: View {
         .task(id: conversationId) {
             chat = app.chatModel(for: conversationId)
             chat?.load()
-            composerFocused = true
+            focusRequest += 1
         }
         .onDisappear {
             dictation.stop()
@@ -60,7 +63,7 @@ struct ChatView: View {
             guard let command = app.pendingCommand, let chat else { return }
             switch command {
             case .focusComposer:
-                composerFocused = true
+                focusRequest += 1
                 app.clearCommand()
             case .stopGeneration:
                 chat.stop()
@@ -196,7 +199,7 @@ struct ChatView: View {
                     if chat.isEmpty {
                         ChatEmptyState { suggestion in
                             draft = suggestion
-                            composerFocused = true
+                            focusRequest += 1
                         }
                         .padding(.top, 80)
                     }
@@ -330,7 +333,7 @@ struct ChatView: View {
                 HStack(alignment: .bottom, spacing: PocketSpacing.s8) {
                     ComposerTextView(
                         text: $draft,
-                        isFocused: composerFocused,
+                        focusRequest: focusRequest,
                         onSubmit: { submit(chat) }
                     )
                     .frame(minHeight: 22)
