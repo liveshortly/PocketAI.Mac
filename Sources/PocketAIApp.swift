@@ -64,6 +64,7 @@ struct AppCommands: Commands {
             // sessions can land after a screen has loaded.
             Button("Refresh") { app.post(.refresh) }
                 .keyboardShortcut("r", modifiers: .command)
+            Button("Pair a Device…") { app.pairDevice() }
             Divider()
         }
         CommandMenu("Chat") {

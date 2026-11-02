@@ -157,6 +157,10 @@ struct CommandPaletteView: View {
                 subtitle: "Pair an iPhone", symbol: "iphone", live: false
             ) { app.selection = .devices },
             Item(
+                id: "action-pair", kind: .action, title: "Pair a device…",
+                subtitle: "Show a pairing code", symbol: "qrcode", live: false
+            ) { app.pairDevice() },
+            Item(
                 id: "action-server", kind: .action, title: "Local server",
                 subtitle: app.serverStatus.running ? "Running" : "Stopped",
                 symbol: "server.rack", live: app.serverStatus.running

@@ -3,16 +3,17 @@ import PocketKit
 import PocketUI
 import SwiftUI
 
-/// The local OpenAI-compatible server: on or off, loopback or LAN, and the
-/// key other apps authenticate with.
+/// The local OpenAI-compatible server: who may use it (MAC-18 Access) and
+/// the key other apps authenticate with. There is no Start button - picking
+/// an Access level is what runs the server.
 struct ServerView: View {
     @Environment(AppModel.self) private var app
-    @State private var lanEnabled = false
     @State private var apiKey: String?
     @State private var copied = false
     @State private var refreshTask: Task<Void, Never>?
-    /// True while the toggle is being seeded from the server's own state.
-    @State private var syncingFromStatus = false
+    /// A switch that would rebind under a connected device, awaiting an
+    /// inline "switch anyway?".
+    @State private var pendingAccess: AppModel.ServerAccess?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,9 +43,6 @@ struct ServerView: View {
         }
         .background(PocketColor.bgCanvas)
         .task {
-            syncingFromStatus = true
-            lanEnabled = app.serverStatus.lanEnabled
-            syncingFromStatus = false
             apiKey = app.core.hasLocalApiKey() ? "••••••••••••••••" : nil
             startRefreshing()
         }
@@ -68,19 +66,14 @@ struct ServerView: View {
                     Text(
                         app.serverStatus.running
                             ? "Port \(app.serverStatus.port) · \(app.serverStatus.connectedDevices) connected"
-                            : "Other apps and paired devices can't reach this Mac's models."
+                            : app.serverAccess == .off
+                                ? "Other apps and paired devices can't reach this Mac's models."
+                                : "Couldn't start. Devices on this network need PocketAI Pro."
                     )
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
                 }
                 Spacer(minLength: 0)
-                if app.serverStatus.running {
-                    Button("Stop") { app.stopServer() }
-                        .buttonStyle(.hudDestructive)
-                } else {
-                    Button("Start") { app.startServer(lan: lanEnabled) }
-                        .buttonStyle(.hudProminent)
-                }
             }
         }
         .padding(PocketSpacing.s12)
@@ -90,31 +83,61 @@ struct ServerView: View {
     private var accessCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HUDLabel("Access")
-            Toggle("Allow devices on this network", isOn: $lanEnabled)
-                .toggleStyle(.switch)
-                .tint(PocketColor.accent)
-                .font(.pocket(.body))
-                .onChange(of: lanEnabled) { _, enabled in
-                    // Only a human flip rebinds. Seeding this toggle from the
-                    // live status on appear used to trip this handler and
-                    // bounce a running server, killing a paired device's
-                    // in-flight request.
-                    guard !syncingFromStatus, app.serverStatus.running,
-                          enabled != app.serverStatus.lanEnabled
-                    else { return }
-                    app.stopServer()
-                    app.startServer(lan: enabled)
-                }
-            Text(
-                lanEnabled
-                    ? "Reachable from your LAN, so a paired iPhone can use this Mac. macOS will ask for Local Network permission."
-                    : "Loopback only (127.0.0.1) — nothing outside this Mac can connect."
-            )
-            .font(.pocket(.caption))
-            .foregroundStyle(PocketColor.textTertiary)
+            Picker("Access", selection: accessBinding) {
+                Text("Off").tag(AppModel.ServerAccess.off)
+                Text("This Mac only").tag(AppModel.ServerAccess.thisMac)
+                Text("This Mac + paired devices").tag(AppModel.ServerAccess.pairedDevices)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if let pendingAccess { switchAnywayRow(pendingAccess) }
+            Text(accessCaption)
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+    }
+
+    /// Switching rebinds the listener, which would cut off a device mid-reply,
+    /// so with one connected the switch waits for an inline yes.
+    private var accessBinding: Binding<AppModel.ServerAccess> {
+        Binding(
+            get: { pendingAccess ?? app.serverAccess },
+            set: { access in
+                guard access != app.serverAccess else { pendingAccess = nil; return }
+                if app.serverStatus.connectedDevices > 0 {
+                    pendingAccess = access
+                } else {
+                    app.setServerAccess(access)
+                }
+            })
+    }
+
+    private func switchAnywayRow(_ access: AppModel.ServerAccess) -> some View {
+        let count = app.serverStatus.connectedDevices
+        return HStack(spacing: PocketSpacing.s8) {
+            Text("\(count) device\(count == 1 ? " is" : "s are") using this Mac. Switch anyway?")
+                .font(.pocket(.footnote))
+                .foregroundStyle(PocketColor.statusWarn)
+            Spacer(minLength: 0)
+            Button("Cancel") { pendingAccess = nil }
+                .buttonStyle(.hud)
+            Button("Switch") {
+                pendingAccess = nil
+                app.setServerAccess(access)
+            }
+            .buttonStyle(.hudDestructive)
+        }
+    }
+
+    private var accessCaption: String {
+        switch app.serverAccess {
+        case .off: return "Nothing can use this Mac's models from outside the app."
+        case .thisMac: return "Loopback only (127.0.0.1), for other apps on this Mac."
+        case .pairedDevices:
+            return "Reachable from your LAN, so a paired iPhone can use this Mac. macOS will ask for Local Network permission."
+        }
     }
 
     private var endpointCard: some View {

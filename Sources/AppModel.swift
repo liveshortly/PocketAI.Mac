@@ -64,6 +64,8 @@ public final class AppModel {
         case server
         case images
         case privacy
+        /// Tools → LiveShortly: daemon, allowed repos, sessions on this Mac (LSI-14).
+        case liveShortly
     }
 
     public var selection: Destination? {
@@ -137,6 +139,8 @@ public final class AppModel {
         case regenerate
         case openConversation(String)
         case newLiveSession
+        /// MAC-18: Devices shows a pairing QR (posted by `pairDevice()`).
+        case pairDevice
     }
     /// Commands are consumed by the focused view and cleared. Each post also
     /// carries a serial so sending the SAME command twice still registers as a
@@ -172,6 +176,20 @@ public final class AppModel {
     @ObservationIgnored private var licenseNoticeSentFor: Int64?
     private let advertiser = Advertiser()
     public private(set) var activeServerActivity: NSObjectProtocol?
+
+    /// MAC-18: who may use this Mac's models. The server is how that
+    /// happens, not a step the user runs; picking a level applies it and is
+    /// saved, and launch restores it.
+    public enum ServerAccess: String, CaseIterable, Sendable {
+        case off
+        /// Loopback only, for other apps on this Mac.
+        case thisMac
+        /// LAN + Bonjour, so paired phones can connect.
+        case pairedDevices
+    }
+    public private(set) var serverAccess: ServerAccess = .off
+    private static let serverAccessKey = "app.getpocketai.mac.serverAccess"
+    private static let serverPortKey = "app.getpocketai.mac.serverPort"
 
     private static let onboardedKey = "app.getpocketai.hasOnboarded"
     private static let currentModelKey = "app.getpocketai.currentModelId"
@@ -275,9 +293,18 @@ public final class AppModel {
                 self.checkLicenseNotification()
             }
         }
+        // MAC-18: start at launch with the saved Access (no debug gate), so a
+        // paired phone works after a relaunch or reboot with no clicks here.
+        // The debug args still force a level for UI tests, unsaved.
         if args.contains("-PocketStartServer") {
-            startServer(lan: args.contains("-PocketServerLAN"))
+            serverAccess = args.contains("-PocketServerLAN") ? .pairedDevices : .thisMac
+        } else {
+            serverAccess = Self.launchAccess(
+                saved: UserDefaults.standard.string(forKey: Self.serverAccessKey)
+                    .flatMap(ServerAccess.init(rawValue:)),
+                pairedDevices: core.devices().filter { $0.revokedAt == nil }.count)
         }
+        applyServerAccess()
         AppModel.shared = self
     }
 
@@ -502,10 +529,50 @@ public final class AppModel {
         serverStatus = core.serverStatus()
     }
 
+    /// MAC-18 launch decision: an explicit choice wins; never chosen means
+    /// "paired devices" when a phone is already paired (so it keeps working
+    /// across relaunch), otherwise off.
+    nonisolated static func launchAccess(saved: ServerAccess?, pairedDevices: Int) -> ServerAccess {
+        saved ?? (pairedDevices > 0 ? .pairedDevices : .off)
+    }
+
+    /// Applies and saves an Access level. Rebinding stops then starts the
+    /// listener, so callers ask first when a device is connected.
+    public func setServerAccess(_ access: ServerAccess) {
+        serverAccess = access
+        UserDefaults.standard.set(access.rawValue, forKey: Self.serverAccessKey)
+        applyServerAccess()
+    }
+
+    private func applyServerAccess() {
+        guard serverAccess != .off else {
+            if serverStatus.running { stopServer() }
+            return
+        }
+        let lan = serverAccess == .pairedDevices
+        if serverStatus.running, serverStatus.lanEnabled != lan { stopServer() }
+        if !serverStatus.running { startServer(lan: lan) }
+    }
+
+    /// "Pair a device…" from anywhere: raise Access to paired devices if
+    /// it's lower, then Devices shows the QR - one click.
+    public func pairDevice() {
+        if serverAccess != .pairedDevices { setServerAccess(.pairedDevices) }
+        selection = .devices
+        focusShell()
+        post(.pairDevice)
+    }
+
     /// A ProcessInfo activity keeps App Nap and sleep away while serving.
+    /// Asks for the port the last run bound (MAC-18 stable port); the core
+    /// falls back to a free one if it's taken.
     public func startServer(lan: Bool) {
-        serverStatus = (try? core.serverStart(cfg: ServerConfig(lanEnabled: lan, port: 0)))
+        let savedPort = UInt16(clamping: UserDefaults.standard.integer(forKey: Self.serverPortKey))
+        serverStatus = (try? core.serverStart(cfg: ServerConfig(lanEnabled: lan, port: savedPort)))
             ?? serverStatus
+        if serverStatus.running, serverStatus.port != 0 {
+            UserDefaults.standard.set(Int(serverStatus.port), forKey: Self.serverPortKey)
+        }
         if serverStatus.running, activeServerActivity == nil {
             activeServerActivity = ProcessInfo.processInfo.beginActivity(
                 options: [.userInitiated, .idleSystemSleepDisabled], reason: "Serving models")

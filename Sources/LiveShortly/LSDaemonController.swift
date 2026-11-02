@@ -1,0 +1,263 @@
+import AppKit
+import Foundation
+import Observation
+
+/// Supervises `live daemon` on this Mac (LSI-14): finds the CLI, checks the
+/// sign-in, starts/stops the daemon as a child process, and owns the allowed
+/// repos list (the daemon's `--dir` flags).
+///
+/// Every command runs through `Process` with an argv array — no shell ever
+/// sees a user path. The allowlist is the only way a path becomes reachable,
+/// which keeps the CONTRACT.md security model: the server/web can only pick
+/// from directories this Mac registered.
+///
+/// ponytail: daemon is a child of the app (owner call (a) default) and dies on
+/// quit; switch to an SMAppService LaunchAgent if it must outlive the app.
+@MainActor
+@Observable
+final class LSDaemonController {
+    static let shared = LSDaemonController()
+
+    enum Status: Equatable {
+        case checking
+        /// Child processes inherit the App Sandbox, so `live` can't reach
+        /// ~/.liveshortly, tmux or the agents. Needs a non-sandboxed build.
+        case sandboxed
+        case notInstalled
+        case signedOut
+        case stopped
+        case running(pid: Int32, since: Date)
+    }
+
+    private(set) var status: Status = .checking
+    /// `live whoami` first line, e.g. "Rohit (rohit@example.com)".
+    private(set) var account: String?
+    private(set) var log = ""
+    private(set) var signingIn = false
+
+    var dirs: [String] {
+        didSet { UserDefaults.standard.set(dirs, forKey: Self.dirsKey) }
+    }
+    var machineName: String {
+        didSet { UserDefaults.standard.set(machineName, forKey: Self.nameKey) }
+    }
+
+    /// The macOS account the daemon runs as, and its real home (inside the
+    /// sandbox `NSHomeDirectory()` is the container, not the user's home).
+    let userName = NSUserName()
+    let realHome: String = {
+        guard let pw = getpwuid(getuid()) else { return NSHomeDirectory() }
+        return String(cString: pw.pointee.pw_dir)
+    }()
+
+    /// The id `live daemon` registers under (~/.liveshortly/host_id), so the
+    /// app can find this Mac in `/api/hosts`.
+    var hostID: String? {
+        let path = realHome + "/.liveshortly/host_id"
+        return (try? String(contentsOfFile: path, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isRunning: Bool {
+        if case .running = status { return true }
+        return false
+    }
+
+    private static let dirsKey = "liveShortly.daemon.dirs"
+    private static let nameKey = "liveShortly.daemon.name"
+    private var liveURL: URL?
+    private var searchPath = ""
+    private var process: Process?
+    private var restartOnExit = false
+
+    private init() {
+        dirs = UserDefaults.standard.stringArray(forKey: Self.dirsKey) ?? []
+        machineName = UserDefaults.standard.string(forKey: Self.nameKey)
+            ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { _ in
+            // A child outlives its parent unless told otherwise.
+            MainActor.assumeIsolated { LSDaemonController.shared.process?.terminate() }
+        }
+    }
+
+    // MARK: - Status
+
+    func refresh() async {
+        if process != nil { return } // running: nothing to re-derive
+        if ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil {
+            status = .sandboxed
+            return
+        }
+        if liveURL == nil { await locateLive() }
+        guard liveURL != nil else {
+            status = .notInstalled
+            return
+        }
+        let (code, out) = await run(["whoami"])
+        account = out.split(separator: "\n").first.map(String.init)
+        status = code == 0 ? .stopped : .signedOut
+    }
+
+    /// GUI apps get a bare PATH; `live daemon` needs tmux and the agents on
+    /// it. Take the login shell's PATH (no user input involved) plus the usual
+    /// install dirs, then find `live` on it.
+    private func locateLive() async {
+        let shell = getpwuid(getuid()).map { String(cString: $0.pointee.pw_shell) } ?? "/bin/zsh"
+        let (_, loginPath) = await Self.exec(
+            URL(fileURLWithPath: shell), ["-lc", "printf %s \"$PATH\""], env: nil)
+        let extra = [realHome + "/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+        let parts = loginPath.split(separator: ":").map(String.init) + extra
+            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        var seen = Set<String>()
+        let unique = parts.filter { !$0.isEmpty && seen.insert($0).inserted }
+        searchPath = unique.joined(separator: ":")
+        liveURL = unique.lazy.map { URL(fileURLWithPath: $0).appendingPathComponent("live") }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    // MARK: - Actions
+
+    func signIn() {
+        guard !signingIn else { return }
+        signingIn = true
+        Task {
+            // `live login` opens the browser itself and polls until approved.
+            let (_, out) = await run(["login"])
+            append(out)
+            signingIn = false
+            await refresh()
+        }
+    }
+
+    func start() {
+        guard process == nil, let liveURL, !dirs.isEmpty else { return }
+        var args = ["daemon", "--name", machineName]
+        for dir in dirs { args += ["--dir", dir] }
+        let p = Process()
+        p.executableURL = liveURL
+        p.arguments = args
+        p.environment = childEnv
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        p.standardInput = FileHandle.nullDevice
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let text = String(decoding: handle.availableData, as: UTF8.self)
+            guard !text.isEmpty else { return }
+            Task { @MainActor in LSDaemonController.shared.append(text) }
+        }
+        p.terminationHandler = { proc in
+            let code = proc.terminationStatus
+            Task { @MainActor in LSDaemonController.shared.didExit(code: code) }
+        }
+        do {
+            try p.run()
+            process = p
+            status = .running(pid: p.processIdentifier, since: Date())
+            append("● started: live \(args.joined(separator: " "))\n")
+        } catch {
+            append("● could not start live daemon: \(error.localizedDescription)\n")
+        }
+    }
+
+    func stop() {
+        restartOnExit = false
+        process?.terminate()
+    }
+
+    /// The allowlist is a launch flag, so changing it means a restart.
+    func restart() {
+        guard process != nil else { return start() }
+        restartOnExit = true
+        process?.terminate()
+    }
+
+    /// Directory picker (multiple) starting at the user's real home; each pick
+    /// joins the allowlist and a running daemon restarts to pick it up.
+    func addRepos() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.directoryURL = URL(fileURLWithPath: realHome)
+        panel.prompt = "Allow"
+        guard panel.runModal() == .OK else { return }
+        let picked = panel.urls.map { $0.standardizedFileURL.path }.filter { !dirs.contains($0) }
+        guard !picked.isEmpty else { return }
+        dirs += picked
+        if isRunning { restart() }
+    }
+
+    func remove(_ dir: String) {
+        dirs.removeAll { $0 == dir }
+        if isRunning { dirs.isEmpty ? stop() : restart() }
+    }
+
+    /// Session id prefixes (8 chars) of agents running in this Mac's
+    /// LiveShortly tmux socket — `live claude` and daemon-spawned alike name
+    /// their pane `live-<id[:8]>` on socket `liveshortly`.
+    func localSessionPrefixes() async -> Set<String> {
+        guard status != .sandboxed, let tmux = searchPath.split(separator: ":")
+            .lazy.map({ URL(fileURLWithPath: String($0)).appendingPathComponent("tmux") })
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) })
+        else { return [] }
+        let (_, out) = await Self.exec(
+            tmux, ["-L", "liveshortly", "list-sessions", "-F", "#{session_name}"], env: childEnv)
+        return Set(out.split(separator: "\n").compactMap { line in
+            line.hasPrefix("live-") ? String(line.dropFirst(5)) : nil
+        })
+    }
+
+    // MARK: - Plumbing
+
+    private var childEnv: [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = searchPath
+        env["HOME"] = realHome
+        env.removeValue(forKey: "TMUX")
+        return env
+    }
+
+    private func didExit(code: Int32) {
+        process = nil
+        status = .stopped
+        append("● daemon exited (\(code))\n")
+        if restartOnExit {
+            restartOnExit = false
+            start()
+        }
+    }
+
+    private func append(_ text: String) {
+        // The daemon colours its lines for a terminal; drop the escapes.
+        let clean = text.replacingOccurrences(
+            of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression)
+        log = String((log + clean).suffix(20_000))
+    }
+
+    private func run(_ args: [String]) async -> (Int32, String) {
+        guard let liveURL else { return (-1, "") }
+        return await Self.exec(liveURL, args, env: childEnv)
+    }
+
+    nonisolated private static func exec(
+        _ url: URL, _ args: [String], env: [String: String]?
+    ) async -> (Int32, String) {
+        await Task.detached {
+            let p = Process()
+            p.executableURL = url
+            p.arguments = args
+            if let env { p.environment = env }
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = pipe
+            p.standardInput = FileHandle.nullDevice
+            do { try p.run() } catch { return (-1, error.localizedDescription) }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            return (p.terminationStatus, String(decoding: data, as: UTF8.self))
+        }.value
+    }
+}

@@ -3,8 +3,8 @@ import PocketUI
 import SwiftUI
 
 /// Paired iPhones that may use this Mac's models, and the QR that pairs a new
-/// one. Pairing needs the local server running — said here, not discovered by
-/// a failure.
+/// one. Pairing raises Access to "paired devices" itself (MAC-18), so the
+/// server is never a step the user has to take first.
 struct DevicesView: View {
     @Environment(AppModel.self) private var app
     @State private var devices: [PairedDevice] = []
@@ -19,13 +19,8 @@ struct DevicesView: View {
                 Text("Devices")
                     .font(.pocket(.headline))
                 Spacer()
-                // Never a dead button: pairing needs the LAN server, so this
-                // starts it rather than sitting disabled with the reason
-                // somewhere else on screen.
-                Button(app.serverStatus.running ? "Pair a device…" : "Start server & pair…") {
-                    makeOffer()
-                }
-                .buttonStyle(.hudProminent)
+                Button("Pair a device…") { makeOffer() }
+                    .buttonStyle(.hudProminent)
             }
             .padding(.horizontal, PocketSpacing.s16)
             .padding(.vertical, PocketSpacing.s8)
@@ -34,8 +29,8 @@ struct DevicesView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: PocketSpacing.s16) {
-                    if !app.serverStatus.running {
-                        serverHint
+                    if devices.isEmpty, qrString == nil, app.serverAccess == .pairedDevices {
+                        accessHint
                     }
                     if let qrString { qrCard(qrString) }
                     if let qrError {
@@ -62,17 +57,15 @@ struct DevicesView: View {
             }
         }
         .background(PocketColor.bgCanvas)
-        .task { reload() }
-        .onChange(of: app.commandSerial) { _, _ in
-            if app.pendingCommand == .refresh { reload() }
-        }
+        .task { await keepFresh() }
+        .onChange(of: app.commandSerial) { _, _ in handleCommand() }
         .confirmationDialog(
-            "Revoke \(confirmRevoke?.name ?? "device")? It loses access to this Mac's models.",
+            forgetTitle,
             isPresented: Binding(
                 get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Revoke access", role: .destructive) {
+            Button("Forget", role: .destructive) {
                 if let device = confirmRevoke {
                     try? app.core.revokeDevice(id: device.id)
                     reload()
@@ -81,19 +74,24 @@ struct DevicesView: View {
         }
     }
 
-    private var serverHint: some View {
+    private var forgetTitle: String {
+        let name = confirmRevoke?.name ?? "device"
+        return "Forget \(name)? It's unpaired and must scan a new code to come back. To pause it instead, use Disconnect."
+    }
+
+    /// MAC-18: the last device was forgotten but Access stays where it is
+    /// (never lock the user out of a setting) - offer to turn it off here.
+    private var accessHint: some View {
         HStack(spacing: PocketSpacing.s8) {
-            Image(systemName: "info.circle")
-                .foregroundStyle(PocketColor.statusWarn)
-                .accessibilityHidden(true)
-            Text("Start the local server before pairing — a device connects to it directly.")
+            Text("No paired devices · Access: paired devices")
                 .font(.pocket(.footnote))
+                .foregroundStyle(PocketColor.textSecondary)
             Spacer(minLength: 0)
-            Button("Local server") { app.selection = .server }
+            Button("Turn off") { app.setServerAccess(.off) }
                 .buttonStyle(.hud)
         }
         .padding(PocketSpacing.s12)
-        .hudPanel(PocketColor.statusWarn.opacity(0.10))
+        .hudPanel()
     }
 
     private func qrCard(_ qr: String) -> some View {
@@ -133,15 +131,37 @@ struct DevicesView: View {
                     .foregroundStyle(PocketColor.textTertiary)
             }
             Spacer(minLength: 0)
-            Button("Revoke") { confirmRevoke = device }
+            linkButton(device)
+            Button("Forget") { confirmRevoke = device }
                 .buttonStyle(.hud)
-                .accessibilityLabel("Revoke access for \(device.name)")
+                .accessibilityLabel("Forget \(device.name)")
         }
         .padding(PocketSpacing.s8)
     }
 
+    /// NET-17: drop this phone now, keep the pairing; "Allow" lifts it
+    /// (the phone's own Connect does too).
+    private func linkButton(_ device: PairedDevice) -> some View {
+        let off = device.linkState == .disconnectedByHost
+        return Button(off ? "Allow" : "Disconnect") {
+            try? app.core.setDeviceDisconnected(id: device.id, disconnected: !off)
+            reload()
+        }
+        .buttonStyle(.hud)
+        .accessibilityLabel(off ? "Allow \(device.name) to connect" : "Disconnect \(device.name)")
+    }
+
+    private func linkLabel(_ state: DeviceLinkState) -> String {
+        switch state {
+        case .connected: return "Connected"
+        case .idle: return "Idle"
+        case .disconnected: return "Disconnected"
+        case .disconnectedByHost: return "Disconnected by this Mac"
+        }
+    }
+
     private func deviceSubtitle(_ device: PairedDevice) -> String {
-        var bits = ["\(device.platform)", device.role]
+        var bits = [linkLabel(device.linkState), "\(device.platform)"]
         if let seen = device.lastSeenAt { bits.append("seen \(hudRelative(seen))") }
         if let addr = device.lastAddr { bits.append(addr) }
         return bits.joined(separator: " · ")
@@ -196,22 +216,36 @@ struct DevicesView: View {
         app.refreshServerStatus()
     }
 
+    /// Link states age on their own (NET-18 lease), so keep the list fresh.
+    private func keepFresh() async {
+        handleCommand()
+        while !Task.isCancelled {
+            reload()
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+    }
+
+    private func handleCommand() {
+        switch app.pendingCommand {
+        case .refresh: reload()
+        case .pairDevice:
+            app.clearCommand()
+            makeOffer()
+        default: break
+        }
+    }
+
     private func makeOffer() {
         qrError = nil
-        // A phone reaches this Mac over the LAN, so loopback-only serving
-        // cannot complete a pairing.
-        if !app.serverStatus.running {
-            app.startServer(lan: true)
-        } else if !app.serverStatus.lanEnabled {
-            // Already serving, but only on loopback — a phone on the LAN can
-            // never reach that, so rebind before handing out a code.
-            app.stopServer()
-            app.startServer(lan: true)
+        // A phone reaches this Mac over the LAN: raise Access if it's lower
+        // (starts or rebinds the server) - all in this one click.
+        if app.serverAccess != .pairedDevices || !app.serverStatus.running {
+            app.setServerAccess(.pairedDevices)
         }
         guard app.serverStatus.running else {
             qrError = """
-                The local server didn't start, so there is nothing for a device to pair with. \
-                Open Local server and start it there to see why.
+                This Mac couldn't open itself to devices on the network, so there is nothing \
+                to pair with. Devices on this network need PocketAI Pro.
                 """
             return
         }

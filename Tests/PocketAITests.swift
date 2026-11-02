@@ -177,6 +177,8 @@ final class PocketAITests: XCTestCase {
     // MARK: - MAC-06: Server lifecycle and App Nap activity
     func testServerStartAndStop() {
         let model = AppModel()
+        // MAC-18: launch may auto-start with the saved Access; start clean.
+        model.stopServer()
         XCTAssertFalse(model.serverStatus.running)
         XCTAssertNil(model.activeServerActivity)
 

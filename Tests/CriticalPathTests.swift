@@ -251,13 +251,15 @@ final class CriticalPathTests: XCTestCase {
     /// a code.
     func testPairingNeedsTheServerBoundToTheLan() {
         let app = AppModel()
+        // MAC-18: launch may auto-start with the saved Access; start clean.
+        app.stopServer()
         XCTAssertFalse(app.serverStatus.running)
 
         app.startServer(lan: false)
         XCTAssertTrue(app.serverStatus.running)
         XCTAssertFalse(app.serverStatus.lanEnabled, "loopback only")
 
-        // What "Start server & pair…" does when it finds a loopback listener.
+        // What "Pair a device…" does (via Access) when it finds a loopback listener.
         app.stopServer()
         app.startServer(lan: true)
         XCTAssertTrue(app.serverStatus.running)
@@ -265,6 +267,19 @@ final class CriticalPathTests: XCTestCase {
 
         app.stopServer()
         XCTAssertFalse(app.serverStatus.running)
+    }
+
+    /// MAC-18: launch-time start decision, Access level × paired devices.
+    func testLaunchAccessDecision() {
+        typealias A = AppModel.ServerAccess
+        // Never chosen: a paired phone keeps working after relaunch.
+        XCTAssertEqual(AppModel.launchAccess(saved: nil, pairedDevices: 0), .off)
+        XCTAssertEqual(AppModel.launchAccess(saved: nil, pairedDevices: 2), .pairedDevices)
+        // An explicit choice always wins, peers or not.
+        for saved in A.allCases {
+            XCTAssertEqual(AppModel.launchAccess(saved: saved, pairedDevices: 0), saved)
+            XCTAssertEqual(AppModel.launchAccess(saved: saved, pairedDevices: 1), saved)
+        }
     }
 
     func testPairingOfferCarriesWhatThePhoneNeeds() throws {

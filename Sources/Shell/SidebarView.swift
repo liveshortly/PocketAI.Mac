@@ -296,6 +296,12 @@ struct SidebarView: View {
             Label("Images", systemImage: "photo").tag(AppModel.Destination.images)
             Label("Devices", systemImage: "iphone").tag(AppModel.Destination.devices)
             Label("Local server", systemImage: "server.rack").tag(AppModel.Destination.server)
+            Label {
+                Text("LiveShortly")
+            } icon: {
+                LSSessionMark(isLive: LSDaemonController.shared.isRunning, size: 16)
+            }
+            .tag(AppModel.Destination.liveShortly)
             Label("Privacy", systemImage: "hand.raised").tag(AppModel.Destination.privacy)
         } header: {
             HUDLabel("Tools")

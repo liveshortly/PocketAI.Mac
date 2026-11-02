@@ -79,6 +79,8 @@ struct RootView: View {
             ImageGenView()
         case .privacy:
             PrivacyView()
+        case .liveShortly:
+            LSMachineView()
         case .none:
             EmptyDetail()
         }

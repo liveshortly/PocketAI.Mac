@@ -19,6 +19,10 @@ struct LSNewSessionView: View {
     @State private var loading = true
     @State private var starting = false
     @State private var errorText: String?
+    /// Extra repos for a multi-repo session (LSI-14). Only offered when the
+    /// host advertises `extra_dirs`; empty otherwise.
+    @State private var extraDirs: Set<String> = []
+    private let daemon = LSDaemonController.shared
 
     private var host: LSHost? { hosts.first { $0.id == hostID } }
 
@@ -124,6 +128,11 @@ struct LSNewSessionView: View {
                 .labelsHidden()
             }
             if let host {
+                field("User") { LSUserLine(host: host, isThisMac: host.id == daemon.hostID) }
+                directoryField(host)
+                if host.acceptsExtraDirs, host.dirs.count > 1 {
+                    field("Also give the agent") { extraDirsList(host) }
+                }
                 field("Agent") {
                     Picker("Agent", selection: Binding(
                         get: { agent ?? host.agents.first ?? "" },
@@ -134,15 +143,6 @@ struct LSNewSessionView: View {
                         })
                     ) {
                         ForEach(host.agents, id: \.self) { Text($0).tag($0) }
-                    }
-                    .labelsHidden()
-                }
-                field("Directory") {
-                    Picker("Directory", selection: Binding(
-                        get: { cwd ?? host.dirs.first ?? "" },
-                        set: { cwd = $0 })
-                    ) {
-                        ForEach(host.dirs, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden()
                 }
@@ -195,6 +195,46 @@ struct LSNewSessionView: View {
         }
     }
 
+    /// Directory = the host's allowlist. On this Mac the allowlist is ours to
+    /// grow, so "Add repo…" sits right here (it restarts the daemon).
+    private func directoryField(_ host: LSHost) -> some View {
+        field("Directory") {
+            HStack {
+                Picker("Directory", selection: Binding(
+                    get: { cwd ?? host.dirs.first ?? "" },
+                    set: { cwd = $0; extraDirs.remove($0) })
+                ) {
+                    ForEach(host.dirs, id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden()
+                if host.id == daemon.hostID {
+                    Button("Add repo…") { addRepo() }.buttonStyle(.hud)
+                }
+            }
+        }
+    }
+
+    private func extraDirsList(_ host: LSHost) -> some View {
+        let primary = cwd ?? host.dirs.first ?? ""
+        return VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+            ForEach(host.dirs.filter { $0 != primary }, id: \.self) { dir in
+                Toggle(dir, isOn: Binding(
+                    get: { extraDirs.contains(dir) },
+                    set: { on in if on { extraDirs.insert(dir) } else { extraDirs.remove(dir) } }))
+                    .font(.pocket(.footnote))
+            }
+        }
+    }
+
+    private func addRepo() {
+        daemon.addRepos()
+        // The daemon re-registers after its restart; give it a moment.
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            await load()
+        }
+    }
+
     @ViewBuilder private func field<Content: View>(
         _ label: String, @ViewBuilder content: () -> Content
     ) -> some View {
@@ -214,6 +254,7 @@ struct LSNewSessionView: View {
     private func syncHostDefaults() {
         agent = host?.agents.first
         cwd = host?.dirs.first
+        extraDirs = []
         model = nil
     }
 
@@ -226,7 +267,8 @@ struct LSNewSessionView: View {
         do {
             hosts = try await client.hosts()
             if hostID == nil || hosts.allSatisfy({ $0.id != hostID }) {
-                hostID = hosts.first?.id
+                // Pre-select this Mac when its daemon is up (LSI-14).
+                hostID = hosts.first { $0.id == daemon.hostID }?.id ?? hosts.first?.id
                 syncHostDefaults()
             }
             errorText = nil
@@ -246,7 +288,10 @@ struct LSNewSessionView: View {
             do {
                 let created = try await client.createSession(
                     hostID: host.id, agent: chosenAgent, cwd: chosenCwd,
-                    model: model, bypassPermissions: bypass)
+                    model: model, bypassPermissions: bypass,
+                    // Never send a dir the host did not register.
+                    extraDirs: host.acceptsExtraDirs
+                        ? host.dirs.filter { extraDirs.contains($0) && $0 != chosenCwd } : [])
                 if let spawn = created.spawn, spawn.status == "failed" {
                     // Stay on this screen so the reason is readable: navigating
                     // would destroy the view showing it and drop the user into
@@ -266,5 +311,35 @@ struct LSNewSessionView: View {
             }
             starting = false
         }
+    }
+}
+
+/// "User" step: the OS account the host's daemon runs as, plus the
+/// LiveShortly account that will own the session. One daemon runs as one
+/// user, so this is informational, not a picker.
+private struct LSUserLine: View {
+    @Environment(AppModel.self) private var app
+    let host: LSHost
+    let isThisMac: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(osUser).font(.pocket(.body))
+            Text("Owned by \(app.liveShortly.handle)")
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// This Mac knows its user; elsewhere, read it off the registered home
+    /// paths (/Users/<u>/… or /home/<u>/…) — the contract carries no user.
+    private var osUser: String {
+        if isThisMac { return "\(NSUserName()) on this Mac" }
+        let parts = host.dirs.first?.split(separator: "/") ?? []
+        if parts.count > 1, parts[0] == "Users" || parts[0] == "home" {
+            return "\(parts[1]) on \(host.name)"
+        }
+        return "The daemon's account on \(host.name)"
     }
 }
