@@ -40,6 +40,11 @@ struct AppCommands: Commands {
     @Bindable var app: AppModel
 
     var body: some Commands {
+        // Sparkle's own convention: "Check for Updates…" sits just under the
+        // About item in the app menu.
+        CommandGroup(after: .appInfo) {
+            CheckForUpdatesCommand()
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Chat") { app.newChat() }
                 .keyboardShortcut("n", modifiers: .command)

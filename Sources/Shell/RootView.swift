@@ -43,6 +43,10 @@ struct RootView: View {
                 CoreErrorBanner(message: error)
             }
         }
+        // PocketUI's own toast (C18), which shipped unused. Six seconds rather
+        // than the default three: these are failures worth reading, standing in
+        // for a dialog the torn-down view never got to show.
+        .pocketToast($app.currentToast, duration: .seconds(6))
         // Lets anything outside this window (Settings, the menu-bar panel, the
         // app menus) bring the shell forward when it navigates it.
         .background(WindowReader { app.shellWindow = $0 })

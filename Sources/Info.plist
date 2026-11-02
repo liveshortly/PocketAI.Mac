@@ -50,5 +50,15 @@
 	<string>PocketAI uses the microphone for voice input.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>PocketAI transcribes your voice on-device for voice input.</string>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string></string>
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

@@ -54,8 +54,15 @@ struct ProjectDetailView: View {
             isPresented: $confirmDelete, titleVisibility: .visible
         ) {
             Button("Delete project", role: .destructive) {
-                try? app.core.deleteProject(id: projectId)
-                app.selection = nil
+                // Same teardown trap as the chat deletes: clearing the
+                // selection first meant a refused delete looked like a
+                // successful one.
+                do {
+                    try app.core.deleteProject(id: projectId)
+                    app.selection = nil
+                } catch {
+                    app.toast("Couldn't delete that project: \(error.localizedDescription)")
+                }
             }
         }
     }

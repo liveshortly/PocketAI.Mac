@@ -8,12 +8,13 @@ import XCTest
 /// Contrast for the pairs the Mac actually composes, measured against the
 /// shipped asset catalog rather than a hand-copied hex list.
 ///
-/// `PocketUITests/ContrastTests` in Core covers text-on-background through
-/// `PocketContrastTokens`, but those literals have drifted from
-/// `Colors.xcassets` (it asserts canvas `F7F6F3` where the app ships
-/// `F3F1E9`, and primary `15161A` where the app ships `1A1916`), and it never
-/// looks at the accent, the status colours or `bgRaised`. This reads the real
-/// colours, so drift fails here.
+/// `PocketUITests/ContrastTests` in Core now reads `Colors.xcassets` directly
+/// too, so the drift this suite was written to catch (it asserted canvas
+/// `F7F6F3` where the app ships `F3F1E9`) is gone. This one still earns its
+/// place: it measures the pairs the *Mac* composes — the accent as text, the
+/// status colours, and `bgRaised` — through `NSColor` in both appearances,
+/// which is the only way to see a translucent foreground as it actually
+/// renders.
 ///
 /// Token definitions live in Core and cannot be changed from this repo; the
 /// pairs that fail are recorded with `XCTExpectFailure` and their measured
@@ -41,18 +42,21 @@ final class MacContrastTests: XCTestCase {
 
     /// WCAG 2.x ratio with `fg` flattened over `bg` first, the way a
     /// translucent foreground actually renders.
+    ///
+    /// Goes straight to `PocketContrast.ratio` on the resolved components.
+    /// The old version formatted both colours into hex strings and back, which
+    /// no longer compiles (`PocketRawColor` and `flattenedRatio` were removed
+    /// when Core's contrast suite was rewritten) and was lossy anyway —
+    /// `Int(channel * 255)` truncates rather than rounds.
     private func ratio(_ fg: Color, on bg: Color, _ appearance: NSAppearance.Name) -> Double {
         let f = components(fg, appearance)
         let b = components(bg, appearance)
-        let flattened = PocketRawColor(
-            String(format: "%02X%02X%02X",
-                   Int((f.r * f.a + b.r * (1 - f.a)) * 255),
-                   Int((f.g * f.a + b.g * (1 - f.a)) * 255),
-                   Int((f.b * f.a + b.b * (1 - f.a)) * 255)))
-        let background = PocketRawColor(
-            String(format: "%02X%02X%02X",
-                   Int(b.r * 255), Int(b.g * 255), Int(b.b * 255)))
-        return PocketContrast.flattenedRatio(fg: flattened, bg: background)
+        let flattened = (
+            r: f.r * f.a + b.r * (1 - f.a),
+            g: f.g * f.a + b.g * (1 - f.a),
+            b: f.b * f.a + b.b * (1 - f.a)
+        )
+        return PocketContrast.ratio(flattened, (r: b.r, g: b.g, b: b.b))
     }
 
     private func assertContrast(
@@ -127,16 +131,14 @@ final class MacContrastTests: XCTestCase {
     /// `textTertiary` is the HUD's label colour — `HUDLabel`'s default tint,
     /// every row subtitle, every caption. On `bgRaised` (white in light mode,
     /// `#242320` in dark) it is the worst pair in the app.
+    /// Now passes on every surface. It used to be the worst pair in the app
+    /// (3.69:1 on bgRaised, 2.97:1 on bgSunken in light — under even the 3:1
+    /// non-text floor) and was pinned with `XCTExpectFailure`; Core darkened
+    /// `text.tertiary` (light 8A867A → 6A675E, dark 7A756B → 8E8A81) and this
+    /// suite reported "expected failure ... but none recorded", which is the
+    /// pinned-failure pattern doing its job. Asserted plainly now, so a
+    /// regression fails here.
     func testTextTertiaryOnEverySurface() {
-        XCTExpectFailure(
-            """
-            text.tertiary fails AA on every surface the Mac uses: measured \
-            3.69:1 on bgRaised and 3.25:1 on bgCanvas in light mode, 3.46:1 on \
-            bgRaised in dark, and 2.97:1 on bgSunken in light — below even the \
-            3:1 non-text floor. The failures below carry each measured ratio. \
-            Fix is a darker text.tertiary in PocketAI.Core's Colors.xcassets; \
-            nothing in this repo can correct it.
-            """)
         for (surface, name) in [
             (PocketColor.bgCanvas, "bgCanvas"), (PocketColor.bgSurface, "bgSurface"),
             (PocketColor.bgRaised, "bgRaised"), (PocketColor.bgSunken, "bgSunken"),

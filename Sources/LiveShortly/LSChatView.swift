@@ -159,12 +159,12 @@ struct LSChatView: View {
                     HStack(spacing: PocketSpacing.s4) {
                         PocketMarkView(state: .working(tokPerSec: nil), size: 14)
                             .accessibilityHidden(true)
-                        Text("working")
+                        Text(session.activityLabel)
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textTertiary)
                     }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Agent is working")
+                    .accessibilityLabel("Agent is \(session.activityLabel)")
                 }
             } else {
                 HUDChip(text: "ENDED")
@@ -259,14 +259,14 @@ struct LSChatView: View {
                             HUDLabel("◆ assistant", tint: LSColor.accent)
                             PocketMarkView(state: .working(tokPerSec: nil), size: 14)
                                 .accessibilityHidden(true)
-                            Text("working")
+                            Text(session.activityLabel)
                                 .font(.pocket(.caption))
                                 .foregroundStyle(PocketColor.textTertiary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .id("working")
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Agent is working")
+                        .accessibilityLabel("Agent is \(session.activityLabel)")
                     }
                     if let error = session.errorText {
                         HStack(alignment: .top, spacing: PocketSpacing.s8) {
@@ -299,6 +299,10 @@ struct LSChatView: View {
             }
             .onChange(of: session.items.count) { _, _ in follow(proxy) }
             .onChange(of: session.agentBusy) { _, _ in follow(proxy) }
+            // Open on the newest event, not the oldest — same reason as
+            // Chat/ChatView.swift: a top-anchored first layout hides the
+            // "tail" sentinel and clears `pinnedToBottom`.
+            .defaultScrollAnchor(.bottom)
             .onChange(of: scrollActivity.isScrolling) { _, scrolling in
                 if !scrolling, pinnedToBottom { scrollToTail(proxy) }
             }

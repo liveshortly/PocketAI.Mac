@@ -43,6 +43,13 @@ final class LSSessionModel {
 
     var canComment: Bool { detail?.canComment == true && isLive }
 
+    /// "thinking" / "running bash" / "editing Foo.swift" rather than a flat
+    /// "working" for all of them (LSI-12). Viewer comments are not the agent
+    /// doing something, so they never name the activity.
+    var activityLabel: String {
+        LSActivity.label(latest: events.last { $0.eventType != "viewer_comment" })
+    }
+
     var typingLine: String? {
         let now = Date()
         let names = typers.filter { $0.value > now }.keys.sorted()

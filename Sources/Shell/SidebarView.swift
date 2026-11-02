@@ -141,9 +141,14 @@ struct SidebarView: View {
         ) {
             Button("Delete chat", role: .destructive) {
                 guard let target = confirmDelete else { return }
-                app.forgetChatModel(target.id)
-                try? app.core.deleteConversation(id: target.id)
-                if app.selection == .chat(target.id) { app.selection = nil }
+                do {
+                    try app.core.deleteConversation(id: target.id)
+                    app.forgetChatModel(target.id)
+                    if app.selection == .chat(target.id) { app.selection = nil }
+                } catch {
+                    // Leave it selected: it is still there.
+                    app.toast("Couldn't delete that chat: \(error.localizedDescription)")
+                }
                 reloadConversations()
             }
         }
@@ -161,7 +166,12 @@ struct SidebarView: View {
                     .contextMenu {
                         Button("Rename…") { renaming = summary }
                         Button("Archive") {
-                            try? app.core.archiveConversation(id: summary.id, archived: true)
+                            do {
+                                try app.core.archiveConversation(id: summary.id, archived: true)
+                            } catch {
+                                app.toast(
+                                    "Couldn't archive that chat: \(error.localizedDescription)")
+                            }
                             reloadConversations()
                         }
                         Divider()

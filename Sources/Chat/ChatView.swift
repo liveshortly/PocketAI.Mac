@@ -143,15 +143,28 @@ struct ChatView: View {
                 Button("Export transcript…") { exportTranscript(chat) }
                     .disabled(chat.messages.isEmpty)
                 Divider()
+                // Both of these close the pane, so a refused call has to be
+                // reported at window level or not at all — and the chat must
+                // stay selected when it is still there.
                 Button("Archive") {
-                    try? app.core.archiveConversation(id: conversationId, archived: true)
+                    do {
+                        try app.core.archiveConversation(id: conversationId, archived: true)
+                    } catch {
+                        app.toast("Couldn't archive this chat: \(error.localizedDescription)")
+                        return
+                    }
                     app.selection = nil
                     NotificationCenter.default.post(
                         name: .pocketConversationsChanged, object: nil)
                 }
                 Button("Delete", role: .destructive) {
+                    do {
+                        try app.core.deleteConversation(id: conversationId)
+                    } catch {
+                        app.toast("Couldn't delete this chat: \(error.localizedDescription)")
+                        return
+                    }
                     app.forgetChatModel(conversationId)
-                    try? app.core.deleteConversation(id: conversationId)
                     app.selection = nil
                     NotificationCenter.default.post(
                         name: .pocketConversationsChanged, object: nil)
@@ -255,6 +268,11 @@ struct ChatView: View {
                 .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
+            // Open on the newest message, not the oldest. Without this the
+            // first layout is top-anchored, the "tail" sentinel below is
+            // off-screen, its onDisappear clears `pinnedToBottom`, and
+            // follow() then refuses to catch up.
+            .defaultScrollAnchor(.bottom)
             // Only follow the stream while the reader is already at the tail;
             // yanking the view down while they read back is the worst thing a
             // transcript can do.

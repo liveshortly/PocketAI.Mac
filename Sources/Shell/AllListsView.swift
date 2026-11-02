@@ -99,8 +99,14 @@ struct AllChatsView: View {
                             + (chat.archived ? ", archived" : ""))
                         .contextMenu {
                             Button(chat.archived ? "Unarchive" : "Archive") {
-                                try? app.core.archiveConversation(
-                                    id: chat.id, archived: !chat.archived)
+                                do {
+                                    try app.core.archiveConversation(
+                                        id: chat.id, archived: !chat.archived)
+                                } catch {
+                                    app.toast(
+                                        "Couldn't \(chat.archived ? "unarchive" : "archive") that chat: "
+                                        + error.localizedDescription)
+                                }
                                 reload()
                             }
                             Button("Delete", role: .destructive) { confirmDelete = chat }
@@ -141,14 +147,29 @@ struct AllChatsView: View {
             isPresented: $confirmBulkDelete, titleVisibility: .visible
         ) {
             Button("Delete \(selected.count)", role: .destructive) {
+                // A bulk delete that half-worked used to look like a clean
+                // one: the selection cleared either way. Keep what survived
+                // selected and say how many refused.
+                var failed: [String] = []
+                var lastError = ""
                 for id in selected {
-                    app.forgetChatModel(id)
-                    try? app.core.deleteConversation(id: id)
+                    do {
+                        try app.core.deleteConversation(id: id)
+                        app.forgetChatModel(id)
+                    } catch {
+                        failed.append(id)
+                        lastError = error.localizedDescription
+                    }
                 }
-                if case .chat(let open) = app.selection, selected.contains(open) {
+                if case .chat(let open) = app.selection,
+                   selected.contains(open), !failed.contains(open) {
                     app.selection = nil
                 }
-                selected = []
+                selected = Set(failed)
+                if !failed.isEmpty {
+                    app.toast(
+                        "Couldn't delete \(failed.count) of those chats: \(lastError)")
+                }
                 NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
                 reload()
             }
@@ -161,8 +182,12 @@ struct AllChatsView: View {
         ) {
             Button("Delete chat", role: .destructive) {
                 guard let target = confirmDelete else { return }
-                app.forgetChatModel(target.id)
-                try? app.core.deleteConversation(id: target.id)
+                do {
+                    try app.core.deleteConversation(id: target.id)
+                    app.forgetChatModel(target.id)
+                } catch {
+                    app.toast("Couldn't delete that chat: \(error.localizedDescription)")
+                }
                 NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
                 reload()
             }

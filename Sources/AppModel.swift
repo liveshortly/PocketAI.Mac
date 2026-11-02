@@ -4,6 +4,7 @@ import Observation
 import PocketKit
 import PocketLiveShortly
 import PocketMLX
+import PocketUI
 import SwiftUI
 import UserNotifications
 
@@ -26,6 +27,13 @@ public final class AppModel {
     public let hooks: PlatformHooks
     /// LiveShortly integration (opt-in; connected from Settings → LiveShortly).
     public let liveShortly = LSAccountModel()
+    /// Window-level transient message, rendered by `RootView` through
+    /// PocketUI's `ToastOverlay`. Needed because a failed delete tears down
+    /// the view that would otherwise report it.
+    var currentToast: ToastData?
+
+    /// Report a failure the calling view may not outlive.
+    func toast(_ message: String) { currentToast = ToastData(message: message) }
 
     /// Non-nil when the Rust core failed to open at launch. The app stays
     /// navigable and surfaces this instead of crashing with `fatalError`.
@@ -149,7 +157,19 @@ public final class AppModel {
     /// approval sheet can present from any screen.
     public var pendingPairingRequest: PairingRequest?
     private var pairingPollTask: Task<Void, Never>?
-    private let pairingNotifier = PairingNotifier()
+    private let notifier = AppNotifier()
+    /// Last seen download state per model id, so a finished or failed download
+    /// is reported once instead of on every poll (MAC-16).
+    @ObservationIgnored private var lastDownloadStates: [String: ModelState] = [:]
+    /// Device ids seen on the last poll, and the ones already reported revoked.
+    @ObservationIgnored private var lastDeviceIds: Set<String> = []
+    @ObservationIgnored private var reportedRevoked: Set<String> = []
+    /// False until the first poll has recorded the devices that existed at
+    /// launch; nothing is announced before that.
+    @ObservationIgnored private var seededDevices = false
+    /// Set once the licence warning for the current expiry has been sent, so
+    /// the 1s poll does not notify every second for a week.
+    @ObservationIgnored private var licenseNoticeSentFor: Int64?
     private let advertiser = Advertiser()
     public private(set) var activeServerActivity: NSObjectProtocol?
 
@@ -226,7 +246,11 @@ public final class AppModel {
         refreshCurrentModelDisplayName()
         restoreSelection()
 
-        pairingNotifier.onTap = { [weak self] in self?.focusShell() }
+        notifier.onTap = { [weak self] route in
+            guard let self else { return }
+            if let route { self.selection = route }
+            self.focusShell()
+        }
         pairingPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -240,15 +264,95 @@ public final class AppModel {
                     // This arrives unasked, so it gets a notification rather
                     // than stealing focus from whatever is being typed.
                     if self.shellWindow?.isKeyWindow != true {
-                        self.pairingNotifier.notify(deviceName: request.deviceName)
+                        self.notifier.notify(deviceName: request.deviceName)
                     }
                 }
+                self.checkDownloadNotifications()
+                self.checkDeviceNotifications()
+                self.checkLicenseNotification()
             }
         }
         if args.contains("-PocketStartServer") {
             startServer(lan: args.contains("-PocketServerLAN"))
         }
         AppModel.shared = self
+    }
+
+    // MARK: - Notifications (MAC-16)
+
+    /// A download that finishes or fails while you are in another app said
+    /// nothing. Only transitions notify, and only away from `downloading` /
+    /// `verifying`, so a model already installed at launch is silent.
+    private func checkDownloadNotifications() {
+        let entries = core.catalog(
+            filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false))
+        var next: [String: ModelState] = [:]
+        for entry in entries {
+            let id = entry.manifest.id
+            next[id] = entry.state
+            guard let previous = lastDownloadStates[id], previous != entry.state else { continue }
+            let wasInFlight = previous == .downloading || previous == .verifying
+            guard wasInFlight else { continue }
+            let name = ModelNaming.short(entry.manifest.displayName)
+            switch entry.state {
+            case .installed:
+                notifier.notifyDownloadFinished(modelName: name)
+            case .failed(let reason):
+                notifier.notifyDownloadFailed(modelName: name, reason: reason)
+            default:
+                break
+            }
+        }
+        lastDownloadStates = next
+    }
+
+    /// A phone that finishes pairing, or a device revoked from elsewhere.
+    /// The first poll only seeds the baseline, so launching with devices
+    /// already paired does not announce all of them.
+    private func checkDeviceNotifications() {
+        let devices = core.devices()
+        let ids = Set(devices.map(\.id))
+        defer {
+            lastDeviceIds = ids
+            seededDevices = true
+        }
+        // An explicit flag, not "the set is empty": with no devices yet, an
+        // empty baseline is also the real state, and testing for emptiness
+        // swallowed the notification for the very first phone to pair.
+        guard seededDevices else {
+            reportedRevoked = Set(devices.filter { $0.revokedAt != nil }.map(\.id))
+            return
+        }
+        for device in devices {
+            if device.revokedAt != nil {
+                if !reportedRevoked.contains(device.id) {
+                    reportedRevoked.insert(device.id)
+                    notifier.notifyDeviceRevoked(name: device.name)
+                }
+                continue
+            }
+            if !lastDeviceIds.contains(device.id) {
+                notifier.notifyDeviceConnected(name: device.name)
+            }
+        }
+    }
+
+    /// Warns once inside the last week of a Pro licence, and once when it has
+    /// run out. Keyed on the expiry itself, so renewing re-arms it.
+    private func checkLicenseNotification() {
+        let ent = core.entitlements()
+        guard ent.pro, let expiresAtMs = ent.expiresAtMs else { return }
+        guard licenseNoticeSentFor != expiresAtMs else { return }
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let msLeft = expiresAtMs - nowMs
+        let weekMs: Int64 = 7 * 24 * 60 * 60 * 1000
+        guard msLeft <= weekMs else { return }
+        licenseNoticeSentFor = expiresAtMs
+        if msLeft <= 0 {
+            notifier.notifyLicenseExpired()
+        } else {
+            notifier.notifyLicenseExpiring(days: Int(msLeft / (24 * 60 * 60 * 1000)))
+        }
     }
 
     // MARK: - Model
@@ -427,19 +531,65 @@ public final class AppModel {
     }
 }
 
-/// Tells you a phone is waiting to pair when the shell is not the window you
-/// are looking at, and brings the shell forward when you act on it. The
-/// approval sheet is already on the shell by then, so a tap is only a focus.
+/// Local notifications for the things that finish or change while you are
+/// looking at another window: a phone waiting to pair, a model that finished
+/// downloading, a device that joined or was revoked, a licence about to run
+/// out (MAC-16). Acting on one brings the shell forward and, where there is
+/// somewhere to go, opens it.
 ///
-/// Authorization is asked for at the first pairing request, not at launch:
-/// nothing else here notifies, so an earlier prompt would arrive with no story
-/// behind it. Refusal costs nothing new — the sheet stays queued on the shell,
-/// which is exactly the behaviour this replaces.
+/// Authorization is asked for at the first notification worth sending, not at
+/// launch, so the prompt always arrives with a story behind it. Refusal costs
+/// nothing: every one of these is also visible in the app.
 @MainActor
-final class PairingNotifier: NSObject, UNUserNotificationCenterDelegate {
-    var onTap: (@MainActor () -> Void)?
+final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
+    /// Where a tapped notification should take you. nil = just focus the shell.
+    var onTap: (@MainActor (AppModel.Destination?) -> Void)?
+
+    /// Read from the nonisolated delegate callback too, so it cannot be
+    /// main-actor isolated.
+    private nonisolated static let routeKey = "pocket.route"
 
     func notify(deviceName: String) {
+        post(
+            title: "Pair this device?",
+            body: "\(deviceName) wants to use this Mac's models.",
+            route: nil)
+    }
+
+    func notifyDownloadFinished(modelName: String) {
+        post(title: "Model ready", body: "\(modelName) finished downloading.", route: .models)
+    }
+
+    func notifyDownloadFailed(modelName: String, reason: String) {
+        post(
+            title: "Download failed",
+            body: "\(modelName) couldn't finish: \(reason)",
+            route: .models)
+    }
+
+    func notifyDeviceConnected(name: String) {
+        post(title: "Device connected", body: "\(name) is now paired with this Mac.", route: .devices)
+    }
+
+    func notifyDeviceRevoked(name: String) {
+        post(title: "Device revoked", body: "\(name) can no longer reach this Mac.", route: .devices)
+    }
+
+    func notifyLicenseExpiring(days: Int) {
+        let when = days <= 0
+            ? "today"
+            : (days == 1 ? "tomorrow" : "in \(days) days")
+        post(title: "Pro licence expiring", body: "Your licence runs out \(when).", route: nil)
+    }
+
+    func notifyLicenseExpired() {
+        post(
+            title: "Pro licence expired",
+            body: "Pro features are off until it is renewed.",
+            route: nil)
+    }
+
+    private func post(title: String, body: String, route: AppModel.Destination?) {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         Task {
@@ -448,9 +598,12 @@ final class PairingNotifier: NSObject, UNUserNotificationCenterDelegate {
             guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true
             else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Pair this device?"
-            content.body = "\(deviceName) wants to use this Mac's models."
+            content.title = title
+            content.body = body
             content.sound = .default
+            if let route, let encoded = try? JSONEncoder().encode(route) {
+                content.userInfo[Self.routeKey] = encoded
+            }
             try? await center.add(
                 UNNotificationRequest(
                     identifier: UUID().uuidString, content: content, trigger: nil))
@@ -474,8 +627,12 @@ final class PairingNotifier: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        let encoded = response.notification.request.content.userInfo[Self.routeKey] as? Data
         Task { @MainActor in
-            onTap?()
+            let route = encoded.flatMap {
+                try? JSONDecoder().decode(AppModel.Destination.self, from: $0)
+            }
+            onTap?(route)
             completionHandler()
         }
     }

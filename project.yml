@@ -21,6 +21,11 @@ settings:
 packages:
   PocketCore:
     path: ../PocketAI.Core
+  # Sparkle 2 for direct (non-App-Store) auto-update. Pinned exactly, like
+  # every other dependency here.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.6.4
 targets:
   PocketAI:
     type: application
@@ -44,6 +49,8 @@ targets:
         product: PocketImageGen
       - package: PocketCore
         product: PocketLiveShortly
+      - package: Sparkle
+        product: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.getpocketai.app
@@ -65,6 +72,22 @@ targets:
           - CFBundleURLSchemes:
               - pocketai
             CFBundleURLName: app.getpocketai.pocketai
+        # Sparkle auto-update. Both are read from the built bundle at launch.
+        #
+        # SUFeedURL and SUPublicEDKey are deliberately EMPTY here: the appcast
+        # has nowhere to live yet, and the EdDSA public key does not exist
+        # until someone runs `generate_keys` (its private half goes in the
+        # login keychain and must never reach this repo). Updater.swift treats
+        # an empty feed as "no updater configured" and disables the menu item,
+        # so an unconfigured build is honest rather than broken. Filling these
+        # two values in is the whole remaining step — see
+        # scripts/make-appcast.sh.
+        SUFeedURL: ""
+        SUPublicEDKey: ""
+        # Checked daily, and only ever offered — never installed silently.
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUAutomaticallyUpdate: false
 
   PocketAITests:
     type: bundle.unit-test
