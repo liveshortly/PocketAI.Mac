@@ -45,7 +45,9 @@ struct NewChatMenu: View {
             }
             if app.liveShortly.isConnected {
                 Section("LiveShortly") {
-                    Button("New agent session…") { app.selection = .newSession() }
+                    Button { app.selection = .newSession() } label: {
+                        Label { Text("New agent session…") } icon: { Image.lsLogo }
+                    }
                 }
             }
             Divider()

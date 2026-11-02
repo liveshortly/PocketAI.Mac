@@ -268,9 +268,7 @@ struct ProjectDetailView: View {
                             app.selection = .session(session.id)
                         } label: {
                             HStack(spacing: PocketSpacing.s8) {
-                                Image(systemName: "dot.radiowaves.left.and.right")
-                                    .foregroundStyle(session.isLive
-                                        ? LSColor.accent : PocketColor.textTertiary)
+                                LSSessionMark(isLive: session.isLive, size: 22)
                                     .accessibilityHidden(true)
                                 Text(session.title.isEmpty ? "Untitled session" : session.title)
                                     .font(.pocket(.body))

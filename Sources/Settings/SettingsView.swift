@@ -17,7 +17,7 @@ struct SettingsView: View {
             VoiceSettings()
                 .tabItem { Label("Voice", systemImage: "waveform") }
             LiveShortlySettings()
-                .tabItem { Label("LiveShortly", systemImage: "dot.radiowaves.left.and.right") }
+                .tabItem { Label { Text("LiveShortly") } icon: { Image.lsLogo } }
             AboutSettings()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }

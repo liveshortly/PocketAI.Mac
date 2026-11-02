@@ -275,10 +275,7 @@ struct AllSessionsView: View {
                             app.selection = .session(session.id)
                         } label: {
                             HStack(spacing: PocketSpacing.s12) {
-                                Image(systemName: "dot.radiowaves.left.and.right")
-                                    .foregroundStyle(
-                                        session.isLive
-                                            ? LSColor.accent : PocketColor.textTertiary)
+                                LSSessionMark(isLive: session.isLive, size: 22)
                                     .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(session.title.isEmpty
