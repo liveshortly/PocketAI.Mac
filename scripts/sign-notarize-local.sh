@@ -60,4 +60,6 @@ DMG="$OUT/PocketAI-$VERSION-$BUILD.dmg"
 hdiutil create -quiet -volname "PocketAI" -srcfolder "$APP" -ov -format UDZO "$DMG"
 codesign --force --timestamp --sign "$ID" "$DMG"
 rm -f "$OUT/PocketAI.zip"
-echo "DONE -> $DMG (notarized + stapled, shareable)"
+# $OUT is wiped each run; keep every shipped DMG for testers.
+mkdir -p build/releases && cp "$DMG" build/releases/
+echo "DONE -> $(pwd)/build/releases/$(basename "$DMG") (notarized + stapled, shareable)"
