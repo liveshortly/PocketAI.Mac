@@ -2,14 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.network.server</key>
-	<true/>
-	<key>com.apple.security.network.client</key>
-	<true/>
-	<key>com.apple.security.files.user-selected.read-only</key>
-	<true/>
+	<!-- MAC-19 / D132: no App Sandbox. The app ships Developer ID +
+	     notarized only, and Tools > LiveShortly runs the user's `live`
+	     daemon, which needs ~/.liveshortly, tmux and the agents. Only
+	     hardened-runtime keys remain. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
 	<!-- MLX compiles Metal shaders at runtime (mlx/backend/metal/jit_kernels).

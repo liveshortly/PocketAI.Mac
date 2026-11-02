@@ -200,6 +200,12 @@ public final class AppModel {
 
     public init() {
         let args = ProcessInfo.processInfo.arguments
+        // MAC-19: pull a formerly sandboxed install's data out of its
+        // container before anything reads defaults or opens the store. Not
+        // under XCTest: the test host shares the app's bundle id.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            migrateFromSandboxIfNeeded()
+        }
         if args.contains("-PocketResetOnboarding") {
             hasOnboarded = false
         } else if args.contains("-PocketSkipOnboarding") {

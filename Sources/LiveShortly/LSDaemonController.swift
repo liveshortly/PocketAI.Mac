@@ -144,8 +144,10 @@ final class LSDaemonController {
         p.standardError = pipe
         p.standardInput = FileHandle.nullDevice
         pipe.fileHandleForReading.readabilityHandler = { handle in
-            let text = String(decoding: handle.availableData, as: UTF8.self)
-            guard !text.isEmpty else { return }
+            let data = handle.availableData
+            // Empty = EOF; without clearing, the handler spins on it forever.
+            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
+            let text = String(decoding: data, as: UTF8.self)
             Task { @MainActor in LSDaemonController.shared.append(text) }
         }
         p.terminationHandler = { proc in
