@@ -8,3 +8,17 @@ build/
 build-uitest/
 DerivedData/
 *.xcresult
+
+# Never commit build artifacts
+*.apk
+*.aab
+*.ipa
+*.dmg
+*.xcarchive
+*.xcresult
+*.gguf
+build/
+dist/
+DerivedData/
+.build/
+target/
