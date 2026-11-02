@@ -59,6 +59,14 @@ BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info
 DMG="$OUT/PocketAI-$VERSION-$BUILD.dmg"
 hdiutil create -quiet -volname "PocketAI" -srcfolder "$APP" -ov -format UDZO "$DMG"
 codesign --force --timestamp --sign "$ID" "$DMG"
+# The DMG is what testers download, so it gets its own ticket too; otherwise
+# Gatekeeper reports it as "Unnotarized Developer ID".
+xcrun notarytool submit "$DMG" --key "$KEY_PATH" --key-id "$KEY_ID" --issuer "$ISSUER" \
+  --wait --output-format json > "$OUT/notarize-dmg.json"
+[[ "$(python3 -c 'import json,sys;print(json.load(sys.stdin)["status"])' < "$OUT/notarize-dmg.json")" == "Accepted" ]] ||
+  { echo "error: DMG notarization failed" >&2; exit 1; }
+xcrun stapler staple "$DMG"
+spctl --assess --type open --context context:primary-signature "$DMG"
 rm -f "$OUT/PocketAI.zip"
 # $OUT is wiped each run; keep every shipped DMG for testers.
 mkdir -p build/releases && cp "$DMG" build/releases/
