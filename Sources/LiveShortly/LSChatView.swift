@@ -45,9 +45,15 @@ struct LSChatView: View {
                     endedFooter(session)
                 }
             } else {
-                ProgressView("Loading session…")
-                    .font(.pocket(.footnote))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Same loading treatment as LSSessionView / Mac ChatView (UI-28/33).
+                VStack(spacing: PocketSpacing.s8) {
+                    PocketMarkView(state: .loading, size: 64)
+                        .accessibilityHidden(true) // the adjacent text carries the status
+                    Text("Loading session…")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(PocketColor.bgCanvas)

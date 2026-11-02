@@ -303,7 +303,9 @@ struct AllSessionsView: View {
                         HUDRule()
                     }
                     if loading {
-                        ProgressView().padding(PocketSpacing.s16)
+                        PocketMarkView(state: .loading, size: 24)
+                            .accessibilityLabel("Loading sessions")
+                            .padding(PocketSpacing.s16)
                     } else if filtered.isEmpty {
                         Text(query.isEmpty
                             ? "No sessions yet" : "No sessions match “\(query)”")

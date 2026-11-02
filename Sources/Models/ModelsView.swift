@@ -116,8 +116,8 @@ struct ModelsView: View {
             // A Hugging Face search is a network round trip per format and was
             // tracked but never shown, so ⏎ looked like it did nothing.
             if searching {
-                ProgressView()
-                    .controlSize(.small)
+                PocketMarkView(state: .loading, size: 16)
+                    .accessibilityHidden(true) // the adjacent text carries the status
                 HUDLabel("searching…")
             }
             // A named picker even with labels hidden: an empty title left this
@@ -524,8 +524,8 @@ struct ModelCard: View {
     @ViewBuilder private var benchmarkLine: some View {
         if benchmarking {
             HStack(spacing: PocketSpacing.s8) {
-                ProgressView()
-                    .controlSize(.small)
+                PocketMarkView(state: .loading, size: 16)
+                    .accessibilityHidden(true) // the adjacent text carries the status
                 HUDLabel("benchmarking… generating tokens on this Mac")
             }
         } else if let benchmark {

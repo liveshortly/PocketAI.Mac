@@ -34,10 +34,15 @@ struct LSNewSessionView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: PocketSpacing.s16) {
                     if loading {
-                        ProgressView("Looking for your machines…")
-                            .font(.pocket(.footnote))
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 60)
+                        VStack(spacing: PocketSpacing.s8) {
+                            PocketMarkView(state: .loading, size: 40)
+                                .accessibilityHidden(true) // the adjacent text carries the status
+                            Text("Looking for your machines…")
+                                .font(.pocket(.footnote))
+                                .foregroundStyle(PocketColor.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
                     } else if hosts.isEmpty {
                         noMachines
                     } else {

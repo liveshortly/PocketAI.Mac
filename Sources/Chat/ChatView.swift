@@ -190,17 +190,14 @@ struct ChatView: View {
     }
 
     private func thinkingToggle(_ chat: ChatModel) -> some View {
-        Toggle(
-            "Thinking",
+        // UI-30: same on/off chip as the iPhone composer, so state reads at a
+        // glance (and VoiceOver says "Thinking, on, toggle button").
+        ThinkingToggleChip(
             isOn: Binding(
                 get: { chat.thinkingEnabled },
                 set: { chat.thinkingEnabled = $0 }
             )
         )
-        .toggleStyle(.checkbox)
-        .font(.pocket(.caption))
-        .accessibilityLabel(chat.thinkingEnabled ? "Thinking enabled" : "Thinking disabled")
-        .accessibilityHint("Toggles reasoning before answers for this chat")
         .help(chat.thinkingEnabled
             ? "Thinking on — the model reasons before answering"
             : "Thinking off — the model answers directly")

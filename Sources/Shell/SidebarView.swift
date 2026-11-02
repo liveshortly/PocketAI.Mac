@@ -402,6 +402,7 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: PocketSpacing.s8) {
+            LSSessionMark(isLive: session.isLive, size: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.title.isEmpty ? "Untitled session" : session.title)
                     .font(.pocket(.body))
