@@ -57,4 +57,4 @@ fi
 echo "==> staple + DMG"
 xcrun stapler staple "$APP"
 hdiutil create -volname "PocketAI" -srcfolder "$APP" -ov -format UDZO "$OUT/PocketAI.dmg"
-echo "DONE -> $OUT/PocketAI.dmg (notarized, ready to ship from getpocketai.app)"
+echo "DONE -> $OUT/PocketAI.dmg (notarized, ready to ship from pocket.liveshortly.com)"

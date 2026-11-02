@@ -34,7 +34,10 @@ struct ChatView: View {
                 transcript(chat)
                 composer(chat)
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Same loading treatment as LiveShortly (LSI-13): the animated
+                // PocketAI mark, centered — not a system spinner (UI-28).
+                PocketMarkView(state: .loading, size: 64)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(PocketColor.bgCanvas)
@@ -135,6 +138,11 @@ struct ChatView: View {
                         : "Generating")
             }
             Spacer(minLength: 0)
+            // UI-27 / MAC-17: per-chat thinking toggle, only for models that
+            // actually reason — never a dead control.
+            if chat.modelSupportsReasoning {
+                thinkingToggle(chat)
+            }
             modelPicker(chat)
             Menu {
                 Button("Rename…") { showRename = true }
@@ -179,6 +187,23 @@ struct ChatView: View {
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
         .background(PocketColor.bgSurface)
+    }
+
+    private func thinkingToggle(_ chat: ChatModel) -> some View {
+        Toggle(
+            "Thinking",
+            isOn: Binding(
+                get: { chat.thinkingEnabled },
+                set: { chat.thinkingEnabled = $0 }
+            )
+        )
+        .toggleStyle(.checkbox)
+        .font(.pocket(.caption))
+        .accessibilityLabel(chat.thinkingEnabled ? "Thinking enabled" : "Thinking disabled")
+        .accessibilityHint("Toggles reasoning before answers for this chat")
+        .help(chat.thinkingEnabled
+            ? "Thinking on — the model reasons before answering"
+            : "Thinking off — the model answers directly")
     }
 
     private func modelPicker(_ chat: ChatModel) -> some View {

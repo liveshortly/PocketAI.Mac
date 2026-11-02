@@ -11,7 +11,7 @@ struct ProjectDetailView: View {
     let projectId: String
 
     @State private var project: Project?
-    @State private var documents: [Document] = []
+    @State private var documents: [PocketKit.Document] = []
     @State private var chats: [ConversationSummary] = []
     @State private var instructions = ""
     @State private var instructionsDirty = false

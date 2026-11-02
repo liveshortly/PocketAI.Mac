@@ -184,7 +184,14 @@ struct StreamingRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Assistant, replying")
             if text.isEmpty && reasoning.isEmpty {
-                HUDLabel("thinking…")
+                // Model loading/prefilling: the animated PocketAI mark,
+                // centered, as on iPhone's MessageView (UI-28).
+                VStack(spacing: PocketSpacing.s8) {
+                    PocketMarkView(state: .loading, size: 40)
+                    HUDLabel("thinking…")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, PocketSpacing.s8)
             } else {
                 MarkdownText(text, caret: true)
             }
@@ -330,4 +337,14 @@ struct MarkdownText: View {
             return out
         }
     }
+}
+
+#Preview("Streaming — thinking") {
+    VStack(spacing: PocketSpacing.s24) {
+        StreamingRow(text: "", reasoning: "")
+        StreamingRow(text: "Here's the first part of the answer", reasoning: "")
+    }
+    .padding()
+    .frame(width: 480)
+    .background(PocketColor.bgCanvas)
 }

@@ -135,6 +135,11 @@ struct ImageGenView: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: HUD.radius, style: .continuous)
                             .stroke(PocketColor.lineHairline, lineWidth: HUD.hairline))
+            } else if isGenerating {
+                // Model loading / first step before a preview arrives: the
+                // animated PocketAI mark, as on iPhone (UI-28). The step bar
+                // below stays — it shows real numbers.
+                PocketMarkView(state: .loading, size: 48)
             } else {
                 VStack(spacing: PocketSpacing.s8) {
                     Image(systemName: "photo")

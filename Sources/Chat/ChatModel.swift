@@ -26,6 +26,31 @@ final class ChatModel {
     private var streamStart: Date?
     private var tokenCount = 0
 
+    /// UI-27 / MAC-17: per-chat thinking toggle, same UserDefaults key scheme
+    /// as the iPhone app — only "off" is stored, default is on.
+    // ponytail: per-chat UserDefaults key; orphaned on chat delete — move into
+    // the conversation record when the FFI grows a reasoning field.
+    private var thinkingOffKey: String { "app.getpocketai.thinkingOff.\(conversationId)" }
+
+    var thinkingEnabled = true {
+        didSet {
+            if thinkingEnabled {
+                UserDefaults.standard.removeObject(forKey: thinkingOffKey)
+            } else {
+                UserDefaults.standard.set(true, forKey: thinkingOffKey)
+            }
+        }
+    }
+
+    /// The toggle only exists for reasoning-capable models — never a dead
+    /// toggle on models that ignore it.
+    var modelSupportsReasoning: Bool {
+        guard let id = conversation?.modelId, !id.isEmpty else { return false }
+        return core.catalog(
+            filter: CatalogFilter(modality: nil, curatedOnly: false, installedOnly: false)
+        ).supportsReasoning(modelID: id)
+    }
+
     init(conversationId: String, core: CoreClient) {
         self.conversationId = conversationId
         self.core = core
@@ -35,6 +60,7 @@ final class ChatModel {
     func load() {
         conversation = core.conversation(id: conversationId)
         messages = core.messages(conversationId: conversationId)
+        thinkingEnabled = !UserDefaults.standard.bool(forKey: thinkingOffKey)
     }
 
     var title: String {
@@ -66,8 +92,15 @@ final class ChatModel {
 
         var parts: [ContentPart] = attachments.map { .imageRef(path: $0.path) }
         if !trimmed.isEmpty { parts.append(.text(text: trimmed)) }
+        // UI-27: explicit on/off only for reasoning-capable models; everything
+        // else keeps the model's default via .auto.
+        let reasoning: ReasoningMode = modelSupportsReasoning
+            ? (thinkingEnabled ? .on : .off)
+            : .auto
         run { [core, conversationId] in
-            core.sendMessage(conversationId: conversationId, input: UserInput(parts: parts))
+            core.sendMessage(
+                conversationId: conversationId, input: UserInput(parts: parts),
+                reasoning: reasoning)
         }
         return true
     }

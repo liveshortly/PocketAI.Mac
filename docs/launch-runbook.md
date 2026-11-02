@@ -20,7 +20,7 @@ ordered for fastest first dollar. Items marked (me) I automate once you unblock.
 7. Keygen: product + Pro policy already set (account 40fe7260…). Create a
    **Zapier** zap: Stripe "checkout completed" → Keygen "create license" →
    email the key + `pocketai://activate?k=` link to the buyer.
-8. (me) Put the DMG + the real Stripe link on getpocketai.app (WEB-01 built),
+8. (me) Put the DMG + the real Stripe link on pocket.liveshortly.com (WEB-01 built),
    replace `STRIPE_PAYMENT_LINK_PLACEHOLDER`. → **You can take money.**
 
 ## Phase 2 — iOS App Store (parallel)
