@@ -140,16 +140,14 @@ struct PairingApprovalSheet: View {
                 // Escape denies. Approving a device is never the safe
                 // default, so Allow gets no keyboard shortcut.
                 Button("Deny") {
-                    try? app.core.denyPairing(id: request.id)
-                    app.pendingPairingRequest = nil
+                    app.decidePairing(id: request.id, allow: false)
                     dismiss()
                 }
                 .buttonStyle(.hudDestructive)
                 .keyboardShortcut(.cancelAction)
                 .accessibilityLabel("Deny \(request.deviceName)")
                 Button("Allow") {
-                    try? app.core.approvePairing(id: request.id)
-                    app.pendingPairingRequest = nil
+                    app.decidePairing(id: request.id, allow: true)
                     dismiss()
                 }
                 .buttonStyle(.hudProminent)

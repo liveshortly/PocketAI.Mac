@@ -302,7 +302,7 @@ final class CriticalPathTests: XCTestCase {
 
         let peer = try core.savePeer(
             ApprovedPairing(
-                hostId: "Studio", certFingerprint: "aa:bb", addr: "192.168.1.9",
+                hostId: "Studio", hostName: "Studio", certFingerprint: "aa:bb", addr: "192.168.1.9",
                 port: 7480, deviceId: "peer-1", tokenKeychainRef: "ref-1"))
 
         XCTAssertEqual(core.peers().count, before + 1)

@@ -251,6 +251,9 @@ public final class AppModel {
             if let route { self.selection = route }
             self.focusShell()
         }
+        notifier.onPairingDecision = { [weak self] pairingId, allow in
+            self?.decidePairing(id: pairingId, allow: allow)
+        }
         pairingPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -264,7 +267,7 @@ public final class AppModel {
                     // This arrives unasked, so it gets a notification rather
                     // than stealing focus from whatever is being typed.
                     if self.shellWindow?.isKeyWindow != true {
-                        self.notifier.notify(deviceName: request.deviceName)
+                        self.notifier.notify(request: request)
                     }
                 }
                 self.checkDownloadNotifications()
@@ -353,6 +356,21 @@ public final class AppModel {
         } else {
             notifier.notifyLicenseExpiring(days: Int(msLeft / (24 * 60 * 60 * 1000)))
         }
+    }
+
+    /// The single Allow/Deny path, shared by the approval sheet and the
+    /// notification actions, so a request decided anywhere clears the pending
+    /// sheet and withdraws its notification. A request already expired or
+    /// decided elsewhere makes the core call throw; the sheet always ignored
+    /// that (the request simply no longer exists), so this does too.
+    public func decidePairing(id: String, allow: Bool) {
+        if allow {
+            try? core.approvePairing(id: id)
+        } else {
+            try? core.denyPairing(id: id)
+        }
+        if pendingPairingRequest?.id == id { pendingPairingRequest = nil }
+        notifier.withdrawPairingNotification(id: id)
     }
 
     // MARK: - Model
@@ -544,16 +562,47 @@ public final class AppModel {
 final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// Where a tapped notification should take you. nil = just focus the shell.
     var onTap: (@MainActor (AppModel.Destination?) -> Void)?
+    /// Allow/Deny pressed on a pairing notification: (pairing id, allow).
+    /// The notifier stays dumb — AppModel owns what a decision means.
+    var onPairingDecision: (@MainActor (String, Bool) -> Void)?
 
-    /// Read from the nonisolated delegate callback too, so it cannot be
+    /// Read from the nonisolated delegate callback too, so they cannot be
     /// main-actor isolated.
     private nonisolated static let routeKey = "pocket.route"
+    private nonisolated static let pairingIdKey = "pocket.pairingId"
+    private nonisolated static let pairingCategoryId = "PAIRING_REQUEST"
+    private nonisolated static let pairingAllowActionId = "PAIRING_ALLOW"
+    private nonisolated static let pairingDenyActionId = "PAIRING_DENY"
 
-    func notify(deviceName: String) {
+    func notify(request: PairingRequest) {
+        // Mirrors the approval sheet's caution: Deny first and plain, Allow
+        // never the easy press — approving needs the Mac unlocked.
+        let deny = UNNotificationAction(
+            identifier: Self.pairingDenyActionId, title: "Deny", options: [])
+        let allow = UNNotificationAction(
+            identifier: Self.pairingAllowActionId, title: "Allow",
+            options: [.authenticationRequired])
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(
+                identifier: Self.pairingCategoryId, actions: [deny, allow],
+                intentIdentifiers: [])
+        ])
         post(
             title: "Pair this device?",
-            body: "\(deviceName) wants to use this Mac's models.",
-            route: nil)
+            body: "\(request.deviceName) wants to use this Mac's models.",
+            route: nil,
+            // The pairing id as notification identifier, so a decision made
+            // anywhere can withdraw exactly this banner.
+            identifier: request.id,
+            categoryId: Self.pairingCategoryId,
+            userInfo: [Self.pairingIdKey: request.id])
+    }
+
+    /// Removes a pairing banner once its request is decided, from the sheet
+    /// or from the notification itself.
+    func withdrawPairingNotification(id: String) {
+        UNUserNotificationCenter.current()
+            .removeDeliveredNotifications(withIdentifiers: [id])
     }
 
     func notifyDownloadFinished(modelName: String) {
@@ -589,7 +638,12 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
             route: nil)
     }
 
-    private func post(title: String, body: String, route: AppModel.Destination?) {
+    private func post(
+        title: String, body: String, route: AppModel.Destination?,
+        identifier: String = UUID().uuidString,
+        categoryId: String? = nil,
+        userInfo: [String: Any] = [:]
+    ) {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         Task {
@@ -601,12 +655,14 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
             content.title = title
             content.body = body
             content.sound = .default
+            content.userInfo = userInfo
+            if let categoryId { content.categoryIdentifier = categoryId }
             if let route, let encoded = try? JSONEncoder().encode(route) {
                 content.userInfo[Self.routeKey] = encoded
             }
             try? await center.add(
                 UNNotificationRequest(
-                    identifier: UUID().uuidString, content: content, trigger: nil))
+                    identifier: identifier, content: content, trigger: nil))
         }
     }
 
@@ -627,12 +683,24 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let encoded = response.notification.request.content.userInfo[Self.routeKey] as? Data
+        let userInfo = response.notification.request.content.userInfo
+        let encoded = userInfo[Self.routeKey] as? Data
+        let pairingId = userInfo[Self.pairingIdKey] as? String
+        let action = response.actionIdentifier
         Task { @MainActor in
-            let route = encoded.flatMap {
-                try? JSONDecoder().decode(AppModel.Destination.self, from: $0)
+            switch action {
+            case Self.pairingAllowActionId:
+                if let pairingId { onPairingDecision?(pairingId, true) }
+            case Self.pairingDenyActionId:
+                if let pairingId { onPairingDecision?(pairingId, false) }
+            default:
+                // A plain tap (including on a pairing banner, whose pending
+                // request is still showing the approval sheet).
+                let route = encoded.flatMap {
+                    try? JSONDecoder().decode(AppModel.Destination.self, from: $0)
+                }
+                onTap?(route)
             }
-            onTap?(route)
             completionHandler()
         }
     }
