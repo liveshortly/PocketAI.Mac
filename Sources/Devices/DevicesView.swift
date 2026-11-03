@@ -65,13 +65,23 @@ struct DevicesView: View {
                 get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Forget", role: .destructive) {
-                if let device = confirmRevoke {
-                    try? app.core.revokeDevice(id: device.id)
-                    reload()
-                }
+            // NET-22: keeping synced chats is the first, default choice.
+            Button("Forget · Keep Synced Chats") { forget(removeChats: false) }
+            Button("Forget and Remove Chats from \(confirmRevoke?.name ?? "device")", role: .destructive) {
+                forget(removeChats: true)
             }
         }
+    }
+
+    /// Removing chats is local only: the phone keeps every one of them.
+    private func forget(removeChats: Bool) {
+        guard let device = confirmRevoke else { return }
+        if removeChats {
+            _ = try? app.core.removeSyncedChats(peerId: device.id)
+            NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
+        }
+        try? app.core.revokeDevice(id: device.id)
+        reload()
     }
 
     private var forgetTitle: String {
@@ -131,6 +141,7 @@ struct DevicesView: View {
                     .foregroundStyle(PocketColor.textTertiary)
             }
             Spacer(minLength: 0)
+            SyncChatsToggle(deviceId: device.id, deviceName: device.name, core: app.core)
             linkButton(device)
             Button("Forget") { confirmRevoke = device }
                 .buttonStyle(.hud)
@@ -297,3 +308,37 @@ struct QRCodeImage: View {
 
 extension PairedDevice: @retroactive Identifiable {}
 extension Peer: @retroactive Identifiable {}
+
+/// NET-22: Devices › phone "Sync chats". Off makes this Mac answer that
+/// phone's sync with 403 `sync_disabled` ("Sync is off on <Mac>" there).
+struct SyncChatsToggle: View {
+    let deviceId: String
+    let deviceName: String
+    let core: CoreClient
+    @State private var isOn = true
+
+    var body: some View {
+        Toggle("Sync chats", isOn: $isOn)
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.pocket(.caption))
+            .help("Sync chats between \(deviceName) and this Mac.")
+            .accessibilityLabel("Sync chats with \(deviceName)")
+            .onAppear { isOn = core.syncEnabledForDevice(deviceId: deviceId) }
+            .onChange(of: isOn) { _, on in
+                try? core.setSyncEnabledForDevice(deviceId: deviceId, enabled: on)
+            }
+    }
+}
+
+private struct SyncChatsTogglePreview: View {
+    var body: some View {
+        SyncChatsToggle(deviceId: "preview", deviceName: "Rohit's iPhone", core: PreviewCore())
+            .padding(PocketSpacing.s16)
+            .background(PocketColor.bgCanvas)
+    }
+}
+
+#Preview("Light") { SyncChatsTogglePreview().preferredColorScheme(.light) }
+#Preview("Dark") { SyncChatsTogglePreview().preferredColorScheme(.dark) }
+#Preview("AX3") { SyncChatsTogglePreview().environment(\.dynamicTypeSize, .accessibility3) }

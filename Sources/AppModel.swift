@@ -171,7 +171,6 @@ public final class AppModel {
     /// NET-22: newest chat sync (epoch ms) with any paired phone. The phone
     /// drives every sync; the Mac only watches it land.
     public var lastChatSyncAt: Int64?
-    @ObservationIgnored private var seededChatSync = false
     /// False until the first poll has recorded the devices that existed at
     /// launch; nothing is announced before that.
     @ObservationIgnored private var seededDevices = false
@@ -300,9 +299,14 @@ public final class AppModel {
                 self.checkDownloadNotifications()
                 self.checkDeviceNotifications()
                 self.checkLicenseNotification()
-                self.checkChatSync()
             }
         }
+        // NET-22: the core says when a phone's sync lands, so the sidebar
+        // reloads exactly then instead of on a poll.
+        refreshLastChatSync()
+        core.subscribe(SyncEventSink { [weak self] applied in
+            Task { @MainActor in self?.chatSyncLanded(applied: applied) }
+        })
         // MAC-18: start at launch with the saved Access (no debug gate), so a
         // paired phone works after a relaunch or reboot with no clicks here.
         // The debug args still force a level for UI tests, unsaved.
@@ -346,29 +350,31 @@ public final class AppModel {
         lastDownloadStates = next
     }
 
-    /// A phone that finishes pairing, or a device revoked from elsewhere.
-    /// The first poll only seeds the baseline, so launching with devices
-    /// already paired does not announce all of them.
-    /// NET-22: a phone sync stamps `last_synced` at its hello; its pushed
-    /// ops land right after, so the sidebar reloads now and once more 2 s on.
-    /// ponytail: polled from the 1 s loop; a core "ops applied" callback
-    /// would make this exact.
-    private func checkChatSync() {
-        let latest = core.devices()
+    /// NET-22: newest phone sync, from the core (also seeds it at launch).
+    private func refreshLastChatSync() {
+        lastChatSyncAt = core.devices()
             .filter { $0.revokedAt == nil }
             .compactMap { core.syncStatus(peerId: $0.id).lastSyncedAt }
             .max()
-        defer { seededChatSync = true }
-        guard latest != lastChatSyncAt else { return }
-        lastChatSyncAt = latest
-        guard seededChatSync else { return }
-        NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
-        Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+    }
+
+    /// A phone sync step landed (hello, or a push that applied `applied` ops).
+    private func chatSyncLanded(applied: UInt32) {
+        refreshLastChatSync()
+        if applied > 0 {
             NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
         }
     }
 
+    /// Menu-bar "Sync now": a phone that is open and connected is waiting on
+    /// this Mac and syncs within a second; otherwise it catches up when opened.
+    public func syncChatsNow() {
+        core.syncNudge()
+    }
+
+    /// A phone that finishes pairing, or a device revoked from elsewhere.
+    /// The first poll only seeds the baseline, so launching with devices
+    /// already paired does not announce all of them.
     private func checkDeviceNotifications() {
         let devices = core.devices()
         let ids = Set(devices.map(\.id))
@@ -808,5 +814,21 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
             }
             completionHandler()
         }
+    }
+}
+
+/// NET-22: the core's `sync.applied` events, off the main thread.
+private final class SyncEventSink: EventSink, @unchecked Sendable {
+    private let onApplied: @Sendable (UInt32) -> Void
+
+    init(onApplied: @escaping @Sendable (UInt32) -> Void) {
+        self.onApplied = onApplied
+    }
+
+    func onEvent(event: Event) {
+        guard event.eventType == "sync.applied" else { return }
+        struct Payload: Decodable { let applied: UInt32 }
+        let applied = (try? JSONDecoder().decode(Payload.self, from: Data(event.dataJson.utf8)))?.applied ?? 0
+        onApplied(applied)
     }
 }
