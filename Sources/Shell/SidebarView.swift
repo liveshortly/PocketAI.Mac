@@ -91,16 +91,22 @@ struct SidebarView: View {
         ) { _ in reloadConversations() }
         .sheet(item: $renaming) { summary in
             RenameSheet(title: summary.title ?? "") { newTitle in
-                try? app.core.renameConversation(id: summary.id, title: newTitle)
+                // UI-137: failures used to vanish; the old title just stayed.
+                do { try app.core.renameConversation(id: summary.id, title: newTitle) } catch {
+                    app.toast("Couldn't rename the chat: \(error.localizedDescription)")
+                }
                 reloadConversations()
             }
         }
         .sheet(isPresented: $newProject) {
             NewProjectSheet { name, instructions in
-                if let project = try? app.core.createProject(
-                    name: name, instructions: instructions) {
+                do {
+                    let project = try app.core.createProject(
+                        name: name, instructions: instructions)
                     reloadProjects()
                     app.selection = .project(project.id)
+                } catch {
+                    app.toast("Couldn't create the project: \(error.localizedDescription)")
                 }
             }
         }

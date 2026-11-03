@@ -240,7 +240,7 @@ struct ChatView: View {
                 }
             }
             Divider()
-            Button("Model library…") { app.selection = .models }
+            Button("Browse models…") { app.selection = .models }
         } label: {
             HUDChip(text: modelName(chat), tint: PocketColor.accent)
         }

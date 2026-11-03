@@ -99,7 +99,7 @@ struct GeneralSettings: View {
             }
         }
         .confirmationDialog("Stop everything?", isPresented: $confirmStop) {
-            Button("Stop Everything", role: .destructive) { app.stopEverything() }
+            Button("Stop everything", role: .destructive) { app.stopEverything() }
         } message: {
             Text("Replies stop mid-sentence, paired devices lose this Mac until you set Access again in Server, and models must reload.")
         }

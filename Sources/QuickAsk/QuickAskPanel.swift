@@ -41,6 +41,20 @@ struct QuickAskPanel: View {
             .padding(PocketSpacing.s8)
             .hudPanel(PocketColor.bgCanvas)
 
+            if !isStreaming, reply.isEmpty, needsModel { // cheap checks first: needsModel reads the catalog
+                // UI-138: with no model the first ask failed with a raw core
+                // error. Same state as the chat window (UI-45).
+                HStack(spacing: PocketSpacing.s8) {
+                    Text("Get a model to start asking.")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textSecondary)
+                    Spacer()
+                    Button("Browse models") { app.reveal(.models) }
+                        .buttonStyle(.hudProminent)
+                }
+            } else if isStreaming, reply.isEmpty {
+                HUDLabel("thinking…")
+            }
             if !reply.isEmpty {
                 ScrollView {
                     MarkdownText(reply, caret: isStreaming)
@@ -114,12 +128,14 @@ struct QuickAskPanel: View {
         if let existing = conversationId {
             id = existing
         } else {
-            guard let created = try? app.core.createConversation(
-                NewConversation(
-                    title: String(text.prefix(48)), projectId: nil,
-                    modelId: app.currentModelId))
-            else {
-                errorText = "Couldn't start a conversation."
+            let created: Conversation
+            do {
+                created = try app.core.createConversation(
+                    NewConversation(
+                        title: String(text.prefix(48)), projectId: nil,
+                        modelId: app.currentModelId))
+            } catch {
+                errorText = "Couldn't start a chat: \(error.localizedDescription)"
                 return
             }
             id = created.id
@@ -147,10 +163,17 @@ struct QuickAskPanel: View {
                 }
             } catch is CancellationError {
             } catch {
-                errorText = error.localizedDescription
+                errorText = "Couldn't answer: \(error.localizedDescription)"
             }
             isStreaming = false
+            if !Task.isCancelled, errorText == nil {
+                AccessibilityNotification.Announcement("Reply finished").post()
+            }
         }
+    }
+
+    private var needsModel: Bool {
+        app.currentModelId != AppModel.appleIntelligenceId && app.installedChatModels().isEmpty
     }
 
     private func stop() {

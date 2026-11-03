@@ -45,7 +45,9 @@ struct ProjectDetailView: View {
         }
         .sheet(isPresented: $showRename) {
             RenameSheet(title: project?.name ?? "") { newName in
-                try? app.core.renameProject(id: projectId, name: newName)
+                do { try app.core.renameProject(id: projectId, name: newName) } catch {
+                    app.toast("Couldn't rename the project: \(error.localizedDescription)")
+                }
                 reload()
             }
         }

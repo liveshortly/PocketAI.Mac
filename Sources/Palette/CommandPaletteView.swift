@@ -147,12 +147,12 @@ struct CommandPaletteView: View {
                 subtitle: "⌘N", symbol: "plus.circle", live: false
             ) { app.newChat() },
             Item(
-                id: "action-models", kind: .action, title: "Model library",
+                id: "action-models", kind: .action, title: "Models",
                 subtitle: "Download and switch models", symbol: "cpu", live: false
             ) { app.selection = .models },
             Item(
                 id: "action-images", kind: .action, title: "Generate an image",
-                subtitle: "On-device SDXL Turbo", symbol: "photo", live: false
+                subtitle: "Runs on this Mac", symbol: "photo", live: false
             ) { app.selection = .images },
             Item(
                 id: "action-devices", kind: .action, title: "Devices",

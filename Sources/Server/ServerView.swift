@@ -176,7 +176,7 @@ struct ServerView: View {
                 }
                 .buttonStyle(.hud)
                 .confirmationDialog("Replace the API key?", isPresented: $confirmRegenerate) {
-                    Button("Replace Key") { generateKey() }
+                    Button("Replace key") { generateKey() }
                 } message: {
                     Text("Apps using the current key stop working until you give them the new one. The new key is copied to the clipboard.")
                 }

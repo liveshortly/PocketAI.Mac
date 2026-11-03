@@ -95,7 +95,11 @@ struct DevicesView: View {
             titleVisibility: .visible
         ) {
             Button("Forget", role: .destructive) {
-                if let peer = confirmForgetPeer { try? app.core.revokePeer(id: peer.id) }
+                if let peer = confirmForgetPeer {
+                    do { try app.core.revokePeer(id: peer.id) } catch {
+                        app.toast("Couldn't forget \(peer.name): \(error.localizedDescription)")
+                    }
+                }
                 reload()
             }
         } message: {
@@ -110,7 +114,9 @@ struct DevicesView: View {
             _ = try? app.core.removeSyncedChats(peerId: device.id)
             NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
         }
-        try? app.core.revokeDevice(id: device.id)
+        do { try app.core.revokeDevice(id: device.id) } catch {
+            app.toast("Couldn't forget \(device.name): \(error.localizedDescription)")
+        }
         reload()
     }
 
@@ -136,10 +142,10 @@ struct DevicesView: View {
                 QRCodeImage(text: qr)
                     .frame(width: 180, height: 180)
                     .accessibilityLabel(
-                        "Pairing QR code. Scan it with PocketAI on your iPhone, "
-                        + "under Settings, Devices, Pair with a Mac.")
+                        "Pairing QR code. Scan it with PocketAI on your iPhone: "
+                        + "Mac tab, Scan pairing code.")
                 VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                    Text("PocketAI on iPhone → Settings → Devices → Pair with a Mac.")
+                    Text("On your iPhone, open PocketAI › Mac tab › Scan pairing code.")
                         .font(.pocket(.footnote))
                         .foregroundStyle(PocketColor.textSecondary)
                     Text("This code expires in a few minutes and works once.")
@@ -187,7 +193,9 @@ struct DevicesView: View {
     private func linkButton(_ device: PairedDevice) -> some View {
         let off = device.linkState == .disconnectedByHost
         return Button(off ? "Allow" : "Disconnect") {
-            try? app.core.setDeviceDisconnected(id: device.id, disconnected: !off)
+            do { try app.core.setDeviceDisconnected(id: device.id, disconnected: !off) } catch {
+                app.toast("Couldn't \(off ? "allow" : "disconnect") \(device.name): \(error.localizedDescription)")
+            }
             reload()
         }
         .buttonStyle(.hud)

@@ -99,9 +99,13 @@ struct AppCommands: Commands {
                 .disabled(!app.selection.isChat)
             Divider()
             // Menu items fire whichever window is focused, Settings included.
-            Button("Model Library") { app.reveal(.models) }
+            // UI-139: named as the sidebar names them, and every sidebar
+            // tool is reachable (Images and Privacy were missing).
+            Button("Models") { app.reveal(.models) }
+            Button("Images") { app.reveal(.images) }
             Button("Devices") { app.reveal(.devices) }
             Button("Local Server") { app.reveal(.server) }
+            Button("Privacy") { app.reveal(.privacy) }
         }
     }
 }

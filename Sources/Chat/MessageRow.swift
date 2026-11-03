@@ -251,6 +251,7 @@ struct StreamingRow: View {
                 // centered, as on iPhone's MessageView (UI-28).
                 VStack(spacing: PocketSpacing.s8) {
                     PocketMarkView(state: .loading, size: 40)
+                        .accessibilityHidden(true) // the label below carries the status
                     HUDLabel("thinking…")
                 }
                 .frame(maxWidth: .infinity)

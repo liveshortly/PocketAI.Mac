@@ -51,7 +51,7 @@ struct NewChatMenu: View {
                 }
             }
             Divider()
-            Button("Model library…") { app.selection = .models }
+            Button("Browse models…") { app.selection = .models }
         } label: {
             Label("New chat", systemImage: "plus.circle")
                 .foregroundStyle(PocketColor.accent)
