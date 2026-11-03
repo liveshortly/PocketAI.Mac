@@ -96,11 +96,10 @@ struct EmptyDetail: View {
         VStack(spacing: PocketSpacing.s12) {
             PocketMarkView(state: .idle, size: 44)
                 .accessibilityHidden(true)
-            Text("Nothing open")
+            Text("No chat open")
                 .font(.pocket(.title))
-            Text(
-                "Press ⌘N to start a chat, or ⌘K to jump to anything — a chat, a project, a live session."
-            )
+                .accessibilityAddTraits(.isHeader)
+            Text("Press ⌘N to start a chat, or ⌘K to find a chat, project or session.")
             .font(.pocket(.footnote))
             .foregroundStyle(PocketColor.textSecondary)
             .multilineTextAlignment(.center)

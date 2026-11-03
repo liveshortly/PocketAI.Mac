@@ -554,6 +554,7 @@ struct ChatView: View {
 /// Opening state of a fresh chat: says what this app is for rather than
 /// leaving a blank pane.
 struct ChatEmptyState: View {
+    @Environment(AppModel.self) private var app
     let onSuggestion: (String) -> Void
 
     private let suggestions = [
@@ -566,27 +567,50 @@ struct ChatEmptyState: View {
         VStack(spacing: PocketSpacing.s12) {
             PocketMarkView(state: .idle, size: 40)
                 .accessibilityHidden(true)
-            Text("Ask anything — it runs on this Mac")
-                .font(.pocket(.title))
-            Text("No account, no cloud. Your chats never leave this machine.")
-                .font(.pocket(.footnote))
-                .foregroundStyle(PocketColor.textSecondary)
-            HStack(spacing: PocketSpacing.s8) {
-                ForEach(suggestions, id: \.self) { suggestion in
-                    Button {
-                        onSuggestion(suggestion)
-                    } label: {
-                        Text(suggestion)
-                            .font(.pocket(.caption))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .hudPanel()
-                    }
-                    .buttonStyle(.plain)
-                }
+            if needsModel {
+                // Skipped onboarding: say so up front instead of letting the
+                // first send fail with "no model installed".
+                Text("Get a model to start chatting")
+                    .font(.pocket(.title))
+                    .accessibilityAddTraits(.isHeader)
+                Text("Models run on this Mac. One download and you can chat offline.")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textSecondary)
+                Button("Browse models") { app.reveal(.models) }
+                    .buttonStyle(.hudProminent)
+                    .padding(.top, PocketSpacing.s4)
+            } else {
+                Text("Ask anything — it runs on this Mac")
+                    .font(.pocket(.title))
+                    .accessibilityAddTraits(.isHeader)
+                Text("No account, no cloud. Your chats never leave this machine.")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textSecondary)
+                suggestionChips
             }
-            .padding(.top, PocketSpacing.s4)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var needsModel: Bool {
+        app.currentModelId != AppModel.appleIntelligenceId && app.installedChatModels().isEmpty
+    }
+
+    private var suggestionChips: some View {
+        HStack(spacing: PocketSpacing.s8) {
+            ForEach(suggestions, id: \.self) { suggestion in
+                Button {
+                    onSuggestion(suggestion)
+                } label: {
+                    Text(suggestion)
+                        .font(.pocket(.caption))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .hudPanel()
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, PocketSpacing.s4)
     }
 }

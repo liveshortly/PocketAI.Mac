@@ -10,7 +10,7 @@ struct OnboardingView: View {
     @State private var downloadId: String?
     @State private var pollTask: Task<Void, Never>?
     @State private var entries: [CatalogEntry] = []
-    /// Why the download didn't start. Discarding this with `try?` left "Get"
+    /// Why the download didn't start. Discarding this with `try?` left "Download"
     /// looking broken on the very first screen of the app.
     @State private var downloadError: String?
 
@@ -46,32 +46,51 @@ struct OnboardingView: View {
         VStack(spacing: PocketSpacing.s12) {
             Text("PocketAI")
                 .font(.pocket(.display))
+                .accessibilityAddTraits(.isHeader)
             Text("Private AI that runs on this Mac.")
                 .font(.pocket(.title))
                 .foregroundStyle(PocketColor.textSecondary)
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                bullet("No account, no cloud — your chats never leave this machine.")
-                bullet("Models run on Apple silicon through MLX.")
-                bullet("Pair your iPhone later and it can use this Mac's models.")
+                bullet("Runs on this Mac, even offline. No account needed.")
+                bullet("Your chats stay here. Nothing is sent to a cloud.")
+                bullet("Pair your iPhone later to use this Mac's models from it.")
             }
             .frame(maxWidth: 440, alignment: .leading)
             .padding(.top, PocketSpacing.s8)
-            Button("Continue") { step = 1 }
+            Button("Get started") { step = 1 }
                 .buttonStyle(.hudProminent)
+                .keyboardShortcut(.defaultAction)
                 .padding(.top, PocketSpacing.s8)
         }
     }
 
     private var pickModel: some View {
         VStack(spacing: PocketSpacing.s12) {
-            Text("Choose a model")
+            Text("Pick your first model")
                 .font(.pocket(.title))
-            Text("One download and the app works offline for good.")
+                .accessibilityAddTraits(.isHeader)
+            Text("Download one and PocketAI works offline from then on.")
                 .font(.pocket(.footnote))
                 .foregroundStyle(PocketColor.textSecondary)
             VStack(spacing: PocketSpacing.s8) {
+                if app.appleIntelligenceAvailable {
+                    appleIntelligenceRow
+                }
                 ForEach(recommended, id: \.manifest.id) { entry in
                     onboardingModelRow(entry)
+                }
+                if recommended.isEmpty {
+                    // An empty list read as a broken screen with only "Skip".
+                    Text("No models to suggest right now. You can pick one later in Models.")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if downloadId != nil {
+                    Text("The download keeps going if you skip ahead.")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let downloadError {
                     Text(downloadError)
@@ -83,11 +102,18 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: 520)
             HStack(spacing: PocketSpacing.s8) {
+                Button("Back") { step = 0 }
+                    .buttonStyle(.hud)
+                    .keyboardShortcut(.cancelAction)
                 Button("Skip for now") { finish() }
                     .buttonStyle(.hud)
                 if installedAny {
-                    Button("Continue") { step = 2 }
-                        .buttonStyle(.hudProminent)
+                    Button("Continue") {
+                        useInstalledModelIfNeeded()
+                        step = 2
+                    }
+                    .buttonStyle(.hudProminent)
+                    .keyboardShortcut(.defaultAction)
                 }
             }
             .padding(.top, PocketSpacing.s4)
@@ -98,6 +124,7 @@ struct OnboardingView: View {
         VStack(spacing: PocketSpacing.s12) {
             Text("You're set")
                 .font(.pocket(.title))
+                .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
                 bullet("⌘N starts a chat, ⌘K jumps to anything.")
                 bullet("The menu bar icon asks from any app.")
@@ -125,6 +152,7 @@ struct OnboardingView: View {
 
             Button("Start using PocketAI") { finish() }
                 .buttonStyle(.hudProminent)
+                .keyboardShortcut(.defaultAction)
                 .padding(.top, PocketSpacing.s4)
         }
     }
@@ -134,10 +162,13 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ModelNaming.short(entry.manifest.displayName))
                     .font(.pocket(.headline))
+                // The fit reason is why to pick this one; two lines, secondary
+                // contrast, rather than truncated tertiary text.
                 Text("\(hudBytes(entry.fit.diskBytes)) · \(entry.fit.reason)")
                     .font(.pocket(.caption))
-                    .foregroundStyle(PocketColor.textTertiary)
-                    .lineLimit(1)
+                    .foregroundStyle(PocketColor.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             switch entry.state {
@@ -151,12 +182,13 @@ struct OnboardingView: View {
                     )
                     .progressViewStyle(.linear)
                     .frame(width: 110)
-                    .accessibilityLabel("Download progress")
-                    .accessibilityValue(hudBytes(entry.bytesDone))
-                    HUDLabel(hudBytes(entry.bytesDone))
+                    .accessibilityLabel(
+                        "Downloading \(ModelNaming.short(entry.manifest.displayName))")
+                    .accessibilityValue(progressText(entry))
+                    HUDLabel(progressText(entry))
                 }
             default:
-                Button("Get") {
+                Button("Download") {
                     do {
                         try app.core.startDownload(modelId: entry.manifest.id)
                         downloadError = nil
@@ -169,11 +201,50 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.hudProminent)
                 .accessibilityLabel(
-                    "Download \(ModelNaming.short(entry.manifest.displayName))")
+                    "Download \(ModelNaming.short(entry.manifest.displayName)), \(hudBytes(entry.fit.diskBytes))")
             }
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+    }
+
+    /// Spec 7.1 step 3: Apple's on-device model needs no download, so it is
+    /// the fastest way to a first answer when the Mac has it.
+    private var appleIntelligenceRow: some View {
+        HStack(spacing: PocketSpacing.s12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Apple Intelligence")
+                    .font(.pocket(.headline))
+                Text("Start now with Apple's on-device model. No download.")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("Use") {
+                app.currentModelId = AppModel.appleIntelligenceId
+                step = 2
+            }
+            .buttonStyle(.hud)
+            .accessibilityLabel("Use Apple Intelligence, no download")
+        }
+        .padding(PocketSpacing.s12)
+        .hudPanel()
+    }
+
+    private func progressText(_ entry: CatalogEntry) -> String {
+        "\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))"
+    }
+
+    /// "Continue" with a model already on disk (a reinstall) must not open a
+    /// chat bound to the default model id when that one isn't installed.
+    private func useInstalledModelIfNeeded() {
+        let installed = app.installedChatModels()
+        guard app.currentModelId != AppModel.appleIntelligenceId,
+              !installed.contains(where: { $0.manifest.id == app.currentModelId }),
+              let first = installed.first
+        else { return }
+        app.currentModelId = first.manifest.id
     }
 
     private func bullet(_ text: String) -> some View {
@@ -218,7 +289,7 @@ struct OnboardingView: View {
                     step = 2
                     return
                 }
-                // A download that died leaves the row offering "Get" again;
+                // A download that died leaves the row offering "Download" again;
                 // without this the screen polls forever saying nothing.
                 if case .failed(let reason) = state {
                     downloadError = "That download failed: \(reason)"
@@ -229,16 +300,21 @@ struct OnboardingView: View {
         }
     }
 
+    /// These are sent as-is, so each must stand on its own — a "paste next"
+    /// prompt got a reply to nothing.
     private static let starters = [
-        "Explain what this app can do, briefly.",
-        "Summarise the text I paste next.",
-        "Draft a commit message from a diff I'll paste.",
+        "Explain how a hash map works, in two short paragraphs.",
+        "Write a polite note declining a meeting.",
+        "Give me five names for a weekend side project.",
     ]
 
     /// Finishing with a starter opens a chat already holding the question, so
     /// the first screen after onboarding is a conversation, not an empty box.
     private func finish(starter: String? = nil) {
         pollTask?.cancel()
+        // Skipping mid-download: the chat should use the model being fetched,
+        // not a default that may never be installed.
+        if let downloadId { app.currentModelId = downloadId }
         app.hasOnboarded = true
         if let id = app.newChat(), let starter {
             app.chatModel(for: id).send(starter)
