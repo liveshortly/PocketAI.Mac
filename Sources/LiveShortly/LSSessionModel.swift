@@ -20,11 +20,15 @@ final class LSSessionModel {
     private(set) var agentBusy = false
     private(set) var watchers = 0
     private(set) var errorText: String?
+    /// The stream dropped and the loop is bringing it back on its own.
+    private(set) var reconnecting = false
     private(set) var loaded = false
     /// Viewers currently typing: name → when their indicator expires.
     private(set) var typers: [String: Date] = [:]
 
-    private var streamTask: Task<Void, Never>?
+    private var loop: LSStreamLoop?
+    /// `errorText` currently holds the stream's own "can't reach" message.
+    private var streamLost = false
     private var runOpen = false
     private var lastFolded: LSEvent?
     private var echoes: [String: String] = [:]
@@ -113,33 +117,58 @@ final class LSSessionModel {
         }
     }
 
+    /// Streams through the shared Core reconnect loop (LSI-18). It used to
+    /// connect once with no `Last-Event-ID` and park "Stream dropped" on the
+    /// first proxy cut, Wi-Fi blip or sleep — and never come back.
     private func startStream() {
-        streamTask?.cancel()
-        streamTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                for try await frame in await self.client.stream(self.sessionID) {
-                    guard !Task.isCancelled else { return }
-                    switch frame {
-                    case .event(let event):
-                        self.ingest(event)
-                    case .watchers(let count):
-                        self.watchers = count
-                    case .typing(let who, let until):
-                        if who != self.myHandle { self.typers[who] = until }
-                    case .sessionEnded:
-                        self.isLive = false
-                    case .connected(let status):
-                        self.isLive = status == "live"
-                    case .other:
-                        break
-                    }
-                }
-            } catch is CancellationError {
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.errorText = "Stream dropped — reopen the session to catch up."
-            }
+        loop?.stop()
+        let id = sessionID
+        let client = client
+        let loop = LSStreamLoop(
+            connect: { last in await client.stream(id, lastEventID: last) },
+            // Skip local comment echoes — their seq is provisional.
+            lastEventID: { [weak self] in
+                self?.events.last(where: { !$0.id.hasPrefix("local-") }).map { String($0.seq) }
+            },
+            refetch: { [weak self] in
+                let d = try await client.session(id)
+                guard let self else { return false }
+                self.detail = d
+                self.isLive = d.isLive
+                // ponytail: per-event dedupe is O(n) each; fine at every-6th-retry rate.
+                for e in d.events { self.ingest(e) }
+                return d.isLive
+            },
+            onFrame: { [weak self] in self?.apply($0) },
+            onStatus: { [weak self] in self?.apply($0) })
+        self.loop = loop
+        loop.start(known: events.map(\.id))
+    }
+
+    private func apply(_ frame: LSStreamFrame) {
+        switch frame {
+        case .event(let event): ingest(event)
+        case .watchers(let count): watchers = count
+        case .typing(let who, let until):
+            if who != myHandle { typers[who] = until }
+        case .sessionEnded: isLive = false
+        case .connected(let status): isLive = status == "live"
+        case .other: break
+        }
+    }
+
+    private func apply(_ status: LSStreamLoop.Status) {
+        switch status {
+        case .connected:
+            reconnecting = false
+            if streamLost { errorText = nil }
+            streamLost = false
+        case .reconnecting:
+            reconnecting = true // quiet status, not a red error
+        case .unreachable(let message):
+            reconnecting = false
+            streamLost = true
+            errorText = "Stream dropped — \(message)."
         }
     }
 
@@ -169,8 +198,9 @@ final class LSSessionModel {
     }
 
     func stop() {
-        streamTask?.cancel()
-        streamTask = nil
+        loop?.stop()
+        loop = nil
+        reconnecting = false
     }
 
     // MARK: - Actions

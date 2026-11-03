@@ -175,6 +175,12 @@ struct LSChatView: View {
             } else {
                 HUDChip(text: "ENDED")
             }
+            if session.reconnecting {
+                // Status, not failure: the stream comes back on its own (LSI-18).
+                Text("Reconnecting…")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
             if session.watchers > 1 {
                 HUDLabel("\(session.watchers) watching")
             }
