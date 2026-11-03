@@ -17,7 +17,6 @@ struct ChatView: View {
     @State private var pinnedToBottom = true
     @State private var scrollActivity = ScrollActivity()
     @State private var attachmentRefusal: String?
-    @State private var chatExportError: String?
     @AppStorage("app.getpocketai.mac.autoSpeak") private var autoSpeak = false
     /// Bumped to ask the composer for the caret. `@FocusState` was never bound
     /// to anything here — the composer is an `NSTextView` — so it latched true
@@ -81,6 +80,16 @@ struct ChatView: View {
             case .regenerate:
                 chat.regenerate()
                 app.clearCommand()
+            case .copyLastReply:
+                app.clearCommand()
+                guard let reply = chat.messages.last(where: { !$0.isUser })?.plainText,
+                      !reply.isEmpty
+                else {
+                    app.toast("No reply to copy yet")
+                    return
+                }
+                copyToPasteboard(reply)
+                app.toast("Copied the last reply")
             default:
                 break
             }
@@ -262,9 +271,16 @@ struct ChatView: View {
                         .padding(.top, 80)
                     }
                     ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, message in
+                        let isLast = index == chat.messages.count - 1 && !chat.isStreaming
                         MessageRow(
                             message: message,
-                            grouped: isGrouped(chat.messages, index))
+                            grouped: isGrouped(chat.messages, index),
+                            isLast: isLast,
+                            onRetry: isLast ? { chat.regenerate() } : nil,
+                            onEdit: { text in
+                                draft = text
+                                focusRequest += 1
+                            })
                         .id(message.id)
                     }
                     if chat.isStreaming {
@@ -274,7 +290,10 @@ struct ChatView: View {
                         .id("streaming")
                     }
                     if let error = chat.errorText {
-                        ChatErrorRow(message: error) { chat.regenerate() }
+                        ChatErrorRow(
+                            message: error,
+                            retry: { chat.regenerate() },
+                            openModels: { app.reveal(.models) })
                     }
                     // Whether this sentinel is on screen tells us if the
                     // reader is at the tail — `onScrollGeometryChange` would
@@ -352,11 +371,6 @@ struct ChatView: View {
         VStack(spacing: 0) {
             HUDRule()
             VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                if let chatExportError {
-                    Text(chatExportError)
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.statusBad)
-                }
                 if let attachmentRefusal {
                     HStack(spacing: PocketSpacing.s8) {
                         Image(systemName: "photo.badge.exclamationmark")
@@ -401,23 +415,29 @@ struct ChatView: View {
                     ComposerTextView(
                         text: $draft,
                         focusRequest: focusRequest,
-                        onSubmit: { submit(chat) }
+                        onSubmit: { submit(chat) },
+                        onEscape: { escape(chat) },
+                        onRecall: { chat.messages.last(where: \.isUser)?.plainText }
                     )
                     .frame(minHeight: 22)
                     .padding(.horizontal, PocketSpacing.s12)
                     .padding(.vertical, PocketSpacing.s8)
                     .hudPanel(PocketColor.bgCanvas)
                     if chat.isStreaming {
+                        // Same 26 pt circle as Send, so the swap reads as one
+                        // control changing state rather than a bare glyph.
                         Button {
                             chat.stop()
                         } label: {
                             Image(systemName: "stop.fill")
+                                .font(.pocket(.caption))
+                                .foregroundStyle(PocketColor.statusBad)
                                 .frame(width: 26, height: 26)
+                                .background(Circle().fill(PocketColor.statusBad.opacity(0.14)))
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(PocketColor.statusBad)
                         .accessibilityLabel("Stop generating")
-                        .help("Stop generating (⌘.)")
+                        .help("Stop generating (esc)")
                     } else {
                         Button {
                             submit(chat)
@@ -429,8 +449,10 @@ struct ChatView: View {
                                 .background(Circle().fill(PocketColor.accent))
                         }
                         .buttonStyle(.plain)
-                        .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty
-                            && attachments.isEmpty)
+                        .disabled(!canSend)
+                        // Plain buttons don't dim when disabled; a live-looking
+                        // Send that does nothing reads as broken.
+                        .opacity(canSend ? 1 : 0.4)
                         .accessibilityLabel("Send message")
                         .help("Send (⏎)")
                     }
@@ -466,8 +488,12 @@ struct ChatView: View {
                     .help(dictation.isRecording ? "Stop dictation" : "Dictate")
                     if dictation.permissionDenied {
                         HUDLabel("mic access denied", tint: PocketColor.statusBad)
+                    } else if chat.isStreaming {
+                        HUDLabel("esc stop")
                     } else {
-                        HUDLabel("⏎ send · ⇧⏎ newline")
+                        HUDLabel(draft.isEmpty
+                            ? "⏎ send · ⇧⏎ newline · ↑ last message"
+                            : "⏎ send · ⇧⏎ newline")
                     }
                     Spacer(minLength: 0)
                     if let stats = chat.lastStats, !chat.isStreaming {
@@ -480,17 +506,39 @@ struct ChatView: View {
         .background(PocketColor.bgSurface)
     }
 
+    /// Newline-only drafts count as empty — `ChatModel.send` refuses them.
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
+    /// Esc stops this chat's reply, else ends dictation; otherwise AppKit's
+    /// own Esc handling runs.
+    private func escape(_ chat: ChatModel) -> Bool {
+        if chat.isStreaming {
+            chat.stop()
+            return true
+        }
+        if dictation.isRecording {
+            dictation.stop()
+            return true
+        }
+        return false
+    }
+
     private func submit(_ chat: ChatModel) {
         dictation.stop()
         let text = draft
         let files = attachments
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty || !files.isEmpty else { return }
+        guard canSend else { return }
         // Clear only once the turn is actually under way. Clearing first threw
         // away what was typed whenever `send` refused it — no model installed,
         // or a reply still arriving.
         guard chat.send(text, attachments: files) else { return }
         draft = ""
         attachments = []
+        // Sending while scrolled back left your own message off-screen and
+        // the reply arriving unseen; a send always returns to the tail.
+        pinnedToBottom = true
     }
 
     /// Images only make sense for a model that can read them; say so here
@@ -527,7 +575,9 @@ struct ChatView: View {
         do {
             try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            chatExportError = "Couldn't save the transcript: \(error.localizedDescription)"
+            // A toast like Archive/Delete failures; the old inline line
+            // under the composer never went away.
+            app.toast("Couldn't save the transcript: \(error.localizedDescription)")
         }
     }
 

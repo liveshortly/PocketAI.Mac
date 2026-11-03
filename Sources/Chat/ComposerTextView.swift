@@ -22,6 +22,12 @@ struct ComposerTextView: NSViewRepresentable {
     var focusRequest: Int = 0
     var onSubmit: () -> Void
     var onEdit: () -> Void = {}
+    /// Esc. Return true when it was used (stopped a reply, ended dictation);
+    /// false leaves AppKit's own Esc (word completion) alone.
+    var onEscape: () -> Bool = { false }
+    /// Up-arrow in an empty box: the text to recall (the last message sent),
+    /// the way a terminal or Slack does. Nil leaves the caret move alone.
+    var onRecall: () -> String? = { nil }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -104,6 +110,17 @@ struct ComposerTextView: NSViewRepresentable {
         func textView(
             _ textView: NSTextView, doCommandBy commandSelector: Selector
         ) -> Bool {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                return parent.onEscape()
+            }
+            if commandSelector == #selector(NSResponder.moveUp(_:)), textView.string.isEmpty {
+                guard let recalled = parent.onRecall(), !recalled.isEmpty else { return false }
+                textView.string = recalled
+                textView.setSelectedRange(NSRange(location: (recalled as NSString).length, length: 0))
+                parent.text = recalled
+                resize()
+                return true
+            }
             guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
                 return false
             }

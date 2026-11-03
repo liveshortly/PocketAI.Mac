@@ -92,6 +92,10 @@ struct AppCommands: Commands {
             Button("Regenerate Reply") { app.post(.regenerate) }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(app.isGenerating || !app.selection.isChat)
+            // ⌘C stays the text-selection copy; this takes the whole reply.
+            Button("Copy Last Reply") { app.post(.copyLastReply) }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(!app.selection.isChat)
             Divider()
             // Menu items fire whichever window is focused, Settings included.
             Button("Model Library") { app.reveal(.models) }

@@ -140,6 +140,7 @@ public final class AppModel {
         case focusComposer
         case stopGeneration
         case regenerate
+        case copyLastReply
         case openConversation(String)
         case newLiveSession
         /// MAC-18: Devices shows a pairing QR (posted by `pairDevice()`).

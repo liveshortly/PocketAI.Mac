@@ -10,10 +10,16 @@ struct MessageRow: View {
     /// Continues the previous turn by the same author, so the header is
     /// dropped — the same grouping the session transcript uses.
     var grouped = false
+    /// The newest turn: its actions stay visible instead of on hover.
+    var isLast = false
+    /// Re-runs the reply; offered on the last assistant turn only.
+    var onRetry: (() -> Void)?
+    /// Puts a user turn's text back into the composer.
+    var onEdit: ((String) -> Void)?
 
     var body: some View {
         if message.isUser {
-            UserTurn(message: message, grouped: grouped)
+            UserTurn(message: message, grouped: grouped, onEdit: onEdit)
         } else {
             AssistantTurn(
                 text: message.plainText,
@@ -21,7 +27,9 @@ struct MessageRow: View {
                 stats: message.stats,
                 status: message.status,
                 messageId: message.id,
-                grouped: grouped)
+                grouped: grouped,
+                isLast: isLast,
+                onRetry: onRetry)
         }
     }
 }
@@ -29,6 +37,7 @@ struct MessageRow: View {
 struct UserTurn: View {
     let message: Message
     var grouped = false
+    var onEdit: ((String) -> Void)?
 
     var body: some View {
         VStack(alignment: .trailing, spacing: PocketSpacing.s4) {
@@ -73,6 +82,15 @@ struct UserTurn: View {
         // one turn: "You, 10:42, <message>".
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+        // A sent turn had no actions at all: no copy, no way to reuse it.
+        .contextMenu {
+            if !message.plainText.isEmpty {
+                Button("Copy") { copyToPasteboard(message.plainText) }
+                if let onEdit {
+                    Button("Edit as New Message") { onEdit(message.plainText) }
+                }
+            }
+        }
     }
 
     private var accessibilityText: String {
@@ -95,9 +113,20 @@ struct AssistantTurn: View {
     var status: MessageStatus = .done
     var messageId: String = ""
     var grouped = false
+    var isLast = false
+    var onRetry: (() -> Void)?
     @State private var showReasoning = false
     @State private var copied = false
+    @State private var hovering = false
     @State private var speech = ReadAloud.shared
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+
+    /// Copy / read aloud / retry on every reply was a column of noise down the
+    /// transcript. They show on hover, on the newest reply, while in use, and
+    /// always under VoiceOver (an invisible control is a missing one).
+    private var showActions: Bool {
+        hovering || isLast || voiceOver || copied || speech.speakingId == messageId
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
@@ -112,27 +141,9 @@ struct AssistantTurn: View {
                 }
                 Spacer(minLength: 0)
                 if !text.isEmpty {
-                    Button {
-                        speech.toggle(text, id: messageId)
-                    } label: {
-                        HUDLabel(
-                            speech.speakingId == messageId ? "stop" : "read aloud",
-                            tint: speech.speakingId == messageId
-                                ? PocketColor.statusBad : PocketColor.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        speech.speakingId == messageId
-                            ? "Stop reading this reply" : "Read this reply aloud")
-                    .help("Read this reply aloud")
-                    Button {
-                        copy()
-                    } label: {
-                        HUDLabel(copied ? "copied" : "copy")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Copy this reply")
-                    .help("Copy this reply")
+                    actions
+                        .opacity(showActions ? 1 : 0)
+                        .allowsHitTesting(showActions)
                 }
             }
             if let reasoning, !reasoning.isEmpty {
@@ -156,17 +167,69 @@ struct AssistantTurn: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onHover { hovering = $0 }
+        // The same actions by right-click, for anyone who never hovers.
+        .contextMenu {
+            if !text.isEmpty {
+                Button("Copy") { copy() }
+                Button(speech.speakingId == messageId ? "Stop Reading" : "Read Aloud") {
+                    speech.toggle(text, id: messageId)
+                }
+            }
+            if isLast, let onRetry {
+                Button("Regenerate", action: onRetry)
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: PocketSpacing.s8) {
+            Button {
+                speech.toggle(text, id: messageId)
+            } label: {
+                HUDLabel(
+                    speech.speakingId == messageId ? "stop" : "read aloud",
+                    tint: speech.speakingId == messageId
+                        ? PocketColor.statusBad : PocketColor.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                speech.speakingId == messageId
+                    ? "Stop reading this reply" : "Read this reply aloud")
+            .help("Read this reply aloud")
+            Button {
+                copy()
+            } label: {
+                HUDLabel(copied ? "copied" : "copy")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Copy this reply")
+            .help("Copy this reply (⇧⌘C copies the latest)")
+            if isLast, let onRetry {
+                Button(action: onRetry) {
+                    HUDLabel("retry")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Regenerate this reply")
+                .help("Regenerate this reply (⇧⌘R)")
+            }
+        }
     }
 
     private func copy() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        copyToPasteboard(text)
         copied = true
         Task {
             try? await Task.sleep(nanoseconds: 1_400_000_000)
             copied = false
         }
     }
+}
+
+/// Plain-text copy used by every transcript action.
+func copyToPasteboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }
 
 /// The reply currently arriving, with a live caret at the tail.
@@ -192,11 +255,37 @@ struct StreamingRow: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, PocketSpacing.s8)
+            } else if text.isEmpty {
+                // A reasoning model can think for a minute before its first
+                // answer token. This used to show a lone caret the whole
+                // time; show the reasoning as it arrives instead.
+                VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                    HUDLabel("thinking…")
+                    Text(reasoningTail)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+                        .lineLimit(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(PocketSpacing.s8)
+                .hudPanel(PocketColor.bgSunken)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Thinking")
             } else {
                 MarkdownText(text, caret: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // §8: announced as live content, not re-read per token.
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// The last few lines of reasoning — the part being written now.
+    private var reasoningTail: String {
+        let lines = reasoning.components(separatedBy: .newlines).filter {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        return String(lines.suffix(4).joined(separator: "\n").suffix(400))
     }
 }
 
@@ -205,6 +294,9 @@ struct StreamingRow: View {
 struct ChatErrorRow: View {
     let message: String
     let retry: () -> Void
+    /// Offered instead of Retry when no model is installed — retrying that
+    /// only fails the same way again.
+    var openModels: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: PocketSpacing.s8) {
@@ -223,9 +315,14 @@ struct ChatErrorRow: View {
                 }
             }
             Spacer(minLength: 0)
-            Button("Retry", action: retry)
-                .buttonStyle(.hud)
-                .accessibilityLabel("Retry this reply")
+            if needsModel, let openModels {
+                Button("Browse models", action: openModels)
+                    .buttonStyle(.hudProminent)
+            } else {
+                Button("Retry", action: retry)
+                    .buttonStyle(.hud)
+                    .accessibilityLabel("Retry this reply")
+            }
         }
         .padding(PocketSpacing.s12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -233,6 +330,11 @@ struct ChatErrorRow: View {
     }
 
     private var friendly: String { chatFriendlyError(message) }
+
+    private var needsModel: Bool {
+        let lowered = message.lowercased()
+        return lowered.contains("no model") || lowered.contains("not installed")
+    }
 }
 
 /// Maps the handful of failures users actually hit onto plain sentences.
@@ -342,6 +444,7 @@ struct MarkdownText: View {
 #Preview("Streaming — thinking") {
     VStack(spacing: PocketSpacing.s24) {
         StreamingRow(text: "", reasoning: "")
+        StreamingRow(text: "", reasoning: "The user wants a summary.\nFirst, find the main claim.")
         StreamingRow(text: "Here's the first part of the answer", reasoning: "")
     }
     .padding()
