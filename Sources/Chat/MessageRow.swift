@@ -178,7 +178,7 @@ struct StreamingRow: View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack(spacing: PocketSpacing.s8) {
                 HUDLabel("◆ assistant", tint: PocketColor.accent)
-                PocketMarkView(state: .working(tokPerSec: nil), size: 12)
+                PocketMarkView(state: .thinking(tokPerSec: nil), size: 12)
                     .accessibilityHidden(true)
             }
             .accessibilityElement(children: .ignore)

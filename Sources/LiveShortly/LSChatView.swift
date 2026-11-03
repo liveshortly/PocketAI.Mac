@@ -163,7 +163,7 @@ struct LSChatView: View {
                 HUDLiveBadge()
                 if session.agentBusy {
                     HStack(spacing: PocketSpacing.s4) {
-                        PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                        PocketMarkView(state: .thinking(tokPerSec: nil), size: 14)
                             .accessibilityHidden(true)
                         Text(session.activityLabel)
                             .font(.pocket(.caption))
@@ -263,7 +263,7 @@ struct LSChatView: View {
                     if session.isLive, session.agentBusy {
                         HStack(spacing: PocketSpacing.s8) {
                             HUDLabel("◆ assistant", tint: LSColor.accent)
-                            PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                            PocketMarkView(state: .thinking(tokPerSec: nil), size: 14)
                                 .accessibilityHidden(true)
                             Text(session.activityLabel)
                                 .font(.pocket(.caption))
@@ -335,7 +335,7 @@ struct LSChatView: View {
     private func emptyState(_ session: LSSessionModel) -> some View {
         VStack(spacing: PocketSpacing.s12) {
             PocketMarkView(
-                state: session.isLive ? .working(tokPerSec: nil) : .idle, size: 40)
+                state: session.isLive ? .live : .offline, size: 40)
                 .accessibilityHidden(true)
             Text(session.isLive ? "Session is live" : "No activity was recorded")
                 .font(.pocket(.title))
@@ -597,7 +597,7 @@ struct LSWorkRun: View {
                 }
                 if running {
                     HStack(spacing: PocketSpacing.s4) {
-                        PocketMarkView(state: .working(tokPerSec: nil), size: 12)
+                        PocketMarkView(state: .thinking(tokPerSec: nil), size: 12)
                             .accessibilityHidden(true)
                         HUDLabel("running")
                     }

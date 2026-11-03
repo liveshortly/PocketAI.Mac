@@ -17,7 +17,7 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: PocketSpacing.s24) {
             Spacer()
-            PocketMarkView(state: step == 1 ? .working(tokPerSec: nil) : .idle, size: 56)
+            PocketMarkView(state: step == 1 ? .thinking(tokPerSec: nil) : .idle, size: 56)
                 .accessibilityHidden(true)
             switch step {
             case 0: welcome

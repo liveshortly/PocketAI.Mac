@@ -19,7 +19,7 @@ struct QuickAskPanel: View {
             header
             HStack(spacing: PocketSpacing.s8) {
                 PocketMarkView(
-                    state: isStreaming ? .working(tokPerSec: nil) : .idle, size: 18)
+                    state: isStreaming ? .thinking(tokPerSec: nil) : .idle, size: 18)
                     .accessibilityHidden(true)
                 TextField("Ask PocketAI…", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)

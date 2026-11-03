@@ -125,7 +125,7 @@ struct ChatView: View {
             .help("Rename this chat")
             if chat.isStreaming {
                 HStack(spacing: PocketSpacing.s4) {
-                    PocketMarkView(state: .working(tokPerSec: nil), size: 14)
+                    PocketMarkView(state: .thinking(tokPerSec: nil), size: 14)
                         .accessibilityHidden(true)
                     Text(chat.tokensPerSecond > 0 ? "\(chat.tokensPerSecond) tok/s" : "working")
                         .font(.pocket(.caption))
