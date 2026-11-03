@@ -249,13 +249,12 @@ public final class AppModel {
                     error.localizedDescription)
             }
         }
-        #if DEBUG
-        core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "debug-local"))
-        #else
-        if args.contains("-PocketDemoPro") {
-            core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "demo"))
-        }
-        #endif
+        // Licensing is parked (D129): every build is Pro until COM-02 ships.
+        // Without this a release build can't serve paired devices — the LAN
+        // listener is Pro-gated, so the server silently stayed on 127.0.0.1
+        // and no iPhone could reach the Mac (Wi-Fi or Tailscale).
+        // Restore the DEBUG / -PocketDemoPro gate when licensing returns.
+        core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "licensing-parked"))
 
         serverStatus = core.serverStatus()
         if let saved = UserDefaults.standard.string(forKey: Self.currentModelKey), !saved.isEmpty {
@@ -574,8 +573,11 @@ public final class AppModel {
     /// falls back to a free one if it's taken.
     public func startServer(lan: Bool) {
         let savedPort = UInt16(clamping: UserDefaults.standard.integer(forKey: Self.serverPortKey))
-        serverStatus = (try? core.serverStart(cfg: ServerConfig(lanEnabled: lan, port: savedPort)))
-            ?? serverStatus
+        do {
+            serverStatus = try core.serverStart(cfg: ServerConfig(lanEnabled: lan, port: savedPort))
+        } catch {
+            NSLog("PocketAI: server start (lan: %@) failed: %@", lan ? "yes" : "no", "\(error)")
+        }
         if serverStatus.running, serverStatus.port != 0 {
             UserDefaults.standard.set(Int(serverStatus.port), forKey: Self.serverPortKey)
         }
