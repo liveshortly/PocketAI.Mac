@@ -261,6 +261,7 @@ struct AllSessionsView: View {
                     .hudPanel(PocketColor.bgCanvas)
                 Button("New session") { app.selection = .newSession() }
                     .buttonStyle(.hudProminent)
+                    .disabled(app.liveShortly.client == nil)
             }
             .padding(.horizontal, PocketSpacing.s16)
             .padding(.vertical, PocketSpacing.s8)
@@ -303,7 +304,10 @@ struct AllSessionsView: View {
                             .accessibilityLabel("Loading sessions")
                             .padding(PocketSpacing.s16)
                     } else if filtered.isEmpty {
-                        Text(query.isEmpty
+                        // UI-80: signed out is not "no sessions".
+                        Text(app.liveShortly.client == nil
+                            ? "LiveShortly isn't connected on this Mac. Connect it in Settings."
+                            : query.isEmpty
                             ? "No sessions yet" : "No sessions match “\(query)”")
                             .font(.pocket(.footnote))
                             .foregroundStyle(PocketColor.textTertiary)

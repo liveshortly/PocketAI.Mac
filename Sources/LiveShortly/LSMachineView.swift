@@ -167,7 +167,8 @@ private struct LSStatusCard: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityLabel("More")
+        .accessibilityLabel("More LiveShortly actions")
+        .help("Restart, log, details, sign out")
         .popover(isPresented: $showDetails) { LSDetailsPopover(daemon: daemon) }
     }
 
@@ -335,12 +336,15 @@ private struct LSNameRow: View {
                 Text("Name on the web:").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
                 if editing {
                     TextField("Machine name", text: $draft)
+                        .accessibilityLabel("Name on the web")
                         .textFieldStyle(.roundedBorder)
                         .focused($focused)
                         .onSubmit(save)
                         .onExitCommand { editing = false }
                         .frame(maxWidth: 240)
                     Button("Save", action: save).buttonStyle(.hudProminent)
+                        .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Cancel") { editing = false }.buttonStyle(.hud)
                 } else {
                     Text(daemon.machineName).font(.pocket(.footnote)).fontWeight(.semibold)
                     Button {
@@ -353,6 +357,7 @@ private struct LSNameRow: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(PocketColor.accent)
                     .accessibilityLabel("Rename this Mac")
+                    .help("Rename this Mac")
                 }
                 Spacer(minLength: 0)
             }
@@ -604,6 +609,7 @@ private struct LSCommandChip: View {
             .buttonStyle(.plain)
             .foregroundStyle(PocketColor.textTertiary)
             .accessibilityLabel("Copy \(command)")
+            .help("Copy")
         }
         .padding(.horizontal, PocketSpacing.s8)
         .padding(.vertical, PocketSpacing.s4)

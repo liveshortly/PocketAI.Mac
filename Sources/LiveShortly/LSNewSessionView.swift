@@ -47,6 +47,10 @@ struct LSNewSessionView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 60)
+                    } else if app.liveShortly.client == nil {
+                        // UI-80: signed out used to read "No machines are
+                        // online" plus daemon instructions — the wrong fix.
+                        notConnected
                     } else if hosts.isEmpty {
                         noMachines
                     } else {
@@ -67,7 +71,7 @@ struct LSNewSessionView: View {
             }
         }
         .background(PocketColor.bgCanvas)
-        .task { await load() }
+        .task(id: app.liveShortly.client != nil) { await load() }
     }
 
     private var header: some View {
@@ -83,10 +87,27 @@ struct LSNewSessionView: View {
             Button(starting ? "Starting…" : "Start session") { start() }
                 .buttonStyle(.hudProminent)
                 .disabled(!canStart || starting)
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Start session (⌘⏎)")
         }
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
         .background(PocketColor.bgSurface)
+    }
+
+    private var notConnected: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            Text("LiveShortly isn't connected on this Mac")
+                .font(.pocket(.title))
+            Text("Connect your LiveShortly account to start agent sessions on your machines.")
+                .font(.pocket(.footnote))
+                .foregroundStyle(PocketColor.textSecondary)
+            SettingsLink { Text("Connect LiveShortly…") }
+                .buttonStyle(.hudProminent)
+        }
+        .padding(PocketSpacing.s12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hudPanel()
     }
 
     private var noMachines: some View {
@@ -179,7 +200,7 @@ struct LSNewSessionView: View {
                 .padding(PocketSpacing.s12)
                 .hudPanel()
             }
-            Text("Directories come from the daemon's own registration — this app can never name a path the machine has not allowed.")
+            Text("Only folders the machine has allowed are listed.")
                 .font(.pocket(.caption))
                 .foregroundStyle(PocketColor.textTertiary)
         }

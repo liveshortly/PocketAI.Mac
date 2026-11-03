@@ -44,6 +44,20 @@ struct LSChatView: View {
                 } else {
                     endedFooter(session)
                 }
+            } else if app.liveShortly.client == nil {
+                // UI-80: `.task` bails without a client, so this used to spin
+                // on "Loading session…" forever when signed out.
+                VStack(spacing: PocketSpacing.s8) {
+                    PocketMarkView(state: .offline, size: 40)
+                        .accessibilityHidden(true)
+                    Text("LiveShortly isn't connected on this Mac")
+                        .font(.pocket(.headline))
+                    SettingsLink {
+                        Text("Connect LiveShortly…")
+                    }
+                    .buttonStyle(.hud)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Same loading treatment as LSSessionView / Mac ChatView (UI-28/33).
                 VStack(spacing: PocketSpacing.s8) {
@@ -57,7 +71,9 @@ struct LSChatView: View {
             }
         }
         .background(PocketColor.bgCanvas)
-        .task(id: sessionID) {
+        // Keyed on the client too, so connecting in Settings loads this
+        // session without leaving and coming back (UI-80).
+        .task(id: "\(sessionID)|\(app.liveShortly.client != nil)") {
             guard let client = app.liveShortly.client else { return }
             let model = LSSessionModel(
                 sessionID: sessionID, client: client, myHandle: app.liveShortly.handle)
@@ -244,8 +260,10 @@ struct LSChatView: View {
                 Image(systemName: "ellipsis.circle")
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
             .accessibilityLabel("Session actions")
+            .help("Session actions")
         }
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
@@ -404,7 +422,7 @@ struct LSChatView: View {
                             .background(Circle().fill(PocketColor.accent))
                     }
                     .buttonStyle(.plain)
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("Send to this session")
                     .help("Send (⏎)")
                 }
@@ -440,7 +458,7 @@ struct LSChatView: View {
     private func send(_ session: LSSessionModel) {
         dictation.stop()
         let text = draft
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         draft = ""
         session.send(text)
     }

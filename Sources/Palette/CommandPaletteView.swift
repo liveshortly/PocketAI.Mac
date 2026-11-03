@@ -39,6 +39,8 @@ struct CommandPaletteView: View {
                             PaletteRow(item: item, selected: index == highlighted)
                                 .id(index)
                                 .contentShape(Rectangle())
+                                // Pointer and arrows share one highlight (UI-81).
+                                .onHover { if $0 { highlighted = index } }
                                 .onTapGesture {
                                     highlighted = index
                                     run()
@@ -169,6 +171,15 @@ struct CommandPaletteView: View {
                 id: "action-privacy", kind: .action, title: "Privacy",
                 subtitle: "Offline mode and logs", symbol: "hand.raised", live: false
             ) { app.selection = .privacy },
+            // UI-81: the sidebar's other destinations were not reachable here.
+            Item(
+                id: "action-all-chats", kind: .action, title: "All chats",
+                subtitle: "Search and archive", symbol: "list.bullet", live: false
+            ) { app.selection = .allChats },
+            Item(
+                id: "action-liveshortly", kind: .action, title: "LiveShortly on this Mac",
+                subtitle: "Daemon, folders, agents", symbol: "bolt.horizontal", live: false
+            ) { app.selection = .liveShortly },
         ]
         if app.liveShortly.isConnected {
             list.insert(
@@ -177,6 +188,11 @@ struct CommandPaletteView: View {
                     subtitle: "⇧⌘N", symbol: "bolt", live: false
                 ) { app.post(.newLiveSession) },
                 at: 1)
+            list.append(
+                Item(
+                    id: "action-all-sessions", kind: .action, title: "All sessions",
+                    subtitle: "Every LiveShortly session", symbol: "list.bullet", live: false
+                ) { app.selection = .allSessions })
         }
         return list
     }
@@ -191,8 +207,17 @@ struct CommandPaletteView: View {
         chats = app.core.conversations(
             query: ConversationQuery(search: nil, archived: false, limit: 100, offset: 0))
         projects = app.core.listProjects()
+        // Show the feed's copy at once (incl. Shared with me, UI-81); the
+        // fetch below still refreshes the owned list as before.
+        let feed = app.liveShortly.feed
+        sessions = feed.ordered + feed.orderedShared
         if let client = app.liveShortly.client {
-            Task { sessions = (try? await client.sessions(limit: 30)) ?? [] }
+            Task {
+                if let fresh = try? await client.sessions(limit: 30) {
+                    let ids = Set(fresh.map(\.id))
+                    sessions = fresh + feed.orderedShared.filter { !ids.contains($0.id) }
+                }
+            }
         }
     }
 }

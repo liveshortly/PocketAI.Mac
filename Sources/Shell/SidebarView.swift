@@ -21,6 +21,8 @@ struct SidebarView: View {
     /// dropped their error, and delete removed the row even when the server
     /// had refused — so the list told a story the server disagreed with.
     @State private var sessionActionError: String?
+    /// The sidebar holds keyboard focus for ↑/↓ (UI-79).
+    @FocusState private var listFocused: Bool
 
     /// The sidebar shows only the newest few of each kind; the rest live
     /// in the full lists (and ⌘K reaches any of them directly).
@@ -48,6 +50,15 @@ struct SidebarView: View {
             toolsSection
         }
         .listStyle(.sidebar)
+        // UI-79: dropping `List(selection:)` (MAC-22) also dropped ↑/↓. The
+        // rows are buttons, so the list moves `app.selection` itself, in the
+        // order the rows are drawn. A click on any row focuses the list.
+        .focusable(interactions: .edit)
+        .focusEffectDisabled()
+        .focused($listFocused)
+        .simultaneousGesture(TapGesture().onEnded { listFocused = true })
+        .onKeyPress(.upArrow) { step(-1) }
+        .onKeyPress(.downArrow) { step(1) }
         .scrollContentBackground(.hidden)
         .background(PocketColor.bgSurface)
         .searchable(text: $app.sidebarSearch, placement: .sidebar, prompt: "Search chats")
@@ -209,9 +220,13 @@ struct SidebarView: View {
             Button {
                 newProject = true
             } label: {
+                // Same icon box and muted tint as "New session" (UI-85).
                 Label("New project", systemImage: "plus")
                     .font(.pocket(.footnote))
+                    .labelStyle(SidebarLabelStyle(selected: false, muted: true))
                     .foregroundStyle(PocketColor.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         } header: {
@@ -370,6 +385,7 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Settings")
+                .help("Settings (⌘,)")
             }
             .padding(.horizontal, PocketSpacing.s12)
             .padding(.vertical, PocketSpacing.s8)
@@ -388,6 +404,36 @@ struct SidebarView: View {
               let open = ordered.first(where: { $0.id == id })
         else { return Array(top) }
         return [open] + ordered.prefix(Self.recentLimit - 1)
+    }
+
+    /// Every selectable row, top to bottom, exactly as the sections draw them.
+    private var navigationOrder: [AppModel.Destination] {
+        var order: [AppModel.Destination] = conversations.prefix(Self.recentLimit)
+            .map { .chat($0.id) }
+        if conversations.count > Self.recentLimit { order.append(.allChats) }
+        if !projects.isEmpty || app.selection.isProject {
+            order += projects.map { .project($0.id) }
+        }
+        if app.liveShortly.isConnected {
+            order += visibleSessions.map { .session($0.id) }
+            if sessions.count > Self.recentLimit { order.append(.allSessions) }
+            order.append(.newSession())
+            if !feed.shared.isEmpty { order += feed.orderedShared.map { .session($0.id) } }
+        }
+        return order + [.models, .images, .devices, .server, .liveShortly, .privacy]
+    }
+
+    /// ↑/↓: next row, clamped at the ends; from no selection, the first or last.
+    private func step(_ delta: Int) -> KeyPress.Result {
+        let order = navigationOrder
+        let next: Int
+        if let current = app.selection.flatMap({ order.firstIndex(of: $0) }) {
+            next = min(max(current + delta, 0), order.count - 1)
+        } else {
+            next = delta > 0 ? 0 : order.count - 1
+        }
+        app.selection = order[next]
+        return .handled
     }
 
     private func reloadAll() {
@@ -473,7 +519,7 @@ struct SessionRow: View {
         var parts = [session.title.isEmpty ? "Untitled session" : session.title]
         parts.append(session.isStarting ? "starting" : session.isLive ? "live" : "ended")
         if unread > 0 { parts.append("\(unread) new events") }
-        parts.append(subtitle)
+        parts.append(spokenSubtitle)
         return parts.joined(separator: ", ")
     }
 
@@ -483,6 +529,15 @@ struct SessionRow: View {
         let seen = LSSeen.count(session.id)
         guard seen > 0 else { return 0 }
         return max(0, session.eventCount - seen)
+    }
+
+    /// The subtitle without its ◆ / › glyphs, which VoiceOver reads aloud
+    /// as "black diamond" / "single right-pointing angle quotation" (UI-82).
+    private var spokenSubtitle: String {
+        guard !session.isStarting, session.sharedLine == nil,
+              let last = session.lastEvent, !last.snippet.isEmpty
+        else { return subtitle }
+        return (last.type == "response" ? "Agent: " : "Prompt: ") + last.snippet
     }
 
     private var subtitle: String {
