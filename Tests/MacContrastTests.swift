@@ -179,9 +179,26 @@ final class MacContrastTests: XCTestCase {
             atLeast: Self.aa)
     }
 
-    /// Accent on the sunken surface: `HUDChip` sits on `bgSunken`. The Mac
-    /// Ember (`#B0411F` light) clears AA here too (4.69:1); the old green
-    /// measured 4.35:1 and was recorded as an expected failure.
+    /// The Mac accent is the shared green (UI-38): `#1F7A4D` light, `#3DB27E`
+    /// dark, the same pair as iPhone and Android. No `mac` idiom override.
+    func testAccentIsGreen() {
+        for (appearance, hex) in [
+            (NSAppearance.Name.aqua, (0x1F, 0x7A, 0x4D)), (.darkAqua, (0x3D, 0xB2, 0x7E)),
+        ] {
+            let c = components(PocketColor.accent, appearance)
+            let measured = (
+                Int((c.r * 255).rounded()), Int((c.g * 255).rounded()), Int((c.b * 255).rounded())
+            )
+            XCTAssertTrue(
+                measured == hex,
+                "accent (\(appearance == .aqua ? "light" : "dark")) is \(measured), expected \(hex)")
+        }
+    }
+
+    /// Accent on the sunken surface: `HUDChip` sits on `bgSunken`. Computed
+    /// for the UI-38 green: light `#1F7A4D` on `#EAE7DC` is 4.30:1 (dark
+    /// 7.37:1), so this fails AA in light mode until Core darkens the light
+    /// accent (nearest passing hue-preserving green: `#1E764A`, 4.53:1).
     func testAccentOnSunken() {
         assertContrast(
             PocketColor.accent, "accent", on: PocketColor.bgSunken, "bgSunken",

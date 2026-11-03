@@ -2,11 +2,11 @@ import PocketUI
 import SwiftUI
 
 /// The Mac app's visual idiom: the LiveShortly terminal HUD — warm paper,
-/// hairline rules, uppercase monospaced labels, Ember as the only accent
-/// (green is reserved for live/ok status and the brand mark).
+/// hairline rules, uppercase monospaced labels, and the shared PocketUI green
+/// accent (the same green as iPhone and Android, UI-38).
 ///
 /// Everything here composes PocketUI tokens; no literal colors live in feature
-/// code (the Mac palette itself is the `mac` idiom of PocketUI's colorsets).
+/// code.
 enum HUD {
     /// Corner radius for panels and cards. Small — the HUD reads as ruled
     /// surfaces, not floating pills.

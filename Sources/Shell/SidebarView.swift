@@ -35,7 +35,7 @@ struct SidebarView: View {
         @Bindable var app = app
         // No `selection:` binding: the system selection capsule follows the
         // macOS accent (blue for most people) and greys the label, so rows
-        // draw their own Ember selection instead (MAC-22).
+        // draw their own green accent selection instead (MAC-22, UI-38).
         List {
             chatsSection
             if !projects.isEmpty || app.selection.isProject {
@@ -466,7 +466,7 @@ struct SessionRow: View {
 }
 
 /// A sidebar row that selects `destination` and draws its own selection: an
-/// Ember-soft rounded fill, label in `text.primary`, icon in Ember. The
+/// `accent.soft` rounded fill, label in `text.primary`, icon in `accent`. The
 /// macOS accent setting never shows here.
 private struct SidebarRow: ViewModifier {
     @Environment(AppModel.self) private var app
@@ -500,7 +500,7 @@ private struct SidebarRow: ViewModifier {
 }
 
 /// One icon style for every sidebar row: outline symbols at regular weight in
-/// the same 16 pt box, Ember when the row is selected.
+/// the same 16 pt box, `accent` when the row is selected.
 private struct SidebarLabelStyle: LabelStyle {
     let selected: Bool
     let muted: Bool
