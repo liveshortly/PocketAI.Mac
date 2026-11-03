@@ -69,7 +69,8 @@ final class MLXRealInferenceTests: XCTestCase {
             minRamBytes: 0,
             estRuntimeBytes: 600_000_000,
             tags: [],
-            curated: true
+            curated: true,
+            reasoning: false
         )
 
         let engine = PocketMLXEngine()

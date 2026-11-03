@@ -79,7 +79,7 @@ final class EngineRealRunsTests: XCTestCase {
             displayName: "Apple Intelligence", family: "apple", paramsB: 0, quant: "",
             format: .mlxSafetensors, modalities: [.text], contextLength: 4096, files: [],
             license: LicenseInfo(spdx: "", commercialOk: true, url: ""),
-            hfRepo: "", hfRevision: "", minRamBytes: 0, estRuntimeBytes: 0, tags: [], curated: true)
+            hfRepo: "", hfRevision: "", minRamBytes: 0, estRuntimeBytes: 0, tags: [], curated: true, reasoning: false)
         let loaded = try engine.load(model: manifest, opts: LoadOptions(contextLength: nil, pinnedEngine: nil))
         defer { try? engine.unload(handle: loaded.handle) }
 

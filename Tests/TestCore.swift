@@ -119,9 +119,9 @@ final class TestCore: CoreClient, @unchecked Sendable {
         try base.setConversationModel(id: id, modelId: modelId)
     }
     func sendMessage(
-        conversationId: String, input: UserInput
+        conversationId: String, input: UserInput, reasoning: ReasoningMode
     ) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        base.sendMessage(conversationId: conversationId, input: input)
+        base.sendMessage(conversationId: conversationId, input: input, reasoning: reasoning)
     }
     func cancelConversation(id: String) {
         calls.append("cancelConversation")
