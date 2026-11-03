@@ -258,10 +258,9 @@ struct DevicesView: View {
             app.setServerAccess(.pairedDevices)
         }
         guard app.serverStatus.running else {
-            qrError = """
-                This Mac couldn't open itself to devices on the network, so there is nothing \
-                to pair with. Devices on this network need PocketAI Pro.
-                """
+            qrError = app.serverNeedsLicense
+                ? "Pairing needs a PocketAI license. Enter your key in Settings › License, then try again."
+                : "This Mac couldn't open itself to devices on the network, so there is nothing to pair with."
             return
         }
         do {

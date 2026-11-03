@@ -135,6 +135,8 @@ struct ServerView: View {
         switch app.serverAccess {
         case .off: return "Nothing can use this Mac's models from outside the app."
         case .thisMac: return "Loopback only (127.0.0.1), for other apps on this Mac."
+        case .pairedDevices where app.serverNeedsLicense:
+            return "Paired devices needs a PocketAI license. Enter your key in Settings › License; until then this Mac serves only itself."
         case .pairedDevices:
             return "Reachable from your LAN, so a paired iPhone can use this Mac. macOS will ask for Local Network permission."
         }

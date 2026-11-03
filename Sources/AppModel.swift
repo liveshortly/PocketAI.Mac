@@ -38,6 +38,9 @@ public final class AppModel {
     /// Non-nil when the Rust core failed to open at launch. The app stays
     /// navigable and surfaces this instead of crashing with `fatalError`.
     public private(set) var coreOpenError: String?
+    /// Paired-devices access was chosen but the core refused the LAN
+    /// listener for lack of Pro; the Server page says how to fix it.
+    public private(set) var serverNeedsLicense = false
     public private(set) var serverStatus = ServerStatus(
         running: false, lanEnabled: false, port: 0, connectedDevices: 0)
 
@@ -252,12 +255,16 @@ public final class AppModel {
                     error.localizedDescription)
             }
         }
-        // Licensing is parked (D129): every build is Pro until COM-02 ships.
-        // Without this a release build can't serve paired devices — the LAN
-        // listener is Pro-gated, so the server silently stayed on 127.0.0.1
-        // and no iPhone could reach the Mac (Wi-Fi or Tailscale).
-        // Restore the DEBUG / -PocketDemoPro gate when licensing returns.
-        core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "licensing-parked"))
+        // Testing phase (D133): Pro comes from a Keygen test license the
+        // owner hands out (Settings › License). Debug builds and the
+        // -PocketDemoPro launch flag still unlock it for development.
+        #if DEBUG
+        core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "debug-local"))
+        #else
+        if args.contains("-PocketDemoPro") {
+            core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "demo"))
+        }
+        #endif
 
         serverStatus = core.serverStatus()
         if let saved = UserDefaults.standard.string(forKey: Self.currentModelKey), !saved.isEmpty {
@@ -606,7 +613,9 @@ public final class AppModel {
         let savedPort = UInt16(clamping: UserDefaults.standard.integer(forKey: Self.serverPortKey))
         do {
             serverStatus = try core.serverStart(cfg: ServerConfig(lanEnabled: lan, port: savedPort))
+            serverNeedsLicense = false
         } catch {
+            if case PocketError.NotEntitled = error { serverNeedsLicense = lan }
             NSLog("PocketAI: server start (lan: %@) failed: %@", lan ? "yes" : "no", "\(error)")
         }
         // Remember the port only on a first bind. A fallback (saved port still
@@ -657,6 +666,11 @@ public final class AppModel {
 
     public func saveLicenseKey(_ key: String) {
         _ = hooks.keychainSet(key: Self.licenseKeychainKey, value: Data(key.utf8))
+        // A fresh license may unlock the LAN listener the user already chose.
+        if serverAccess == .pairedDevices, !serverStatus.lanEnabled {
+            if serverStatus.running { stopServer() }
+            applyServerAccess()
+        }
     }
 }
 
