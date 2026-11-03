@@ -139,25 +139,16 @@ struct LSNewSessionView: View {
                         set: { newAgent in
                             agent = newAgent
                             // A model from the previous agent means nothing here.
-                            model = nil
+                            model = host.lastModel(forAgent: newAgent)
                         })
                     ) {
                         ForEach(host.agents, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden()
                 }
-                let choices = host.models(forAgent: agent ?? host.agents.first ?? "")
-                if !choices.isEmpty {
-                    field("Model") {
-                        Picker("Model", selection: Binding(
-                            get: { model ?? "" },
-                            set: { model = $0.isEmpty ? nil : $0 })
-                        ) {
-                            Text("Default").tag("")
-                            ForEach(choices, id: \.self) { Text($0).tag($0) }
-                        }
+                field("Model") {
+                    LSModelPicker(host: host, agent: agent ?? host.agents.first ?? "", model: $model)
                         .labelsHidden()
-                    }
                 }
                 if !host.isOnline {
                     HStack(spacing: PocketSpacing.s8) {
@@ -254,7 +245,7 @@ struct LSNewSessionView: View {
         agent = host?.agents.first
         cwd = host?.dirs.first
         extraDirs = []
-        model = nil
+        model = agent.flatMap { host?.lastModel(forAgent: $0) }
     }
 
     private func load() async {
@@ -287,7 +278,9 @@ struct LSNewSessionView: View {
             do {
                 let created = try await client.createSession(
                     hostID: host.id, agent: chosenAgent, cwd: chosenCwd,
-                    model: model, bypassPermissions: bypass,
+                    // Only ever an id the server listed for this agent.
+                    model: model.flatMap { host.models(forAgent: chosenAgent).contains($0) ? $0 : nil },
+                    bypassPermissions: bypass,
                     // Never send a dir the host did not register.
                     extraDirs: host.acceptsExtraDirs
                         ? host.dirs.filter { extraDirs.contains($0) && $0 != chosenCwd } : [])
