@@ -151,7 +151,6 @@ struct OnboardingView: View {
                     )
                     .progressViewStyle(.linear)
                     .frame(width: 110)
-                    .tint(PocketColor.accent)
                     .accessibilityLabel("Download progress")
                     .accessibilityValue(hudBytes(entry.bytesDone))
                     HUDLabel(hudBytes(entry.bytesDone))

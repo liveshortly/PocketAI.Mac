@@ -59,6 +59,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Entitlements/PocketAI.entitlements
         SWIFT_EMIT_LOC_STRINGS: YES
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     info:
       path: Sources/Info.plist
       properties:

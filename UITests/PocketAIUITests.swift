@@ -29,11 +29,15 @@ final class PocketAIUITests: XCTestCase {
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 15), "Main window should exist")
 
-        for label in ["Chats", "Tools", "Models"] {
+        for label in ["Chats", "Tools"] {
             XCTAssertTrue(
                 app.staticTexts[label].firstMatch.waitForExistence(timeout: 10),
                 "Sidebar should show '\(label)'")
         }
+        // Sidebar rows are buttons that draw their own selection (MAC-22).
+        XCTAssertTrue(
+            app.buttons["Models"].firstMatch.waitForExistence(timeout: 10),
+            "Sidebar should show 'Models'")
         capture(app, "01-shell")
     }
 
@@ -50,7 +54,7 @@ final class PocketAIUITests: XCTestCase {
             ("Privacy", "06-privacy"),
         ]
         for (label, shot) in surfaces {
-            let row = app.staticTexts[label].firstMatch
+            let row = app.buttons[label].firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 10), "Sidebar row '\(label)' missing")
             row.click()
             // Give the detail pane a beat to swap before the screenshot.

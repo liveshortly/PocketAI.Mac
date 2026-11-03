@@ -14,6 +14,7 @@ struct PocketAIApp: App {
                 .frame(minWidth: 820, minHeight: 540)
                 .background(PocketColor.bgCanvas)
                 .preferredColorScheme(nil)
+                .tint(PocketColor.accent)
         }
         .defaultSize(width: 1180, height: 760)
         .commands { AppCommands(app: app) }
@@ -23,6 +24,7 @@ struct PocketAIApp: App {
         MenuBarExtra("PocketAI", image: "MenuBarIcon") {
             MenuBarContent()
                 .environment(app)
+                .tint(PocketColor.accent)
         }
         .menuBarExtraStyle(.window)
 
@@ -30,6 +32,7 @@ struct PocketAIApp: App {
             SettingsView()
                 .environment(app)
                 .frame(width: 620, height: 460)
+                .tint(PocketColor.accent)
         }
     }
 }

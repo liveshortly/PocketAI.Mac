@@ -29,7 +29,10 @@ struct SidebarView: View {
 
     var body: some View {
         @Bindable var app = app
-        List(selection: $app.selection) {
+        // No `selection:` binding: the system selection capsule follows the
+        // macOS accent (blue for most people) and greys the label, so rows
+        // draw their own Ember selection instead (MAC-22).
+        List {
             chatsSection
             if !projects.isEmpty || app.selection.isProject {
                 projectsSection
@@ -162,7 +165,7 @@ struct SidebarView: View {
 
             ForEach(conversations.prefix(Self.recentLimit), id: \.id) { summary in
                 ChatRow(summary: summary)
-                    .tag(AppModel.Destination.chat(summary.id))
+                    .sidebarRow(.chat(summary.id))
                     .contextMenu {
                         Button("Rename…") { renaming = summary }
                         Button("Archive") {
@@ -188,8 +191,7 @@ struct SidebarView: View {
                     "All chats (\(conversations.count))",
                     systemImage: "list.bullet")
                     .font(.pocket(.footnote))
-                    .foregroundStyle(PocketColor.textTertiary)
-                    .tag(AppModel.Destination.allChats)
+                    .sidebarRow(.allChats, muted: true)
             }
         } header: {
             HUDLabel("Chats")
@@ -200,7 +202,7 @@ struct SidebarView: View {
         Section {
             ForEach(projects, id: \.id) { project in
                 Label(project.name, systemImage: "folder")
-                    .tag(AppModel.Destination.project(project.id))
+                    .sidebarRow(.project(project.id))
             }
             Button {
                 newProject = true
@@ -223,7 +225,7 @@ struct SidebarView: View {
             if app.liveShortly.isConnected {
                 ForEach(orderedSessions.prefix(Self.recentLimit), id: \.id) { session in
                     SessionRow(session: session)
-                        .tag(AppModel.Destination.session(session.id))
+                        .sidebarRow(.session(session.id))
                         .contextMenu {
                             Button("Open") { app.selection = .session(session.id) }
                             if let link = app.liveShortly.client?.sessionLink(session.id) {
@@ -249,8 +251,7 @@ struct SidebarView: View {
                         "All sessions (\(sessions.count))",
                         systemImage: "list.bullet")
                         .font(.pocket(.footnote))
-                        .foregroundStyle(PocketColor.textTertiary)
-                        .tag(AppModel.Destination.allSessions)
+                        .sidebarRow(.allSessions, muted: true)
                 }
                 if sessions.isEmpty {
                     Text("No sessions yet")
@@ -259,8 +260,7 @@ struct SidebarView: View {
                 }
                 Label("New session", systemImage: "plus")
                     .font(.pocket(.footnote))
-                    .foregroundStyle(PocketColor.textTertiary)
-                    .tag(AppModel.Destination.newSession())
+                    .sidebarRow(.newSession(), muted: true)
                 if let sessionActionError {
                     Text(sessionActionError)
                         .font(.pocket(.caption))
@@ -275,7 +275,7 @@ struct SidebarView: View {
                     SettingsLink {
                         Label("Connect LiveShortly…", systemImage: "link")
                             .font(.pocket(.footnote))
-                            .foregroundStyle(LSColor.accent)
+                            .foregroundStyle(PocketColor.accent)
                     }
                     .buttonStyle(.plain)
                 }
@@ -292,17 +292,17 @@ struct SidebarView: View {
 
     private var toolsSection: some View {
         Section {
-            Label("Models", systemImage: "cpu").tag(AppModel.Destination.models)
-            Label("Images", systemImage: "photo").tag(AppModel.Destination.images)
-            Label("Devices", systemImage: "iphone").tag(AppModel.Destination.devices)
-            Label("Local server", systemImage: "server.rack").tag(AppModel.Destination.server)
+            Label("Models", systemImage: "cpu").sidebarRow(.models)
+            Label("Images", systemImage: "photo").sidebarRow(.images)
+            Label("Devices", systemImage: "iphone").sidebarRow(.devices)
+            Label("Local server", systemImage: "server.rack").sidebarRow(.server)
             Label {
                 Text("LiveShortly")
             } icon: {
                 LSSessionMark(isLive: LSDaemonController.shared.isRunning, size: 16)
             }
-            .tag(AppModel.Destination.liveShortly)
-            Label("Privacy", systemImage: "hand.raised").tag(AppModel.Destination.privacy)
+            .sidebarRow(.liveShortly)
+            Label("Privacy", systemImage: "hand.raised").sidebarRow(.privacy)
         } header: {
             HUDLabel("Tools")
         }
@@ -425,7 +425,7 @@ struct SessionRow: View {
                     .foregroundStyle(PocketColor.accentOnAccent)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(LSColor.accent))
+                    .background(Capsule().fill(PocketColor.accent))
                     .accessibilityLabel("\(unread) new events")
             }
             if session.isLive { HUDDot(pulsing: true) }
@@ -461,6 +461,69 @@ struct SessionRow: View {
         if let framework = session.framework, !framework.isEmpty { bits.append(framework) }
         bits.append("\(session.eventCount) events")
         return bits.joined(separator: " · ")
+    }
+}
+
+/// A sidebar row that selects `destination` and draws its own selection: an
+/// Ember-soft rounded fill, label in `text.primary`, icon in Ember. The
+/// macOS accent setting never shows here.
+private struct SidebarRow: ViewModifier {
+    @Environment(AppModel.self) private var app
+    let destination: AppModel.Destination
+    /// Secondary rows ("All chats", "New session") read tertiary until selected.
+    let muted: Bool
+
+    func body(content: Content) -> some View {
+        let selected = app.selection == destination
+        return Button {
+            app.selection = destination
+        } label: {
+            content
+                .labelStyle(SidebarLabelStyle(selected: selected, muted: muted))
+                .foregroundStyle(
+                    muted && !selected ? PocketColor.textTertiary : PocketColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: HUD.radius, style: .continuous)
+                        .fill(selected ? PocketColor.accentSoft : Color.clear))
+                // Keep text aligned with the section headers; the fill bleeds
+                // into the row inset instead.
+                .padding(.horizontal, -6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// One icon style for every sidebar row: outline symbols at regular weight in
+/// the same 16 pt box, Ember when the row is selected.
+private struct SidebarLabelStyle: LabelStyle {
+    let selected: Bool
+    let muted: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: PocketSpacing.s8) {
+            configuration.icon
+                .font(.system(size: 13, weight: .regular))
+                .symbolVariant(.none)
+                .foregroundStyle(iconColor)
+                .frame(width: 16, height: 16)
+            configuration.title
+        }
+    }
+
+    private var iconColor: Color {
+        if selected { return PocketColor.accent }
+        return muted ? PocketColor.textTertiary : PocketColor.textSecondary
+    }
+}
+
+private extension View {
+    func sidebarRow(_ destination: AppModel.Destination, muted: Bool = false) -> some View {
+        modifier(SidebarRow(destination: destination, muted: muted))
     }
 }
 

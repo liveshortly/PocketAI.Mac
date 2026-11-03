@@ -31,7 +31,6 @@ struct AllChatsView: View {
                 Toggle("Archived", isOn: $includeArchived)
                     .toggleStyle(.switch)
                     .font(.pocket(.caption))
-                    .tint(PocketColor.accent)
                 if selected.isEmpty {
                     Button("Select all") { selected = Set(chats.map(\.id)) }
                         .buttonStyle(.hud)

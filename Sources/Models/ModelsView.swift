@@ -134,7 +134,6 @@ struct ModelsView: View {
             Toggle("Installed only", isOn: $showInstalledOnly)
                 .toggleStyle(.switch)
                 .font(.pocket(.caption))
-                .tint(PocketColor.accent)
         }
         .padding(.horizontal, PocketSpacing.s16)
         .padding(.vertical, PocketSpacing.s8)
@@ -681,7 +680,6 @@ struct ModelCard: View {
         VStack(alignment: .leading, spacing: 4) {
             ProgressView(value: fraction)
                 .progressViewStyle(.linear)
-                .tint(PocketColor.accent)
                 .accessibilityLabel("Download progress")
                 .accessibilityValue("\(Int(fraction * 100)) percent")
             HStack {

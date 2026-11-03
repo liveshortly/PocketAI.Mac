@@ -180,11 +180,11 @@ struct LSChatView: View {
             }
             // Who can see this is worth knowing without opening a dialog.
             if let visibility = session.detail?.visibility, visibility != "private" {
-                HUDChip(text: visibility.uppercased(), tint: LSColor.accent)
+                HUDChip(text: visibility.uppercased(), tint: PocketColor.accent)
                     .help("Anyone with the link can open this session")
             }
             if session.detail?.publishedAt != nil {
-                HUDChip(text: "ON FEED", tint: LSColor.accent)
+                HUDChip(text: "ON FEED", tint: PocketColor.accent)
             }
             Spacer(minLength: 0)
             if let framework = session.detail?.framework, framework == "claude-code",
@@ -194,7 +194,7 @@ struct LSChatView: View {
                         Button(model) { session.setModel(model) }
                     }
                 } label: {
-                    HUDChip(text: session.detail?.model ?? "model", tint: LSColor.accent)
+                    HUDChip(text: session.detail?.model ?? "model", tint: PocketColor.accent)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -262,7 +262,7 @@ struct LSChatView: View {
                     // dead gap between sending and the agent's first step.
                     if session.isLive, session.agentBusy {
                         HStack(spacing: PocketSpacing.s8) {
-                            HUDLabel("◆ assistant", tint: LSColor.accent)
+                            HUDLabel("◆ assistant", tint: PocketColor.accent)
                             PocketMarkView(state: .thinking(tokPerSec: nil), size: 14)
                                 .accessibilityHidden(true)
                             Text(session.activityLabel)
@@ -391,7 +391,7 @@ struct LSChatView: View {
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.accentOnAccent)
                             .frame(width: 26, height: 26)
-                            .background(Circle().fill(LSColor.accent))
+                            .background(Circle().fill(PocketColor.accent))
                     }
                     .buttonStyle(.plain)
                     .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -471,7 +471,7 @@ struct LSItemView: View {
             VStack(alignment: .leading, spacing: PocketSpacing.s4) {
                 if !item.grouped {
                     HStack(spacing: PocketSpacing.s8) {
-                        HUDLabel("◆ agent", tint: LSColor.accent)
+                        HUDLabel("◆ agent", tint: PocketColor.accent)
                         Text(event.ts.formatted(date: .omitted, time: .shortened))
                             .font(.pocket(.caption))
                             .foregroundStyle(PocketColor.textTertiary)
@@ -519,7 +519,7 @@ struct LSBubbleRow: View {
                 HStack(spacing: PocketSpacing.s8) {
                     HUDLabel(
                         lsHandleText(event),
-                        tint: viewer ? PocketColor.statusInfo : LSColor.accent)
+                        tint: viewer ? PocketColor.statusInfo : PocketColor.accent)
                     Text(event.ts.formatted(date: .omitted, time: .shortened))
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
@@ -534,7 +534,7 @@ struct LSBubbleRow: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(viewer
                             ? PocketColor.statusInfo.opacity(0.12)
-                            : LSColor.accent.opacity(0.12)))
+                            : PocketColor.accent.opacity(0.12)))
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)

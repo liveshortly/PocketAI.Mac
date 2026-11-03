@@ -2,7 +2,8 @@ import PocketUI
 import SwiftUI
 
 /// The Mac app's visual idiom: the LiveShortly terminal HUD — warm paper,
-/// hairline rules, uppercase monospaced labels, green as the only accent.
+/// hairline rules, uppercase monospaced labels, Ember as the only accent
+/// (green is reserved for live/ok status and the brand mark).
 ///
 /// Everything here composes PocketUI tokens; no literal colors live in feature
 /// code (the Mac palette itself is the `mac` idiom of PocketUI's colorsets).
@@ -45,28 +46,41 @@ struct HUDRule: View {
 }
 
 /// Live/idle status dot with a soft halo, matching the LiveShortly badge.
+///
+/// The pulse is computed from the clock (`TimelineView`), not driven by an
+/// implicit `.repeatForever` animation. That animation, started from
+/// `onAppear` during the sidebar's first layout pass, also captured the dot's
+/// position change, so the footer dot kept travelling between its first
+/// layout spot and the footer and looked detached (MAC-20). A per-frame
+/// opacity has no transaction to leak into layout.
 struct HUDDot: View {
     var tint: Color = PocketColor.statusOk
     var pulsing: Bool = false
-    @State private var dim = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Circle()
-            .fill(tint)
-            .frame(width: 7, height: 7)
-            .opacity(dim && pulsing && !reduceMotion ? 0.3 : 1)
-            .background(
-                Circle().fill(tint.opacity(0.18)).frame(width: 15, height: 15)
-            )
-            .animation(
-                reduceMotion || !pulsing
-                    ? nil
-                    : .easeInOut(duration: 0.85).repeatForever(autoreverses: true),
-                value: dim
-            )
-            .onAppear { dim = true }
-            .accessibilityHidden(true)
+        Group {
+            if pulsing && !reduceMotion {
+                TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+                    core.opacity(Self.pulse(at: context.date))
+                }
+            } else {
+                core
+            }
+        }
+        // The halo overflows the 7 pt layout box, as before.
+        .background(Circle().fill(tint.opacity(0.18)).frame(width: 15, height: 15))
+        .accessibilityHidden(true)
+    }
+
+    private var core: some View {
+        Circle().fill(tint).frame(width: 7, height: 7)
+    }
+
+    /// 0.3...1 ease, 1.7 s period — the old 0.85 s autoreversing pulse.
+    static func pulse(at date: Date) -> Double {
+        let phase = date.timeIntervalSinceReferenceDate * 2 * .pi / 1.7
+        return 0.65 + 0.35 * cos(phase)
     }
 }
 
@@ -138,7 +152,7 @@ extension View {
     }
 }
 
-/// Primary action button: filled green, square-ish, monospaced label.
+/// Primary action button: filled accent, square-ish, monospaced label.
 struct HUDButtonStyle: ButtonStyle {
     var prominent: Bool = false
     var destructive: Bool = false

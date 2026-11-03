@@ -73,7 +73,7 @@ struct LSNewSessionView: View {
     private var header: some View {
         HStack(spacing: PocketSpacing.s12) {
             Image(systemName: "bolt")
-                .foregroundStyle(LSColor.accent)
+                .foregroundStyle(PocketColor.accent)
                 .accessibilityHidden(true)
             Text(projectId == nil ? "New agent session" : "New agent session in this project")
                 .font(.pocket(.headline))
@@ -178,7 +178,6 @@ struct LSNewSessionView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Skip permission prompts", isOn: $bypass)
                         .toggleStyle(.switch)
-                        .tint(LSColor.accent)
                         .font(.pocket(.body))
                     Text(
                         "The agent runs without asking before each tool call. Only for a directory you trust it in."

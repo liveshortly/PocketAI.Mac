@@ -54,7 +54,7 @@ struct LSShareSheet: View {
     private var header: some View {
         HStack {
             Image(systemName: "person.2")
-                .foregroundStyle(LSColor.accent)
+                .foregroundStyle(PocketColor.accent)
                 .accessibilityHidden(true)
             Text("Share session")
                 .font(.pocket(.headline))
@@ -81,7 +81,7 @@ struct LSShareSheet: View {
                             ? "largecircle.fill.circle" : "circle")
                             .foregroundStyle(
                                 visibility == option.key
-                                    ? LSColor.accent : PocketColor.textTertiary)
+                                    ? PocketColor.accent : PocketColor.textTertiary)
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(option.title).font(.pocket(.body))

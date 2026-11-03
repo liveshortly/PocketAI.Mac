@@ -91,7 +91,6 @@ struct ImageGenView: View {
                         value: Binding(
                             get: { Double(steps) }, set: { steps = Int($0) }),
                         in: 1...Double(maxSteps), step: 1)
-                    .tint(PocketColor.accent)
                     Text(stepsHint)
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
@@ -159,7 +158,6 @@ struct ImageGenView: View {
                     ProgressView(value: progress)
                         .progressViewStyle(.linear)
                         .frame(width: 240)
-                        .tint(PocketColor.accent)
                         .accessibilityLabel("Generation progress")
                         .accessibilityValue(statusText ?? "\(Int(progress * 100)) percent")
                     if let statusText { HUDLabel(statusText) }

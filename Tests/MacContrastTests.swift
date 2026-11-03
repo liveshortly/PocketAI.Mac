@@ -92,7 +92,7 @@ final class MacContrastTests: XCTestCase {
         }
     }
 
-    /// The green identity as text: `HUDLabel(tint: .accent)`, the "◆ assistant"
+    /// The accent as text: `HUDLabel(tint: .accent)`, the "◆ assistant"
     /// marker, `Link("License")`, the "Re-run" benchmark action, the model
     /// chip, and `statusOk` wherever it labels something.
     func testAccentTextOnTheSurfacesItIsUsedOn() {
@@ -179,17 +179,10 @@ final class MacContrastTests: XCTestCase {
             atLeast: Self.aa)
     }
 
-    /// Accent on the sunken surface: `HUDChip` sits on `bgSunken`, and an
-    /// accent-tinted chip there is just under the bar in light mode.
+    /// Accent on the sunken surface: `HUDChip` sits on `bgSunken`. The Mac
+    /// Ember (`#B0411F` light) clears AA here too (4.69:1); the old green
+    /// measured 4.35:1 and was recorded as an expected failure.
     func testAccentOnSunken() {
-        XCTExpectFailure(
-            """
-            accent on bgSunken measures 4.35:1 in light mode; AA needs 4.5:1. \
-            It passes on every other surface (5.05 on bgSurface, 5.32 on \
-            bgRaised, 4.71 on bgCanvas) and in dark mode (7.4:1), so the cheap \
-            fix is to stop tinting chips on bgSunken with the accent — but the \
-            colours themselves are Core's.
-            """)
         assertContrast(
             PocketColor.accent, "accent", on: PocketColor.bgSunken, "bgSunken",
             atLeast: Self.aa)

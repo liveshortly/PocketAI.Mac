@@ -231,7 +231,6 @@ struct PrivacyView: View {
                             get: { app.offlineMode.isOn },
                             set: { app.offlineMode.set($0) }))
                             .toggleStyle(.switch)
-                            .tint(PocketColor.accent)
                             .font(.pocket(.body))
                         Text("Blocks every outbound request, model downloads included.")
                             .font(.pocket(.caption))

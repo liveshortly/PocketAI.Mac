@@ -53,7 +53,7 @@ struct NewChatMenu: View {
             Divider()
             Button("Model library…") { app.selection = .models }
         } label: {
-            Label("New chat", systemImage: "plus.circle.fill")
+            Label("New chat", systemImage: "plus.circle")
                 .foregroundStyle(PocketColor.accent)
         } primaryAction: {
             // Clicking the row itself keeps the fast path.
