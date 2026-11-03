@@ -20,7 +20,7 @@ struct PocketAIApp: App {
 
         // Menu bar presence: quick-ask without bringing the main window
         // forward, and the shortcuts people reach for from another app.
-        MenuBarExtra("PocketAI", systemImage: "diamond.fill") {
+        MenuBarExtra("PocketAI", image: "MenuBarIcon") {
             MenuBarContent()
                 .environment(app)
         }
