@@ -615,8 +615,14 @@ public final class AppModel {
             serverStatus = try core.serverStart(cfg: ServerConfig(lanEnabled: lan, port: savedPort))
             serverNeedsLicense = false
         } catch {
-            if case PocketError.NotEntitled = error { serverNeedsLicense = lan }
             NSLog("PocketAI: server start (lan: %@) failed: %@", lan ? "yes" : "no", "\(error)")
+            // No license yet: keep serving this Mac (loopback) so local apps
+            // still work, and let the Server page explain the missing key.
+            if case PocketError.NotEntitled = error, lan {
+                serverNeedsLicense = true
+                serverStatus = (try? core.serverStart(cfg: ServerConfig(lanEnabled: false, port: savedPort)))
+                    ?? serverStatus
+            }
         }
         // Remember the port only on a first bind. A fallback (saved port still
         // held, e.g. by the previous instance during a relaunch) is for this
@@ -633,7 +639,7 @@ public final class AppModel {
         // Bonjour so a paired iPhone can rediscover this Mac after an IP
         // change. `pairingIdentity()` never rotates the single-use pairing
         // secret, unlike `pairingOffer()`.
-        if lan, serverStatus.running, serverStatus.port != 0 {
+        if lan, serverStatus.running, serverStatus.lanEnabled, serverStatus.port != 0 {
             let identity = core.pairingIdentity()
             advertiser.start(
                 hostId: identity.hostId,

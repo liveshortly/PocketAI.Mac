@@ -257,7 +257,7 @@ struct DevicesView: View {
         if app.serverAccess != .pairedDevices || !app.serverStatus.running {
             app.setServerAccess(.pairedDevices)
         }
-        guard app.serverStatus.running else {
+        guard app.serverStatus.running, app.serverStatus.lanEnabled else {
             qrError = app.serverNeedsLicense
                 ? "Pairing needs a PocketAI license. Enter your key in Settings › License, then try again."
                 : "This Mac couldn't open itself to devices on the network, so there is nothing to pair with."
