@@ -29,6 +29,9 @@ struct ModelsView: View {
             HUDRule()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                    // UI-123: offline mode used to show live Download buttons
+                    // that could only fail; say why network actions are off.
+                    if app.offlineMode.isOn { offlineBanner }
                     if let deleteError {
                         Text(deleteError)
                             .font(.pocket(.footnote))
@@ -42,15 +45,12 @@ struct ModelsView: View {
                         }
                     }
                     HUDLabel(showInstalledOnly ? "Installed" : "Library")
+                    if showsAppleIntelligence { appleIntelligenceRow }
                     ForEach(filtered, id: \.manifest.id) { entry in
                         ModelCard(entry: entry, onDelete: { confirmDelete = $0 })
                     }
                     if filtered.isEmpty {
-                        Text(
-                            showInstalledOnly
-                                ? "No models installed yet. Turn off “installed only” to browse the catalog."
-                                : "No models match “\(search)”."
-                        )
+                        Text(emptyMessage)
                         .font(.pocket(.footnote))
                         .foregroundStyle(PocketColor.textTertiary)
                         .padding(.vertical, PocketSpacing.s8)
@@ -80,14 +80,17 @@ struct ModelsView: View {
             if app.pendingCommand == .refresh { reload() }
         }
         .onDisappear { refreshTask?.cancel() }
+        // UI-124: the title was a sentence with the raw display name; the
+        // short name, the space it frees and the default-model consequence
+        // are what the decision needs.
         .confirmationDialog(
-            "Delete \(confirmDelete?.manifest.displayName ?? "model")? The files are removed from this Mac.",
+            "Delete \(ModelNaming.short(confirmDelete?.manifest.displayName ?? "model"))?",
             isPresented: Binding(
                 get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete model", role: .destructive) {
-                guard let target = confirmDelete else { return }
+            titleVisibility: .visible,
+            presenting: confirmDelete
+        ) { target in
+            Button("Delete", role: .destructive) {
                 do {
                     try app.core.deleteModel(modelId: target.manifest.id)
                     deleteError = nil
@@ -97,7 +100,94 @@ struct ModelsView: View {
                 }
                 reload()
             }
+        } message: { target in
+            Text(deleteMessage(target))
         }
+    }
+
+    private func deleteMessage(_ target: CatalogEntry) -> String {
+        var text = "Frees \(hudBytes(target.fit.diskBytes)) on this Mac. "
+            + "You can download it again later."
+        if app.currentModelId == target.manifest.id {
+            text += " It's your default model, so new chats will need another one."
+        }
+        return text
+    }
+
+    // MARK: - States
+
+    private var offlineBanner: some View {
+        HStack(spacing: PocketSpacing.s8) {
+            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(PocketColor.textSecondary)
+                .accessibilityHidden(true)
+            Text("Offline mode is on. Downloads and Hugging Face search wait until you turn it off in Settings.")
+                .font(.pocket(.footnote))
+                .foregroundStyle(PocketColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(PocketSpacing.s8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hudPanel(PocketColor.bgSunken)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// UI-122: one sentence per real cause. "No models match “”" showed when
+    /// the search was empty and only the engine filter excluded everything.
+    private var emptyMessage: String {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        let engine = formatFilter == .all ? "" : "\(formatFilter.label) "
+        if entries.isEmpty {
+            return "The model catalog is empty. Press ⌘R to reload it."
+        }
+        if !query.isEmpty {
+            let hub = query.count > 2 && !app.offlineMode.isOn
+                ? " Press Return to search Hugging Face." : ""
+            return "No \(engine)models here match “\(query)”.\(hub)"
+        }
+        if showInstalledOnly {
+            return installed.isEmpty
+                ? "No models installed yet. Turn off “Installed only” to browse the catalog."
+                : "No \(engine)models installed. Choose All to see the rest."
+        }
+        return "No \(engine)models in the catalog."
+    }
+
+    /// UI-126: Apple's model needs no download, so it never had a catalog
+    /// entry and could only be picked in onboarding or the chat menu.
+    private var showsAppleIntelligence: Bool {
+        guard app.appleIntelligenceAvailable, formatFilter == .all else { return false }
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return query.isEmpty || "apple intelligence".contains(query)
+    }
+
+    private var appleIntelligenceRow: some View {
+        let isDefault = app.currentModelId == AppModel.appleIntelligenceId
+        return HStack(spacing: PocketSpacing.s8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: PocketSpacing.s8) {
+                    Text("Apple Intelligence")
+                        .font(.pocket(.headline))
+                    HUDChip(text: "BUILT IN")
+                    if isDefault { HUDChip(text: "DEFAULT", filled: true) }
+                }
+                Text("Apple's on-device model, part of macOS. No download.")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
+            Spacer(minLength: 0)
+            if !isDefault {
+                Button("Use") { app.currentModelId = AppModel.appleIntelligenceId }
+                    .buttonStyle(.hud)
+                    .accessibilityLabel("Use Apple Intelligence for new chats")
+            }
+        }
+        .padding(PocketSpacing.s12)
+        .hudPanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            isDefault ? "Apple Intelligence, built in, default model" : "Apple Intelligence, built in")
     }
 
     private var header: some View {
@@ -259,6 +349,11 @@ struct ModelsView: View {
                 ? nil : "Type at least three characters to search Hugging Face."
             return
         }
+        guard !app.offlineMode.isOn else {
+            hubResults = []
+            hubError = "Offline mode is on, so Hugging Face isn't searched."
+            return
+        }
         hubError = nil
         searching = true
         let core = app.core
@@ -405,8 +500,43 @@ struct ModelCard: View {
     /// tokens for a few seconds, so it has to be visible while it happens.
     @State private var benchmark: Benchmark?
     @State private var benchmarking = false
+    /// UI-121 / UI-125: a won't-fit download and a cancel each need a yes.
+    @State private var confirmUnfit = false
+    @State private var confirmCancel = false
 
     private var isDefault: Bool { app.currentModelId == entry.manifest.id }
+    private var name: String { ModelNaming.short(entry.manifest.displayName) }
+    private var offline: Bool { app.offlineMode.isOn }
+
+    /// UI-127: only text and vision models can be the chat default; "Use" on
+    /// an image or speech model set a default no chat could load.
+    private var isChatModel: Bool {
+        entry.manifest.modalities.contains(.text) || entry.manifest.modalities.contains(.vision)
+    }
+
+    /// Says what a non-chat model is for, in place of the "Use" button.
+    private var purposeChip: String? {
+        let m = entry.manifest.modalities
+        if isChatModel { return nil }
+        if m.contains(.image) { return "IMAGES" }
+        if m.contains(.speechToText) || m.contains(.textToSpeech) { return "VOICE" }
+        if m.contains(.embedding) { return "EMBEDDINGS" }
+        return nil
+    }
+
+    private var fitKind: FitBadgeKind {
+        switch entry.fit.verdict {
+        case .runsWell: return .runsWell
+        case .runsSlow: return .runsSlow
+        case .willNotFit: return .willNotFit
+        case .notSupported: return .notSupported
+        }
+    }
+
+    private func startDownload() {
+        DownloadRates.shared.forget(entry.manifest.id)
+        attempt("Download") { try app.core.startDownload(modelId: entry.manifest.id) }
+    }
 
     /// Runs a core call and keeps its failure on the card instead of dropping
     /// it. `what` names the action in the user's words ("Pause").
@@ -428,6 +558,7 @@ struct ModelCard: View {
                             .font(.pocket(.headline))
                         HUDChip(text: entry.manifest.format.badge)
                             .help(entry.manifest.format.engineDescription)
+                        if let purposeChip { HUDChip(text: purposeChip) }
                         if isDefault { HUDChip(text: "DEFAULT", filled: true) }
                     }
                     Text(subtitle)
@@ -441,7 +572,8 @@ struct ModelCard: View {
             if case .queued = entry.state { progress }
             if case .paused = entry.state { progress }
             if case .verifying = entry.state {
-                HUDLabel("verifying…")
+                // Spec C10 wording; "verifying" is the engineer's word.
+                HUDLabel("Checking file…")
             }
             if case .failed(let reason) = entry.state {
                 HStack(alignment: .top, spacing: PocketSpacing.s8) {
@@ -461,6 +593,8 @@ struct ModelCard: View {
                         }
                     }
                     .buttonStyle(.hud)
+                    .disabled(offline)
+                    .help(offline ? "Turn off offline mode to retry." : "")
                     .accessibilityLabel(
                         "Retry downloading \(ModelNaming.short(entry.manifest.displayName))")
                 }
@@ -509,6 +643,24 @@ struct ModelCard: View {
         // dozen loose strings.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(cardSummary)
+        .confirmationDialog(
+            "Download \(name) anyway?", isPresented: $confirmUnfit, titleVisibility: .visible
+        ) {
+            Button("Download anyway") { startDownload() }
+        } message: {
+            Text("\(entry.fit.reason) It may not load, or may slow this Mac down.")
+        }
+        .confirmationDialog(
+            "Cancel downloading \(name)?", isPresented: $confirmCancel, titleVisibility: .visible
+        ) {
+            Button("Cancel download", role: .destructive) {
+                attempt("Cancel") { try app.core.cancelDownload(modelId: entry.manifest.id) }
+            }
+            Button("Keep downloading", role: .cancel) {}
+        } message: {
+            Text("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes)) is downloaded. "
+                + "Pause instead if you want to pick it up later.")
+        }
         .task(id: entry.manifest.id) {
             // A cheap local read, not a run: shows the previous result so the
             // user isn't made to re-measure to see a number they already have.
@@ -568,8 +720,9 @@ struct ModelCard: View {
 
     /// What this card is, said once: name, state, shape and fit verdict.
     private var cardSummary: String {
-        var parts = [ModelNaming.short(entry.manifest.displayName), stateWord]
+        var parts = [name, stateWord]
         if isDefault { parts.append("default model") }
+        if let purposeChip { parts.append("for \(purposeChip.lowercased())") }
         parts.append(entry.manifest.format.badge)
         parts.append(subtitle)
         parts.append(entry.fit.reason)
@@ -601,11 +754,14 @@ struct ModelCard: View {
 
     private var fitLine: some View {
         HStack(spacing: PocketSpacing.s8) {
-            HUDDot(tint: fitTint)
+            // UI-120: the verdict was a colored dot only; the shared badge
+            // names it ("Won't fit") so color isn't the sole signal.
+            FitBadge(kind: fitKind, reason: entry.fit.reason)
             Text(entry.fit.reason)
                 .font(.pocket(.caption))
                 .foregroundStyle(PocketColor.textSecondary)
                 .lineLimit(2)
+                .accessibilityHidden(true) // the badge's label carries the reason
             Spacer(minLength: 0)
             if let measured = entry.fit.measuredTokensPerSec {
                 HUDLabel("\(Int(measured)) tok/s measured")
@@ -615,22 +771,13 @@ struct ModelCard: View {
         }
     }
 
-    private var fitTint: Color {
-        switch entry.fit.verdict {
-        case .runsWell: return PocketColor.statusOk
-        case .runsSlow: return PocketColor.statusWarn
-        case .willNotFit, .notSupported: return PocketColor.statusBad
-        }
-    }
-
     /// Icon-only and one-word controls need a label that says what they do to
-    /// which model — "Get" alone tells a screen reader nothing.
+    /// which model — "Download" alone tells a screen reader nothing.
     @ViewBuilder private var actions: some View {
-        let name = ModelNaming.short(entry.manifest.displayName)
         switch entry.state {
         case .installed:
             HStack(spacing: PocketSpacing.s8) {
-                if !isDefault {
+                if !isDefault && isChatModel {
                     Button("Use") { app.currentModelId = entry.manifest.id }
                         .buttonStyle(.hud)
                         .accessibilityLabel("Use \(name) for new chats")
@@ -663,16 +810,42 @@ struct ModelCard: View {
                 attempt("Resume") { try app.core.resumeDownload(modelId: entry.manifest.id) }
             }
             .buttonStyle(.hud)
+            .disabled(offline)
+            .help(offline ? "Turn off offline mode to resume." : "")
             .accessibilityLabel("Resume downloading \(name)")
         case .verifying:
             EmptyView()
         case .available, .failed:
-            Button(entry.fit.verdict == .willNotFit ? "Get anyway" : "Get") {
-                attempt("Download") { try app.core.startDownload(modelId: entry.manifest.id) }
-            }
-            .buttonStyle(.hudProminent)
-            .accessibilityLabel("Download \(name)")
-            .accessibilityHint(entry.fit.verdict == .willNotFit ? entry.fit.reason : "")
+            downloadButton
+        }
+    }
+
+    /// UI-119: "Download", matching onboarding (was "Get"). UI-121: a model
+    /// the core says this Mac can't run is not offered at all; one that won't
+    /// fit is a secondary button behind a confirmation that gives the reason.
+    @ViewBuilder private var downloadButton: some View {
+        let size = hudBytes(entry.fit.diskBytes)
+        switch entry.fit.verdict {
+        case .notSupported:
+            Button("Download") {}
+                .buttonStyle(.hud)
+                .disabled(true)
+                .help(entry.fit.reason)
+                .accessibilityLabel("Download \(name), unavailable")
+                .accessibilityHint(entry.fit.reason)
+        case .willNotFit:
+            Button("Download anyway…") { confirmUnfit = true }
+                .buttonStyle(.hud)
+                .disabled(offline)
+                .help(offline ? "Turn off offline mode to download." : entry.fit.reason)
+                .accessibilityLabel("Download \(name) anyway, \(size)")
+                .accessibilityHint(entry.fit.reason)
+        case .runsWell, .runsSlow:
+            Button("Download") { startDownload() }
+                .buttonStyle(.hudProminent)
+                .disabled(offline)
+                .help(offline ? "Turn off offline mode to download." : "Download \(size)")
+                .accessibilityLabel("Download \(name), \(size)")
         }
     }
 
@@ -686,14 +859,11 @@ struct ModelCard: View {
                 HUDLabel("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
                 if let detail = rateAndETA { HUDLabel(detail) }
                 Spacer()
-                Button("Cancel") {
-                    attempt("Cancel") { try app.core.cancelDownload(modelId: entry.manifest.id) }
-                }
-                .buttonStyle(.plain)
+                Button("Cancel…") { confirmCancel = true }
+                    .buttonStyle(.plain)
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.statusBad)
-                    .accessibilityLabel(
-                        "Cancel downloading \(ModelNaming.short(entry.manifest.displayName))")
+                    .accessibilityLabel("Cancel downloading \(name)")
             }
         }
     }
