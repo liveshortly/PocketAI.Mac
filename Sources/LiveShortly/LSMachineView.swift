@@ -98,6 +98,8 @@ private struct LSDaemonCard: View {
     let daemon: LSDaemonController
     let runningElsewhere: Bool
     @State private var showLog = false
+    @State private var askingCustom = false
+    @State private var customURL = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s12) {
@@ -115,6 +117,8 @@ private struct LSDaemonCard: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let problem = daemon.problem { problemBanner(problem) }
+            serverRow
             nameField
             if !daemon.log.isEmpty {
                 DisclosureGroup("Log", isExpanded: $showLog) { logView }
@@ -130,7 +134,8 @@ private struct LSDaemonCard: View {
         case .signedOut:
             Button(daemon.signingIn ? "Waiting for browser…" : "Sign in") { daemon.signIn() }
                 .buttonStyle(.hudProminent)
-                .disabled(daemon.signingIn)
+                .disabled(daemon.signingIn || daemon.serverDown)
+                .help(daemon.serverDown ? (daemon.problem?.message ?? "") : "")
         case .stopped where !runningElsewhere:
             Button("Start") { daemon.start() }
                 .buttonStyle(.hudProminent)
@@ -141,6 +146,69 @@ private struct LSDaemonCard: View {
         default:
             EmptyView()
         }
+    }
+
+    /// LSI-15: plain-English failure plus the way out. The raw Go error is
+    /// still in the Log below.
+    private func problemBanner(_ problem: LSLoginProblem) -> some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            Label {
+                Text(LocalizedStringKey(problem.message))
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(PocketColor.statusWarn)
+            }
+            .font(.pocket(.footnote))
+            HStack(spacing: PocketSpacing.s8) {
+                Button("Retry") { daemon.retry() }.buttonStyle(.hud)
+                if problem.kind == .unreachable, !LSServer.isProduction(daemon.server) {
+                    Button("Use liveshortly.com") { daemon.useServer(nil) }
+                        .buttonStyle(.hudProminent)
+                }
+            }
+        }
+        .padding(PocketSpacing.s8)
+        .hudPanel(PocketColor.bgSunken)
+    }
+
+    private var serverRow: some View {
+        HStack(spacing: PocketSpacing.s8) {
+            Text("Server").font(.pocket(.footnote)).foregroundStyle(PocketColor.textSecondary)
+            Text(LSServer.label(daemon.server))
+                .font(.pocket(.mono))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(daemon.server)
+            Spacer(minLength: 0)
+            Menu("Change") {
+                Button("liveshortly.com") { daemon.useServer(nil) }
+                    .disabled(LSServer.isProduction(daemon.server))
+                Button("Custom…") {
+                    customURL = LSServer.isProduction(daemon.server) ? "" : daemon.server
+                    askingCustom = true
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(daemon.signingIn)
+        }
+        .alert("Custom server", isPresented: $askingCustom) {
+            TextField("https://live.example.com", text: $customURL)
+            Button("Use") { daemon.useServer(customOrigin) }
+                .disabled(customOrigin == nil)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A self-hosted LiveShortly server. A running daemon restarts to connect there.")
+        }
+    }
+
+    /// The typed URL as an http(s) origin, or nil if it isn't one.
+    private var customOrigin: String? {
+        let raw = customURL.trimmingCharacters(in: .whitespaces)
+        guard let c = URLComponents(string: raw), c.scheme == "http" || c.scheme == "https",
+              c.host?.isEmpty == false else { return nil }
+        return raw.hasSuffix("/") ? String(raw.dropLast()) : raw
     }
 
     private var nameField: some View {

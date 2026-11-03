@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import PocketLiveShortly
 
 /// Supervises `live daemon` on this Mac (LSI-14): finds the CLI, checks the
 /// sign-in, starts/stops the daemon as a child process, and owns the allowed
@@ -34,6 +35,13 @@ final class LSDaemonController {
     private(set) var account: String?
     private(set) var log = ""
     private(set) var signingIn = false
+    /// The API origin `live` uses (host.json > env > liveshortly.com), LSI-15.
+    private(set) var server = LSServer.production
+    /// Why sign-in failed or can't start, in plain words; the raw line stays
+    /// in `log`.
+    private(set) var problem: LSLoginProblem?
+    /// The reachability check failed: Sign in stays disabled until Retry.
+    private(set) var serverDown = false
 
     var dirs: [String] {
         didSet { UserDefaults.standard.set(dirs, forKey: Self.dirsKey) }
@@ -69,6 +77,9 @@ final class LSDaemonController {
     private var searchPath = ""
     private var process: Process?
     private var restartOnExit = false
+    /// `live host set|reset` exists (live PR #38). Older CLIs would treat `host`
+    /// as an agent to run, so they get host.json written directly instead.
+    private var hasHostCommand = false
 
     private init() {
         dirs = UserDefaults.standard.stringArray(forKey: Self.dirsKey) ?? []
@@ -95,9 +106,38 @@ final class LSDaemonController {
             status = .notInstalled
             return
         }
+        server = LSServer.resolve(home: realHome, env: ProcessInfo.processInfo.environment)
         let (code, out) = await run(["whoami"])
         account = out.split(separator: "\n").first.map(String.init)
         status = code == 0 ? .stopped : .signedOut
+        if status == .signedOut {
+            await preflight()
+        } else {
+            problem = nil
+            serverDown = false
+        }
+    }
+
+    /// GET <server>/health before offering Sign in. Any HTTP answer below 500
+    /// counts as reachable (a self-hosted server may not serve /health).
+    private func preflight() async {
+        guard let url = URL(string: server + "/health") else { return }
+        var kind: LSLoginProblem.Kind?
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 5))
+            if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 500 { kind = .serverTrouble }
+        } catch let error as URLError {
+            switch error.code {
+            case .appTransportSecurityRequiresSecureConnection, .cancelled: kind = nil // can't tell; let `live` try
+            case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+                 .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot: kind = .serverTrouble
+            default: kind = .unreachable
+            }
+        } catch {
+            kind = .unreachable
+        }
+        serverDown = kind != nil
+        problem = kind.map { LSLoginProblem(kind: $0, server: server) }
     }
 
     /// GUI apps get a bare PATH; `live daemon` needs tmux and the agents on
@@ -115,6 +155,7 @@ final class LSDaemonController {
         searchPath = unique.joined(separator: ":")
         liveURL = unique.lazy.map { URL(fileURLWithPath: $0).appendingPathComponent("live") }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+        hasHostCommand = await run(["help"]).1.contains("live host set")
     }
 
     // MARK: - Actions
@@ -124,10 +165,56 @@ final class LSDaemonController {
         signingIn = true
         Task {
             // `live login` opens the browser itself and polls until approved.
+            problem = nil
             let (_, out) = await run(["login"])
             append(out)
             signingIn = false
             await refresh()
+            if status == .signedOut, problem == nil {
+                problem = LSLoginProblem(loginOutput: out, server: server)
+            }
+        }
+    }
+
+    /// Retry from the error banner: re-check the server, then sign in again
+    /// if it answers.
+    func retry() {
+        Task {
+            problem = nil
+            await refresh()
+            if status == .signedOut, !serverDown { signIn() }
+        }
+    }
+
+    /// Points `live` at `url` (nil = liveshortly.com) via `live host set|reset`
+    /// and restarts a running daemon so it reconnects there.
+    func useServer(_ url: String?) {
+        Task {
+            if hasHostCommand {
+                let (_, out) = await run(url.map { ["host", "set", $0] } ?? ["host", "reset"])
+                append(out)
+            } else {
+                writeHostFile(url)
+            }
+            problem = nil
+            if isRunning { restart() }
+            await refresh()
+        }
+    }
+
+    /// Fallback for CLIs without `live host`: same file, same format.
+    private func writeHostFile(_ url: String?) {
+        let path = realHome + "/.liveshortly/host.json"
+        do {
+            if let url {
+                let data = try JSONSerialization.data(withJSONObject: ["api_url": url, "web_url": url])
+                try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+            } else if FileManager.default.fileExists(atPath: path) {
+                try FileManager.default.removeItem(atPath: path)
+            }
+            append("● server: \(url ?? LSServer.production) (wrote host.json)\n")
+        } catch {
+            append("● could not update host.json: \(error.localizedDescription)\n")
         }
     }
 
