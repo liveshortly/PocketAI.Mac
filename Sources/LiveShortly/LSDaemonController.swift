@@ -31,9 +31,27 @@ final class LSDaemonController {
     }
 
     private(set) var status: Status = .checking
+    /// One timestamped line of `live` output (LSI-16 Troubleshooting).
+    struct LogLine: Identifiable {
+        let id: Int
+        let date: Date
+        let text: String
+        let isError: Bool
+    }
+
     /// `live whoami` first line, e.g. "Rohit (rohit@example.com)".
     private(set) var account: String?
-    private(set) var log = ""
+    private(set) var logLines: [LogLine] = []
+    /// Newest line that means "working" (ready / started). Errors older than
+    /// it were resolved, so the UI dims them instead of leading with them.
+    private(set) var lastSuccessID = -1
+    /// The running daemon can't do its job (register/stream failing, or it
+    /// exited on its own) — plain words for the header. Cleared by the next
+    /// "ready".
+    private(set) var trouble: String?
+    /// Full ids of sessions seen running in this Mac's tmux socket, so a
+    /// session stays listed here (as Ended) after its pane is gone.
+    private(set) var localIDs: Set<String> = []
     private(set) var signingIn = false
     /// The API origin `live` uses (host.json > env > liveshortly.com), LSI-15.
     private(set) var server = LSServer.production
@@ -77,6 +95,10 @@ final class LSDaemonController {
     private var searchPath = ""
     private var process: Process?
     private var restartOnExit = false
+    private var stopping = false
+    private var nextLineID = 0
+    /// A chunk from the pipe can end mid-line; the tail waits here.
+    private var partialLine = ""
     /// `live host set|reset` exists (live PR #38). Older CLIs would treat `host`
     /// as an agent to run, so they get host.json written directly instead.
     private var hasHostCommand = false
@@ -220,6 +242,8 @@ final class LSDaemonController {
 
     func start() {
         guard process == nil, let liveURL, !dirs.isEmpty else { return }
+        trouble = nil
+        stopping = false
         var args = ["daemon", "--name", machineName]
         for dir in dirs { args += ["--dir", dir] }
         let p = Process()
@@ -253,7 +277,50 @@ final class LSDaemonController {
 
     func stop() {
         restartOnExit = false
+        stopping = true
         process?.terminate()
+    }
+
+    /// Saves the name shown in the web/phone picker. It is a launch flag, so
+    /// a running daemon restarts. Returns true when that happened.
+    @discardableResult
+    func rename(_ name: String) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != machineName else { return false }
+        machineName = name
+        guard isRunning else { return false }
+        restart()
+        return true
+    }
+
+    /// `live logout`, after stopping the daemon that uses those credentials.
+    func signOut() {
+        stop()
+        Task {
+            let (_, out) = await run(["logout"])
+            append(out)
+            account = nil
+            await refresh()
+        }
+    }
+
+    func clearLog() {
+        logLines = []
+        lastSuccessID = -1
+    }
+
+    /// The log as plain text, oldest first, for Copy.
+    var logText: String {
+        logLines.map { "\($0.date.formatted(date: .omitted, time: .standard))  \($0.text)" }
+            .joined(separator: "\n")
+    }
+
+    /// Remembers live sessions whose pane runs here (see `localIDs`).
+    func noteLocal(_ sessions: [LSSession]) async {
+        let prefixes = await localSessionPrefixes()
+        for s in sessions where s.isLive && prefixes.contains(String(s.id.prefix(8))) {
+            localIDs.insert(s.id)
+        }
     }
 
     /// The allowlist is a launch flag, so changing it means a restart.
@@ -265,18 +332,29 @@ final class LSDaemonController {
 
     /// Directory picker (multiple) starting at the user's real home; each pick
     /// joins the allowlist and a running daemon restarts to pick it up.
-    func addRepos() {
+    @discardableResult
+    func addRepos() -> Bool {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
         panel.directoryURL = URL(fileURLWithPath: realHome)
         panel.prompt = "Allow"
-        guard panel.runModal() == .OK else { return }
+        guard panel.runModal() == .OK else { return false }
         let picked = panel.urls.map { $0.standardizedFileURL.path }.filter { !dirs.contains($0) }
-        guard !picked.isEmpty else { return }
+        guard !picked.isEmpty else { return false }
         dirs += picked
         if isRunning { restart() }
+        return true
+    }
+
+    /// Git repos a folder offers: itself, or its direct children.
+    /// ponytail: one level deep; nested monorepo layouts undercount.
+    nonisolated static func repoCount(_ dir: String) -> Int {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: dir + "/.git") { return 1 }
+        let kids = (try? fm.contentsOfDirectory(atPath: dir)) ?? []
+        return kids.filter { fm.fileExists(atPath: dir + "/" + $0 + "/.git") }.count
     }
 
     func remove(_ dir: String) {
@@ -313,6 +391,10 @@ final class LSDaemonController {
         process = nil
         status = .stopped
         append("● daemon exited (\(code))\n")
+        if !stopping, !restartOnExit, code != 0 {
+            trouble = "LiveShortly stopped unexpectedly. Turn it back on, or see Troubleshooting."
+        }
+        stopping = false
         if restartOnExit {
             restartOnExit = false
             start()
@@ -323,7 +405,29 @@ final class LSDaemonController {
         // The daemon colours its lines for a terminal; drop the escapes.
         let clean = text.replacingOccurrences(
             of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression)
-        log = String((log + clean).suffix(20_000))
+        var parts = (partialLine + clean).components(separatedBy: "\n")
+        partialLine = parts.removeLast()
+        for raw in parts {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { continue }
+            add(line)
+        }
+        if logLines.count > 500 { logLines.removeFirst(logLines.count - 500) }
+    }
+
+    private func add(_ line: String) {
+        let lower = line.lowercased()
+        let isError = lower.range(
+            of: #"\b(fail(ed)?|error|refused|could not|cannot|can't)\b"#,
+            options: .regularExpression) != nil
+        nextLineID += 1
+        logLines.append(LogLine(id: nextLineID, date: Date(), text: line, isError: isError))
+        if lower.contains("daemon ready") || lower.hasPrefix("● live started") {
+            lastSuccessID = nextLineID
+            trouble = nil
+        } else if lower.contains("register failed") || lower.contains("stream ended") {
+            trouble = LSLoginProblem(kind: .unreachable, server: server).message
+        }
     }
 
     private func run(_ args: [String]) async -> (Int32, String) {

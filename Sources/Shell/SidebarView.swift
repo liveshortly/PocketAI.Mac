@@ -11,13 +11,12 @@ struct SidebarView: View {
     @Environment(AppModel.self) private var app
     @State private var conversations: [ConversationSummary] = []
     @State private var projects: [Project] = []
-    @State private var sessions: [LSSession] = []
+    @Environment(\.scenePhase) private var scenePhase
     @State private var renaming: ConversationSummary?
     @State private var confirmDelete: ConversationSummary?
     @State private var newProject = false
     @State private var pendingEndSession: LSSession?
     @State private var pendingDeleteSession: LSSession?
-    @State private var lastSessionLoad: Date?
     /// Why the last session action didn't take. Ending and deleting both
     /// dropped their error, and delete removed the row even when the server
     /// had refused — so the list told a story the server disagreed with.
@@ -26,6 +25,11 @@ struct SidebarView: View {
     /// The sidebar shows only the newest few of each kind; the rest live
     /// in the full lists (and ⌘K reaches any of them directly).
     private static let recentLimit = 5
+
+    /// The account's shared, self-polling session list (LSI-17). Was a local
+    /// copy fetched once behind a 15 s guard, so new sessions never showed.
+    private var feed: LSSessionFeed { app.liveShortly.feed }
+    private var sessions: [LSSession] { feed.sessions }
 
     var body: some View {
         @Bindable var app = app
@@ -47,16 +51,13 @@ struct SidebarView: View {
         .onChange(of: app.sidebarSearch) { _, _ in reloadConversations() }
         .safeAreaInset(edge: .bottom) { footer }
         .task { reloadAll() }
+        .task { await feed.run() }
+        .onChange(of: scenePhase, initial: true) { _, phase in feed.phase = phase }
         .onChange(of: app.selection) { _, _ in reloadConversations() }
         .onChange(of: app.liveShortly.isConnected) { _, connected in
             // Connecting from Settings should fill this section straight away,
             // not on the next launch.
-            guard connected else {
-                sessions = []
-                return
-            }
-            lastSessionLoad = nil
-            reloadSessions()
+            if connected { Task { await feed.reload() } }
         }
         .onChange(of: app.commandSerial) { _, _ in
             switch app.pendingCommand {
@@ -66,7 +67,6 @@ struct SidebarView: View {
                 app.clearCommand()
             case .refresh:
                 // Re-fetch both lists; a session or chat can land after load.
-                lastSessionLoad = nil
                 reloadAll()
             default:
                 break
@@ -108,8 +108,7 @@ struct SidebarView: View {
                         sessionActionError =
                             "Couldn't end that session: \(error.localizedDescription)"
                     }
-                    lastSessionLoad = nil
-                    reloadSessions()
+                    await feed.reload()
                 }
             }
         }
@@ -128,7 +127,7 @@ struct SidebarView: View {
                         try await client.deleteSession(target.id)
                         sessionActionError = nil
                         if app.selection == .session(target.id) { app.selection = nil }
-                        sessions.removeAll { $0.id == target.id }
+                        feed.remove(target.id)
                     } catch {
                         sessionActionError =
                             "Couldn't delete that session: \(error.localizedDescription)"
@@ -223,7 +222,7 @@ struct SidebarView: View {
     private var liveShortlySection: some View {
         Section {
             if app.liveShortly.isConnected {
-                ForEach(orderedSessions.prefix(Self.recentLimit), id: \.id) { session in
+                ForEach(visibleSessions, id: \.id) { session in
                     SessionRow(session: session)
                         .sidebarRow(.session(session.id))
                         .contextMenu {
@@ -254,13 +253,20 @@ struct SidebarView: View {
                         .sidebarRow(.allSessions, muted: true)
                 }
                 if sessions.isEmpty {
-                    Text("No sessions yet")
+                    Text(feed.loadError.map { "Couldn't load sessions: \($0)" }
+                        ?? (feed.loaded ? "No sessions yet" : "Loading…"))
                         .font(.pocket(.footnote))
                         .foregroundStyle(PocketColor.textTertiary)
                 }
                 Label("New session", systemImage: "plus")
                     .font(.pocket(.footnote))
                     .sidebarRow(.newSession(), muted: true)
+                if let error = feed.loadError, !sessions.isEmpty {
+                    Text("Couldn't refresh: \(error)")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textTertiary)
+                        .lineLimit(2)
+                }
                 if let sessionActionError {
                     Text(sessionActionError)
                         .font(.pocket(.caption))
@@ -341,17 +347,21 @@ struct SidebarView: View {
 
     // MARK: - Data
 
-    private var orderedSessions: [LSSession] {
-        sessions.sorted {
-            if $0.isLive != $1.isLive { return $0.isLive }
-            return $0.createdAt > $1.createdAt
-        }
+    /// The newest few, live first — plus the open session pinned on top when
+    /// it would otherwise fall below the cut, so it stays highlighted.
+    private var visibleSessions: [LSSession] {
+        let ordered = feed.ordered
+        let top = ordered.prefix(Self.recentLimit)
+        guard case .session(let id)? = app.selection, !top.contains(where: { $0.id == id }),
+              let open = ordered.first(where: { $0.id == id })
+        else { return Array(top) }
+        return [open] + ordered.prefix(Self.recentLimit - 1)
     }
 
     private func reloadAll() {
         reloadConversations()
         reloadProjects()
-        reloadSessions()
+        Task { await feed.reload() }
     }
 
     private func reloadConversations() {
@@ -366,16 +376,6 @@ struct SidebarView: View {
 
     private func reloadProjects() {
         projects = app.core.listProjects()
-    }
-
-    private func reloadSessions() {
-        guard let client = app.liveShortly.client else { return }
-        // 15s staleness guard: the sidebar reloads on every selection change.
-        if let last = lastSessionLoad, Date().timeIntervalSince(last) < 15 { return }
-        lastSessionLoad = Date()
-        Task {
-            sessions = (try? await client.sessions(limit: 30)) ?? []
-        }
     }
 }
 
@@ -408,7 +408,7 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: PocketSpacing.s8) {
-            LSSessionMark(isLive: session.isLive, size: 22)
+            LSSessionMark(session: session, size: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.title.isEmpty ? "Untitled session" : session.title)
                     .font(.pocket(.body))
@@ -439,7 +439,7 @@ struct SessionRow: View {
     /// otherwise either silent or read out of order.
     private var rowLabel: String {
         var parts = [session.title.isEmpty ? "Untitled session" : session.title]
-        parts.append(session.isLive ? "live" : "ended")
+        parts.append(session.isStarting ? "starting" : session.isLive ? "live" : "ended")
         if unread > 0 { parts.append("\(unread) new events") }
         parts.append(subtitle)
         return parts.joined(separator: ", ")
@@ -454,6 +454,7 @@ struct SessionRow: View {
     }
 
     private var subtitle: String {
+        if session.isStarting { return "Starting…" }
         if let last = session.lastEvent, !last.snippet.isEmpty {
             return (last.type == "response" ? "◆ " : "› ") + last.snippet
         }

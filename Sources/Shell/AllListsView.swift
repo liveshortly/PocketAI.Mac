@@ -322,6 +322,11 @@ struct AllSessionsView: View {
         }
         .background(PocketColor.bgCanvas)
         .task { await reload() }
+        // The shared feed polls (LSI-17); re-fetch the long list when a
+        // session appears, goes away or changes state — not on every event.
+        .onChange(of: app.liveShortly.feed.sessions.map { $0.id + $0.status }) { _, _ in
+            Task { await reload() }
+        }
         .onChange(of: app.commandSerial) { _, _ in
             if app.pendingCommand == .refresh { Task { await reload() } }
         }

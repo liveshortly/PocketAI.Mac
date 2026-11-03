@@ -291,6 +291,10 @@ struct LSNewSessionView: View {
                     // Never send a dir the host did not register.
                     extraDirs: host.acceptsExtraDirs
                         ? host.dirs.filter { extraDirs.contains($0) && $0 != chosenCwd } : [])
+                // The sidebar, All sessions and Tools › LiveShortly all read
+                // this feed: refresh it now so the new row is there when the
+                // session opens, not on the next poll (LSI-17).
+                Task { await app.liveShortly.feed.reload() }
                 if let spawn = created.spawn, spawn.status == "failed" {
                     // Stay on this screen so the reason is readable: navigating
                     // would destroy the view showing it and drop the user into
