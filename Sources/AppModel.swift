@@ -578,8 +578,13 @@ public final class AppModel {
         } catch {
             NSLog("PocketAI: server start (lan: %@) failed: %@", lan ? "yes" : "no", "\(error)")
         }
-        if serverStatus.running, serverStatus.port != 0 {
+        // Remember the port only on a first bind. A fallback (saved port still
+        // held, e.g. by the previous instance during a relaunch) is for this
+        // run only; persisting it moved the Mac off the port paired phones use.
+        if serverStatus.running, serverStatus.port != 0, savedPort == 0 {
             UserDefaults.standard.set(Int(serverStatus.port), forKey: Self.serverPortKey)
+        } else if serverStatus.running, serverStatus.port != savedPort {
+            NSLog("PocketAI: port %d busy, serving on %d for this run", Int(savedPort), Int(serverStatus.port))
         }
         if serverStatus.running, activeServerActivity == nil {
             activeServerActivity = ProcessInfo.processInfo.beginActivity(
