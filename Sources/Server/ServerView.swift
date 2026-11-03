@@ -14,6 +14,8 @@ struct ServerView: View {
     /// A switch that would rebind under a connected device, awaiting an
     /// inline "switch anyway?".
     @State private var pendingAccess: AppModel.ServerAccess?
+    /// Generating replaces the key, so a second one waits for a yes.
+    @State private var confirmRegenerate = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,21 +65,28 @@ struct ServerView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(app.serverStatus.running ? "Running" : "Stopped")
                         .font(.pocket(.headline))
-                    Text(
-                        app.serverStatus.running
-                            ? "Port \(app.serverStatus.port) · \(app.serverStatus.connectedDevices) connected"
-                            : app.serverAccess == .off
-                                ? "Other apps and paired devices can't reach this Mac's models."
-                                : "Couldn't start. Devices on this network need PocketAI Pro."
-                    )
-                    .font(.pocket(.caption))
-                    .foregroundStyle(PocketColor.textTertiary)
+                    Text(statusDetail)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textTertiary)
                 }
                 Spacer(minLength: 0)
             }
+            .accessibilityElement(children: .combine)
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+    }
+
+    private var statusDetail: String {
+        let s = app.serverStatus
+        guard s.running else {
+            return app.serverAccess == .off
+                ? "Other apps and paired devices can't reach this Mac's models."
+                : "Couldn't start the server. Pick Access again, or relaunch PocketAI if the port is busy."
+        }
+        let reach = s.lanEnabled ? "this Mac and your network" : "this Mac only"
+        let devices = s.connectedDevices == 1 ? "1 device" : "\(s.connectedDevices) devices"
+        return "Port \(s.port) · \(reach) · \(devices) connected"
     }
 
     private var accessCard: some View {
@@ -90,10 +99,15 @@ struct ServerView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .accessibilityLabel("Server access")
             if let pendingAccess { switchAnywayRow(pendingAccess) }
             Text(accessCaption)
                 .font(.pocket(.caption))
-                .foregroundStyle(PocketColor.textTertiary)
+                .foregroundStyle(app.serverAccess == .pairedDevices && app.serverNeedsLicense
+                    ? PocketColor.statusWarn : PocketColor.textTertiary)
+            if app.serverAccess == .pairedDevices, app.serverNeedsLicense {
+                EnterLicenseButton()
+            }
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
@@ -136,7 +150,7 @@ struct ServerView: View {
         case .off: return "Nothing can use this Mac's models from outside the app."
         case .thisMac: return "Loopback only (127.0.0.1), for other apps on this Mac."
         case .pairedDevices where app.serverNeedsLicense:
-            return "Paired devices needs a PocketAI license. Enter your key in Settings › License; until then this Mac serves only itself."
+            return "Paired devices need PocketAI Pro. Until a license key is entered, this Mac serves only itself."
         case .pairedDevices:
             return "Reachable from your LAN, so a paired iPhone can use this Mac. macOS will ask for Local Network permission."
         }
@@ -155,8 +169,17 @@ struct ServerView: View {
                 Spacer(minLength: PocketSpacing.s8)
                 Text(apiKey ?? "not generated")
                     .font(.pocket(.mono))
-                Button(copied ? "Copied" : "Generate & copy") { generateKey() }
-                    .buttonStyle(.hud)
+                    .textSelection(.enabled)
+                    .accessibilityLabel(apiKeyAccessibility)
+                Button(copied ? "Copied" : apiKey == nil ? "Generate & copy" : "Regenerate & copy…") {
+                    if apiKey == nil { generateKey() } else { confirmRegenerate = true }
+                }
+                .buttonStyle(.hud)
+                .confirmationDialog("Replace the API key?", isPresented: $confirmRegenerate) {
+                    Button("Replace Key") { generateKey() }
+                } message: {
+                    Text("Apps using the current key stop working until you give them the new one. The new key is copied to the clipboard.")
+                }
             }
             Text("Point any OpenAI-compatible client at that URL. Requests never leave this Mac.")
                 .font(.pocket(.caption))
@@ -164,6 +187,12 @@ struct ServerView: View {
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+    }
+
+    /// The masked key is bullets; VoiceOver should say what state it is in.
+    private var apiKeyAccessibility: String {
+        guard let apiKey else { return "API key not generated" }
+        return apiKey.hasPrefix("•") ? "API key set, hidden" : "API key \(apiKey)"
     }
 
     private func row(_ label: String, _ value: String) -> some View {

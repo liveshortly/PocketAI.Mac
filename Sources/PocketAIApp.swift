@@ -16,6 +16,7 @@ struct PocketAIApp: App {
                 .background(PocketColor.bgCanvas)
                 .preferredColorScheme(nil)
                 .tint(PocketColor.accent)
+                .onAppear { GeneralSettings.applyAppearance() }
                 // LSI-19: liveshortly.com/session/<id> and pocketai://session/<id>
                 // open that session; one this account can't see says so there.
                 .onOpenURL { url in

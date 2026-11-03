@@ -12,6 +12,7 @@ struct DevicesView: View {
     @State private var qrString: String?
     @State private var qrError: String?
     @State private var confirmRevoke: PairedDevice?
+    @State private var confirmForgetPeer: Peer?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,20 +35,34 @@ struct DevicesView: View {
                     }
                     if let qrString { qrCard(qrString) }
                     if let qrError {
-                        Text(qrError)
-                            .font(.pocket(.footnote))
-                            .foregroundStyle(PocketColor.statusBad)
+                        HStack(spacing: PocketSpacing.s8) {
+                            Label(qrError, systemImage: "exclamationmark.triangle.fill")
+                                .font(.pocket(.footnote))
+                                .foregroundStyle(PocketColor.statusBad)
+                            Spacer(minLength: 0)
+                            if app.serverNeedsLicense { EnterLicenseButton() }
+                        }
+                        .padding(PocketSpacing.s12)
+                        .hudPanel()
                     }
-                    section("Devices using this Mac", devices.isEmpty ? "None paired yet" : nil) {
+                    section(
+                        "Devices using this Mac",
+                        devices.isEmpty
+                            ? "No iPhone paired yet. Choose Pair a device… and scan the code with PocketAI on your iPhone."
+                            : nil
+                    ) {
                         ForEach(Array(devices.enumerated()), id: \.element.id) { index, device in
                             if index > 0 { HUDRule() }
                             deviceRow(device)
                         }
                     }
-                    section("Macs this app can borrow", peers.isEmpty ? "None" : nil) {
-                        ForEach(Array(peers.enumerated()), id: \.element.id) { index, peer in
-                            if index > 0 { HUDRule() }
-                            peerRow(peer)
+                    // Only shown once there is one: an empty "None" read as broken.
+                    if !peers.isEmpty {
+                        section("Macs this app can borrow", nil) {
+                            ForEach(Array(peers.enumerated()), id: \.element.id) { index, peer in
+                                if index > 0 { HUDRule() }
+                                peerRow(peer)
+                            }
                         }
                     }
                 }
@@ -60,16 +75,31 @@ struct DevicesView: View {
         .task { await keepFresh() }
         .onChange(of: app.commandSerial) { _, _ in handleCommand() }
         .confirmationDialog(
-            forgetTitle,
+            "Forget \(confirmRevoke?.name ?? "this device")?",
             isPresented: Binding(
                 get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }),
             titleVisibility: .visible
         ) {
             // NET-22: keeping synced chats is the first, default choice.
-            Button("Forget · Keep Synced Chats") { forget(removeChats: false) }
-            Button("Forget and Remove Chats from \(confirmRevoke?.name ?? "device")", role: .destructive) {
+            Button("Forget, Keep Chats on This Mac") { forget(removeChats: false) }
+            Button("Forget and Delete Its Chats from This Mac", role: .destructive) {
                 forget(removeChats: true)
             }
+        } message: {
+            Text("It's unpaired and must scan a new code to come back. The iPhone keeps its own chats. To pause it instead, use Disconnect.")
+        }
+        .confirmationDialog(
+            "Forget \(confirmForgetPeer?.name ?? "this Mac")?",
+            isPresented: Binding(
+                get: { confirmForgetPeer != nil }, set: { if !$0 { confirmForgetPeer = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Forget", role: .destructive) {
+                if let peer = confirmForgetPeer { try? app.core.revokePeer(id: peer.id) }
+                reload()
+            }
+        } message: {
+            Text("This app stops using its models. Pair again to get them back.")
         }
     }
 
@@ -84,16 +114,11 @@ struct DevicesView: View {
         reload()
     }
 
-    private var forgetTitle: String {
-        let name = confirmRevoke?.name ?? "device"
-        return "Forget \(name)? It's unpaired and must scan a new code to come back. To pause it instead, use Disconnect."
-    }
-
     /// MAC-18: the last device was forgotten but Access stays where it is
     /// (never lock the user out of a setting) - offer to turn it off here.
     private var accessHint: some View {
         HStack(spacing: PocketSpacing.s8) {
-            Text("No paired devices · Access: paired devices")
+            Text("No paired devices, but Access still lets paired devices in.")
                 .font(.pocket(.footnote))
                 .foregroundStyle(PocketColor.textSecondary)
             Spacer(minLength: 0)
@@ -120,8 +145,14 @@ struct DevicesView: View {
                     Text("This code expires in a few minutes and works once.")
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
-                    Button("Done") { qrString = nil }
-                        .buttonStyle(.hud)
+                    HStack(spacing: PocketSpacing.s8) {
+                        Button("New code") { makeOffer() }
+                            .buttonStyle(.hud)
+                            .help("Use this if the code expired or was already scanned.")
+                        Button("Done") { qrString = nil }
+                            .buttonStyle(.hud)
+                            .keyboardShortcut(.cancelAction)
+                    }
                 }
             }
         }
@@ -140,10 +171,11 @@ struct DevicesView: View {
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
             }
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
             SyncChatsToggle(deviceId: device.id, deviceName: device.name, core: app.core)
             linkButton(device)
-            Button("Forget") { confirmRevoke = device }
+            Button("Forget…") { confirmRevoke = device }
                 .buttonStyle(.hud)
                 .accessibilityLabel("Forget \(device.name)")
         }
@@ -194,10 +226,7 @@ struct DevicesView: View {
                     .foregroundStyle(PocketColor.textTertiary)
             }
             Spacer(minLength: 0)
-            Button("Forget") {
-                try? app.core.revokePeer(id: peer.id)
-                reload()
-            }
+            Button("Forget…") { confirmForgetPeer = peer }
             .buttonStyle(.hud)
             .accessibilityLabel("Forget \(peer.name)")
         }
@@ -259,7 +288,7 @@ struct DevicesView: View {
         }
         guard app.serverStatus.running, app.serverStatus.lanEnabled else {
             qrError = app.serverNeedsLicense
-                ? "Pairing needs a PocketAI license. Enter your key in Settings › License, then try again."
+                ? "Pairing needs PocketAI Pro. Enter a license key, then try again."
                 : "This Mac couldn't open itself to devices on the network, so there is nothing to pair with."
             return
         }
