@@ -348,6 +348,41 @@ final class LSDaemonController {
         return true
     }
 
+    /// File picker for any agent CLI discovery misses (LSH-18): appends
+    /// `{name, command}` to ~/.liveshortly/agents.json (a plain array; same
+    /// name replaces) and restarts a running daemon so it advertises it.
+    @discardableResult
+    func addAgent() -> Bool {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: realHome + "/.local/bin")
+        panel.prompt = "Add Agent"
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        let name = url.lastPathComponent
+        let builtins: Set = ["claude", "codex", "gemini", "agy", "antigravity", "ollama"]
+        guard name.range(of: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$", options: .regularExpression) != nil,
+              !builtins.contains(name) else {
+            append("● can't add \(name): needs a plain name (letters, digits, - _) that isn't a built-in agent\n")
+            return false
+        }
+        let path = realHome + "/.liveshortly/agents.json"
+        var entries = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path)))) as? [[String: Any]] ?? []
+        entries.removeAll { $0["name"] as? String == name }
+        entries.append(["name": name, "command": url.standardizedFileURL.path])
+        do {
+            try FileManager.default.createDirectory(atPath: realHome + "/.liveshortly", withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: entries, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        } catch {
+            append("● could not update agents.json: \(error.localizedDescription)\n")
+            return false
+        }
+        append("● added agent \(name) (wrote agents.json)\n")
+        if isRunning { restart() }
+        return true
+    }
+
     /// Git repos a folder offers: itself, or its direct children.
     /// ponytail: one level deep; nested monorepo layouts undercount.
     nonisolated static func repoCount(_ dir: String) -> Int {

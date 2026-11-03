@@ -34,7 +34,7 @@ struct LSMachineView: View {
                 VStack(alignment: .leading, spacing: PocketSpacing.s16) {
                     LSStatusCard(daemon: daemon, runningElsewhere: runningElsewhere, showLog: $showLog)
                     if let thisHost, daemon.isRunning || runningElsewhere {
-                        LSReadyCard(host: thisHost, server: daemon.server)
+                        LSReadyCard(host: thisHost, server: daemon.server, daemon: daemon)
                     }
                     LSFoldersCard(daemon: daemon)
                     LSLocalSessionsCard(
@@ -403,6 +403,7 @@ private struct LSDetailsPopover: View {
 private struct LSReadyCard: View {
     let host: LSHost
     let server: String
+    let daemon: LSDaemonController
     @State private var allModels = false
 
     /// Agents `live daemon` knows how to spawn, shown greyed when missing.
@@ -422,6 +423,11 @@ private struct LSReadyCard: View {
                     }
                     .help("\(agent) isn't installed on this Mac")
                 }
+                Button { daemon.addAgent() } label: {
+                    LSChip(icon: "plus", text: "Add an agent…", dimmed: true)
+                }
+                .buttonStyle(.plain)
+                .help("Pick any agent CLI this Mac has; it's added to ~/.liveshortly/agents.json")
             }
             if !models.isEmpty {
                 chips("Local models") {

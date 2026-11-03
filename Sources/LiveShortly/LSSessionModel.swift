@@ -23,6 +23,8 @@ final class LSSessionModel {
     /// The stream dropped and the loop is bringing it back on its own.
     private(set) var reconnecting = false
     private(set) var loaded = false
+    /// The server said 403: this account can't see the session (LSI-19).
+    private(set) var accessLost = false
     /// Viewers currently typing: name → when their indicator expires.
     private(set) var typers: [String: Date] = [:]
 
@@ -45,7 +47,9 @@ final class LSSessionModel {
         return stored.isEmpty ? "Untitled session" : stored
     }
 
-    var canComment: Bool { detail?.canComment == true && isLive }
+    var canComment: Bool { detail?.role.canComment == true && isLive }
+    /// Approve/deny, model switch, stop — the owner only (LSI-19).
+    var canControl: Bool { detail?.role.canControl == true }
 
     /// "thinking" / "running bash" / "editing Foo.swift" rather than a flat
     /// "working" for all of them (LSI-12). Viewer comments are not the agent
@@ -108,9 +112,13 @@ final class LSSessionModel {
             isLive = loadedDetail.isLive
             rebuild()
             errorText = nil
+            accessLost = false
             loaded = true
             LSSeen.mark(sessionID, max(loadedDetail.eventCount, events.count))
             if loadedDetail.isLive { startStream() }
+        } catch let e as LSAPIError where e.status == 403 {
+            lostAccess(e.message)
+            loaded = true
         } catch {
             errorText = error.localizedDescription
             loaded = true
@@ -165,11 +173,26 @@ final class LSSessionModel {
             streamLost = false
         case .reconnecting:
             reconnecting = true // quiet status, not a red error
+        case .unreachable(let message) where message == LSAPIError.noAccess:
+            lostAccess(message)
         case .unreachable(let message):
             reconnecting = false
             streamLost = true
             errorText = "Stream dropped — \(message)."
         }
+    }
+
+    /// LSI-19: not shared with this account, or the share was revoked
+    /// mid-session — drop the transcript and say why.
+    private func lostAccess(_ message: String) {
+        loop?.stop()
+        detail = nil
+        events = []
+        rebuild()
+        isLive = false
+        reconnecting = false
+        errorText = message
+        accessLost = true
     }
 
     /// Internal rather than private only so the transcript fold can be driven

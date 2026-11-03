@@ -1,4 +1,5 @@
 import PocketKit
+import PocketLiveShortly
 import PocketUI
 import SwiftUI
 
@@ -15,6 +16,13 @@ struct PocketAIApp: App {
                 .background(PocketColor.bgCanvas)
                 .preferredColorScheme(nil)
                 .tint(PocketColor.accent)
+                // LSI-19: liveshortly.com/session/<id> and pocketai://session/<id>
+                // open that session; one this account can't see says so there.
+                .onOpenURL { url in
+                    if let id = LSSessionLink.sessionID(in: url, server: app.liveShortly.serverURL) {
+                        app.selection = .session(id)
+                    }
+                }
         }
         .defaultSize(width: 1180, height: 760)
         .commands { AppCommands(app: app) }

@@ -30,7 +30,7 @@ struct LSChatView: View {
                 statusStrip(session)
                 HUDRule()
                 transcript(session)
-                if let probe = session.pendingProbe {
+                if let probe = session.pendingProbe, session.canControl {
                     LSPermissionBar(
                         probe: probe,
                         toolCall: session.toolCall(before: probe),
@@ -192,9 +192,12 @@ struct LSChatView: View {
             if session.detail?.publishedAt != nil {
                 HUDChip(text: "ON FEED", tint: PocketColor.accent)
             }
+            if let chip = session.detail?.sharedChip {
+                HUDChip(text: chip)
+            }
             Spacer(minLength: 0)
             if let framework = session.detail?.framework, framework == "claude-code",
-               session.isLive {
+               session.isLive, session.canControl {
                 Menu {
                     ForEach(LS.claudeModels, id: \.self) { model in
                         Button(model) { session.setModel(model) }
@@ -253,7 +256,7 @@ struct LSChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: PocketSpacing.s16) {
-                    if session.items.isEmpty {
+                    if session.items.isEmpty, !session.accessLost {
                         emptyState(session)
                     }
                     ForEach(session.items) { item in
@@ -285,7 +288,7 @@ struct LSChatView: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(PocketColor.statusWarn)
                                 .accessibilityHidden(true)
-                            Text(error)
+                            Text(app.liveShortly.describeAccess(error))
                                 .font(.pocket(.footnote))
                                 .fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
@@ -367,7 +370,8 @@ struct LSChatView: View {
                 HStack(alignment: .bottom, spacing: PocketSpacing.s8) {
                     ComposerTextView(
                         text: $draft,
-                        placeholder: "Message this session…",
+                        placeholder: session.canControl
+                            ? "Message this session…" : "Comment on this session…",
                         focusRequest: focusRequest,
                         onSubmit: { send(session) },
                         onEdit: { session.noteTyping() }

@@ -42,6 +42,9 @@ struct SidebarView: View {
                 projectsSection
             }
             liveShortlySection
+            if app.liveShortly.isConnected, !feed.shared.isEmpty {
+                sharedSection
+            }
             toolsSection
         }
         .listStyle(.sidebar)
@@ -296,6 +299,35 @@ struct SidebarView: View {
         }
     }
 
+    /// LSI-19: sessions other people shared with me, from the same feed poll.
+    /// No end/delete here — those are the owner's.
+    private var sharedSection: some View {
+        Section {
+            ForEach(feed.orderedShared, id: \.id) { session in
+                SessionRow(session: session)
+                    .sidebarRow(.session(session.id))
+                    .contextMenu {
+                        Button("Open") { app.selection = .session(session.id) }
+                        if let link = app.liveShortly.client?.sessionLink(session.id) {
+                            Button("Copy link") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(
+                                    link.absoluteString, forType: .string)
+                            }
+                        }
+                    }
+            }
+        } header: {
+            HStack {
+                HUDLabel("Shared with me")
+                Spacer()
+                if feed.newSharedCount > 0 {
+                    HUDLabel("\(feed.newSharedCount) new", tint: PocketColor.accent)
+                }
+            }
+        }
+    }
+
     private var toolsSection: some View {
         Section {
             Label("Models", systemImage: "cpu").sidebarRow(.models)
@@ -455,6 +487,7 @@ struct SessionRow: View {
 
     private var subtitle: String {
         if session.isStarting { return "Starting…" }
+        if let shared = session.sharedLine { return shared }
         if let last = session.lastEvent, !last.snippet.isEmpty {
             return (last.type == "response" ? "◆ " : "› ") + last.snippet
         }
