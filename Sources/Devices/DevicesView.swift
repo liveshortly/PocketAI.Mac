@@ -164,6 +164,10 @@ struct DevicesView: View {
         var bits = [linkLabel(device.linkState), "\(device.platform)"]
         if let seen = device.lastSeenAt { bits.append("seen \(hudRelative(seen))") }
         if let addr = device.lastAddr { bits.append(addr) }
+        // NET-22: the phone drives sync; this Mac only reports when it last did.
+        if let synced = app.core.syncStatus(peerId: device.id).lastSyncedAt {
+            bits.append("chats synced \(hudRelative(synced / 1000))")
+        }
         return bits.joined(separator: " · ")
     }
 

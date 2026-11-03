@@ -81,6 +81,13 @@ struct QuickAskPanel: View {
         HStack(spacing: PocketSpacing.s8) {
             HUDLabel("⏎ ask")
             Spacer()
+            // NET-22: no "Sync now" here - this Mac is the sync server and
+            // can't reach the phone; the iPhone syncs whenever PocketAI is
+            // open on it. Say when it last did, and why.
+            if let synced = app.lastChatSyncAt {
+                HUDLabel("iPhone synced \(hudRelative(synced / 1000))")
+                    .help("Your iPhone syncs chats with this Mac while PocketAI is open on it.")
+            }
             if let conversationId {
                 Button("Open in PocketAI") {
                     // Activating the app is not enough when another window

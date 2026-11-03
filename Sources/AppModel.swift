@@ -168,6 +168,10 @@ public final class AppModel {
     /// Device ids seen on the last poll, and the ones already reported revoked.
     @ObservationIgnored private var lastDeviceIds: Set<String> = []
     @ObservationIgnored private var reportedRevoked: Set<String> = []
+    /// NET-22: newest chat sync (epoch ms) with any paired phone. The phone
+    /// drives every sync; the Mac only watches it land.
+    public var lastChatSyncAt: Int64?
+    @ObservationIgnored private var seededChatSync = false
     /// False until the first poll has recorded the devices that existed at
     /// launch; nothing is announced before that.
     @ObservationIgnored private var seededDevices = false
@@ -296,6 +300,7 @@ public final class AppModel {
                 self.checkDownloadNotifications()
                 self.checkDeviceNotifications()
                 self.checkLicenseNotification()
+                self.checkChatSync()
             }
         }
         // MAC-18: start at launch with the saved Access (no debug gate), so a
@@ -344,6 +349,26 @@ public final class AppModel {
     /// A phone that finishes pairing, or a device revoked from elsewhere.
     /// The first poll only seeds the baseline, so launching with devices
     /// already paired does not announce all of them.
+    /// NET-22: a phone sync stamps `last_synced` at its hello; its pushed
+    /// ops land right after, so the sidebar reloads now and once more 2 s on.
+    /// ponytail: polled from the 1 s loop; a core "ops applied" callback
+    /// would make this exact.
+    private func checkChatSync() {
+        let latest = core.devices()
+            .filter { $0.revokedAt == nil }
+            .compactMap { core.syncStatus(peerId: $0.id).lastSyncedAt }
+            .max()
+        defer { seededChatSync = true }
+        guard latest != lastChatSyncAt else { return }
+        lastChatSyncAt = latest
+        guard seededChatSync else { return }
+        NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
+        }
+    }
+
     private func checkDeviceNotifications() {
         let devices = core.devices()
         let ids = Set(devices.map(\.id))
