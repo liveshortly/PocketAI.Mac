@@ -413,7 +413,7 @@ struct ChatView: View {
         let approvals = app.tools.approvals
         if let request = approvals.request(for: conversationId) {
             RunCodeCard(
-                language: request.languageName, place: "this Mac", code: request.code,
+                language: request.languageName, place: String(localized: "this Mac"), code: request.code,
                 offersAlwaysAllow: request.offersAlwaysAllow,
                 onRun: { code, always in
                     approvals.answer(request.id, code == request.code ? .run : .runEdited(code: code), alwaysAllow: always)

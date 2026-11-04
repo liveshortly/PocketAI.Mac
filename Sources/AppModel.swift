@@ -35,7 +35,9 @@ public final class AppModel {
     var currentToast: ToastData?
 
     /// Report a failure the calling view may not outlive.
-    func toast(_ message: String) { currentToast = ToastData(message: message) }
+    func toast(_ message: LocalizedStringResource) { currentToast = ToastData(message: String(localized: message)) }
+    /// For text that is already localised or is data.
+    func toast(verbatim message: String) { currentToast = ToastData(message: message) }
 
     /// Non-nil when the Rust core failed to open at launch. The app stays
     /// navigable and surfaces this instead of crashing with `fatalError`.

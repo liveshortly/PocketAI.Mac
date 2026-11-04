@@ -103,8 +103,9 @@ struct AllChatsView: View {
                                         id: chat.id, archived: !chat.archived)
                                 } catch {
                                     app.toast(
-                                        "Couldn't \(chat.archived ? "unarchive" : "archive") that chat: "
-                                        + error.localizedDescription)
+                                        chat.archived
+                                        ? "Couldn't unarchive that chat: \(error.localizedDescription)"
+                                        : "Couldn't archive that chat: \(error.localizedDescription)")
                                 }
                                 reload()
                             }

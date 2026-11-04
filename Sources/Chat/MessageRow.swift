@@ -348,7 +348,7 @@ private struct ToolStepRow: View {
 }
 
 extension ToolStep {
-    var title: String { (kind == "read" ? "Read: " : "Searched: ") + label }
+    var title: String { kind == "read" ? String(localized: "Read: \(label)") : String(localized: "Searched: \(label)") }
 }
 
 /// AGT-12: the pages a reply read, as links under the answer.

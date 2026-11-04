@@ -278,7 +278,7 @@ struct ToolsSettingsPane: View {
                 HUDLabel("Tools")
             }
             Section {
-                RunCodeFromPhoneToggle(core: app.core, onError: { app.toast($0) })
+                RunCodeFromPhoneToggle(core: app.core, onError: { app.toast(verbatim: $0) })
             } header: {
                 HUDLabel("Paired iPhone")
             }

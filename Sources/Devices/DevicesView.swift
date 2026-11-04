@@ -266,8 +266,8 @@ struct DevicesView: View {
             .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
             SyncChatsToggle(deviceId: device.id, deviceName: device.name, core: app.core,
-                            onError: { app.toast($0) })
-            RunCodeFromPhoneToggle(core: app.core, compact: true, onError: { app.toast($0) })
+                            onError: { app.toast(verbatim: $0) })
+            RunCodeFromPhoneToggle(core: app.core, compact: true, onError: { app.toast(verbatim: $0) })
             linkButton(device)
             Button("Forget…") { confirmRevoke = device }
                 .buttonStyle(.hud)
@@ -282,7 +282,7 @@ struct DevicesView: View {
         let off = device.linkState == .disconnectedByHost
         return Button(off ? "Allow" : "Disconnect") {
             do { try app.core.setDeviceDisconnected(id: device.id, disconnected: !off) } catch {
-                app.toast("Couldn't \(off ? "allow" : "disconnect") \(device.name): \(error.localizedDescription)")
+                app.toast(off ? "Couldn't allow \(device.name): \(error.localizedDescription)" : "Couldn't disconnect \(device.name): \(error.localizedDescription)")
             }
             reload()
         }
@@ -460,7 +460,7 @@ struct SyncChatsToggle: View {
                 guard on != core.syncEnabledForDevice(deviceId: deviceId) else { return }
                 do { try core.setSyncEnabledForDevice(deviceId: deviceId, enabled: on) } catch {
                     isOn = !on // show the setting that is actually in effect
-                    onError?("Couldn't change chat sync: \(error.localizedDescription)")
+                    onError?(String(localized: "Couldn't change chat sync: \(error.localizedDescription)"))
                 }
             }
     }
@@ -495,7 +495,7 @@ struct RunCodeFromPhoneToggle: View {
             core.setRunCodeEnabled(on)
             if core.runCodeEnabled() != on {
                 isOn = !on
-                onError?("Couldn't change the run-code setting.")
+                onError?(String(localized: "Couldn't change the run-code setting."))
             }
         }
     }
