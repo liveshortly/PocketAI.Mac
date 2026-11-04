@@ -60,6 +60,14 @@ final class LSDaemonController {
     private(set) var problem: LSLoginProblem?
     /// The reachability check failed: Sign in stays disabled until Retry.
     private(set) var serverDown = false
+    /// The `live` CLI this app drives (LSI-20): installed version, newest
+    /// published one, and an install/update in flight or failed.
+    var cliVersion: String?
+    var cliLatest: String?
+    var cliBusy = false
+    var cliError: String?
+    /// `tmux` is on the daemon's PATH; web-started sessions need it.
+    private(set) var hasTmux = true
 
     var dirs: [String] {
         didSet { UserDefaults.standard.set(dirs, forKey: Self.dirsKey) }
@@ -91,7 +99,7 @@ final class LSDaemonController {
 
     private static let dirsKey = "liveShortly.daemon.dirs"
     private static let nameKey = "liveShortly.daemon.name"
-    private var liveURL: URL?
+    var liveURL: URL?
     private var searchPath = ""
     private var process: Process?
     private var restartOnExit = false
@@ -124,10 +132,12 @@ final class LSDaemonController {
             return
         }
         if liveURL == nil { await locateLive() }
+        if cliLatest == nil { Task { await checkCLIUpdate() } }
         guard liveURL != nil else {
             status = .notInstalled
             return
         }
+        cliVersion = Self.parseVersion(await run(["version"]).1)
         server = LSServer.resolve(home: realHome, env: ProcessInfo.processInfo.environment)
         let (code, out) = await run(["whoami"])
         account = out.split(separator: "\n").first.map(String.init)
@@ -178,6 +188,7 @@ final class LSDaemonController {
         liveURL = unique.lazy.map { URL(fileURLWithPath: $0).appendingPathComponent("live") }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
         hasHostCommand = await run(["help"]).1.contains("live host set")
+        hasTmux = unique.contains { FileManager.default.isExecutableFile(atPath: $0 + "/tmux") }
     }
 
     // MARK: - Actions
@@ -414,7 +425,7 @@ final class LSDaemonController {
 
     // MARK: - Plumbing
 
-    private var childEnv: [String: String] {
+    var childEnv: [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = searchPath
         env["HOME"] = realHome
@@ -465,12 +476,12 @@ final class LSDaemonController {
         }
     }
 
-    private func run(_ args: [String]) async -> (Int32, String) {
+    func run(_ args: [String]) async -> (Int32, String) {
         guard let liveURL else { return (-1, "") }
         return await Self.exec(liveURL, args, env: childEnv)
     }
 
-    nonisolated private static func exec(
+    nonisolated static func exec(
         _ url: URL, _ args: [String], env: [String: String]?
     ) async -> (Int32, String) {
         await Task.detached {

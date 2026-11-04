@@ -109,6 +109,7 @@ private struct LSStatusCard: View {
                 moreMenu
             }
             LSStatusLine(daemon: daemon, runningElsewhere: runningElsewhere)
+            LSCLIRow(daemon: daemon)
             if let trouble = daemon.trouble { troubleLine(trouble) }
             if let problem = daemon.problem { LSProblemBanner(daemon: daemon, problem: problem) }
             if let account = daemon.account, daemon.status != .signedOut {
@@ -134,6 +135,10 @@ private struct LSStatusCard: View {
 
     @ViewBuilder private var controls: some View {
         switch daemon.status {
+        case .notInstalled:
+            Button(daemon.cliBusy ? "Installing…" : "Install live") { daemon.installOrUpdateCLI() }
+                .buttonStyle(.hudProminent)
+                .disabled(daemon.cliBusy)
         case .signedOut:
             Button(daemon.signingIn ? "Waiting for browser…" : "Sign in") { daemon.signIn() }
                 .buttonStyle(.hudProminent)
@@ -155,6 +160,7 @@ private struct LSStatusCard: View {
     private var moreMenu: some View {
         Menu {
             Button("Restart daemon") { daemon.restart() }.disabled(!daemon.isRunning)
+            Button("Check for live update") { Task { await daemon.checkCLIUpdate() } }
             Button(showLog ? "Hide log" : "Show log") { showLog.toggle() }
             Button("Details…") { showDetails = true }
             if daemon.status != .signedOut, daemon.account != nil {
@@ -184,6 +190,47 @@ private struct LSStatusCard: View {
             Spacer(minLength: 0)
             Button("Retry") { daemon.isRunning ? daemon.restart() : daemon.start() }
                 .buttonStyle(.hud)
+        }
+    }
+}
+
+/// LSI-20: the installed `live` version when it needs attention — too old for
+/// web-started sessions, an update out, an install/update error, or no tmux.
+private struct LSCLIRow: View {
+    let daemon: LSDaemonController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+            if let version = daemon.cliVersion, daemon.cliTooOld || daemon.cliNeedsUpdate {
+                HStack(spacing: PocketSpacing.s8) {
+                    Image(systemName: daemon.cliTooOld ? "exclamationmark.circle.fill" : "arrow.down.circle")
+                        .foregroundStyle(daemon.cliTooOld ? PocketColor.statusBad : PocketColor.textSecondary)
+                        .accessibilityHidden(true)
+                    Text(daemon.cliTooOld
+                         ? "live \(version) is too old — sessions started from the web or iPhone won't work."
+                         : "live \(version) · \(daemon.cliLatest ?? "") available")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(daemon.cliTooOld ? PocketColor.statusBad : PocketColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button(daemon.cliBusy ? "Updating…" : "Update") { daemon.installOrUpdateCLI() }
+                        .buttonStyle(daemon.cliTooOld ? .hudProminent : .hud)
+                        .disabled(daemon.cliBusy)
+                }
+            }
+            if let error = daemon.cliError {
+                Text(error)
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.statusBad)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if daemon.status != .notInstalled, !daemon.hasTmux {
+                Text("Sessions started from the web or iPhone need tmux. Install it in Terminal: `brew install tmux`")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.statusBad)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -235,7 +282,7 @@ private struct LSStatusLine: View {
         case .sandboxed:
             return "The app sandbox stops PocketAI from running the `live` CLI. Run `live daemon --dir <folder>` in Terminal instead."
         case .notInstalled:
-            return "Install it with `brew install liveshortly/tap/live`, then come back here."
+            return "PocketAI needs the `live` CLI to run agents on this Mac. Install downloads it from LiveShortly's releases into ~/.local/bin."
         case .signedOut:
             return "Sign in opens your browser to approve this Mac."
         case .stopped where runningElsewhere:
