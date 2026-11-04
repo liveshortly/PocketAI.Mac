@@ -34,6 +34,9 @@ struct PocketAIApp: App {
             MenuBarContent()
                 .environment(app)
                 .tint(PocketColor.accent)
+                // UI-140: failures from Quick Ask and the menu-bar panel were
+                // toasted into the main window, often closed or behind.
+                .pocketToast($app.currentToast, duration: .seconds(6))
         }
         .menuBarExtraStyle(.window)
 
@@ -42,6 +45,7 @@ struct PocketAIApp: App {
                 .environment(app)
                 .frame(width: 620, height: 460)
                 .tint(PocketColor.accent)
+                .pocketToast($app.currentToast, duration: .seconds(6))
         }
     }
 }
