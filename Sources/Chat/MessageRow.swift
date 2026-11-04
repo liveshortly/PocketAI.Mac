@@ -324,7 +324,7 @@ private struct ToolStepRow: View {
     var body: some View {
         if step.kind == "ran" {
             let ran = RanCodeDetail(step: step)
-            RanCodeRow(language: "JavaScript", code: ran.code, output: ran.output, error: ran.error,
+            RanCodeRow(language: step.codeLanguageName, code: ran.code, output: ran.output, error: ran.error,
                        durationMs: ran.durationMs, truncated: ran.truncated, denied: ran.denied)
         } else {
             searchOrReadRow
