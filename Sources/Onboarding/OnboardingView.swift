@@ -76,10 +76,17 @@ struct OnboardingView: View {
                 if app.appleIntelligenceAvailable {
                     appleIntelligenceRow
                 }
-                ForEach(recommended, id: \.manifest.id) { entry in
-                    onboardingModelRow(entry)
+                if let top = pick(\.recommended) {
+                    onboardingModelRow(top, role: "Recommended for this Mac")
+                    if let note = downloadNote(top) { noteText(note) }
                 }
-                if recommended.isEmpty {
+                if pick(\.smaller) != nil || pick(\.larger) != nil {
+                    HUDLabel("Other options")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let e = pick(\.smaller) { onboardingModelRow(e, role: "Smaller and faster") }
+                    if let e = pick(\.larger) { onboardingModelRow(e, role: "Larger and smarter") }
+                }
+                if pick(\.recommended) == nil {
                     // An empty list read as a broken screen with only "Skip".
                     Text("No models to suggest right now. You can pick one later in Models.")
                         .font(.pocket(.footnote))
@@ -157,18 +164,55 @@ struct OnboardingView: View {
         }
     }
 
-    private func onboardingModelRow(_ entry: CatalogEntry) -> some View {
-        HStack(spacing: PocketSpacing.s12) {
+    private func noteText(_ text: String) -> some View {
+        Text(text)
+            .font(.pocket(.caption))
+            .foregroundStyle(PocketColor.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Spec 7.1 Wi-Fi note, under the recommended pick. Nothing to say once
+    /// the model is on disk or offline mode already explains itself.
+    private func downloadNote(_ entry: CatalogEntry) -> String? {
+        if app.offlineMode.isOn {
+            return "Offline mode is on. Turn it off in Settings to download."
+        }
+        guard entry.state == .available else { return nil }
+        return "Downloads over your connection; about \(hudBytes(entry.fit.diskBytes))."
+    }
+
+    private func fitKind(_ verdict: FitVerdict) -> FitBadgeKind {
+        switch verdict {
+        case .runsWell: return .runsWell
+        case .runsSlow: return .runsSlow
+        case .willNotFit: return .willNotFit
+        case .notSupported: return .notSupported
+        }
+    }
+
+    private func onboardingModelRow(_ entry: CatalogEntry, role: String) -> some View {
+        let name = ModelNaming.short(entry.manifest.displayName)
+        let big = role.hasPrefix("Recommended")
+        return HStack(spacing: PocketSpacing.s12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(ModelNaming.short(entry.manifest.displayName))
-                    .font(.pocket(.headline))
+                HUDLabel(role)
+                Text(name)
+                    .font(.pocket(big ? .title : .headline))
+                HStack(spacing: PocketSpacing.s8) {
+                    FitBadge(kind: fitKind(entry.fit.verdict), reason: entry.fit.reason)
+                    Text(hudBytes(entry.fit.diskBytes))
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+                }
                 // The fit reason is why to pick this one; two lines, secondary
                 // contrast, rather than truncated tertiary text.
-                Text("\(hudBytes(entry.fit.diskBytes)) · \(entry.fit.reason)")
+                Text(entry.fit.reason)
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true) // the badge's label carries it
             }
             Spacer(minLength: 0)
             switch entry.state {
@@ -199,13 +243,17 @@ struct OnboardingView: View {
                             "Couldn't start that download: \(error.localizedDescription)"
                     }
                 }
-                .buttonStyle(.hudProminent)
+                .buttonStyle(big ? .hudProminent : .hud)
+                .frame(minHeight: 44)
+                .disabled(app.offlineMode.isOn)
                 .accessibilityLabel(
-                    "Download \(ModelNaming.short(entry.manifest.displayName)), \(hudBytes(entry.fit.diskBytes))")
+                    "Download \(name), \(hudBytes(entry.fit.diskBytes))")
             }
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(role): \(name), \(hudBytes(entry.fit.diskBytes))")
     }
 
     /// Spec 7.1 step 3: Apple's on-device model needs no download, so it is
@@ -258,13 +306,10 @@ struct OnboardingView: View {
         }
     }
 
-    private var recommended: [CatalogEntry] {
-        entries
-            .filter { $0.manifest.curated && $0.fit.verdict != .willNotFit
-                && $0.fit.verdict != .notSupported }
-            .sorted { $0.fit.diskBytes < $1.fit.diskBytes }
-            .prefix(3)
-            .map { $0 }
+    /// The fit engine's picks (see `onboardingPicks`), resolved to entries.
+    private func pick(_ role: KeyPath<OnboardingPicks, String?>) -> CatalogEntry? {
+        let picks = onboardingPicks(entries.map(PickCandidate.init))
+        return picks[keyPath: role].flatMap { id in entries.first { $0.manifest.id == id } }
     }
 
     private var installedAny: Bool { entries.contains { $0.state == .installed } }
