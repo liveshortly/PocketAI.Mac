@@ -135,6 +135,26 @@ struct PairingApprovalSheet: View {
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
             }
+            // NET-23: a typed code can't prove this is the Mac the iPhone
+            // reached, so the user compares this number with the phone's.
+            if let sas = request.sas {
+                VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                    HUDLabel("Confirm the code on the iPhone matches")
+                    Text("\(sas.prefix(3)) \(sas.suffix(3))")
+                        .font(.pocket(.display))
+                        .monospacedDigit()
+                        .foregroundStyle(PocketColor.textPrimary)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("Confirmation code \(sas.map(String.init).joined(separator: " "))")
+                    Text("Different number, or no number on the iPhone? Deny. Someone else on this network may be in between.")
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(PocketSpacing.s8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .hudPanel(PocketColor.bgSunken)
+            }
             HStack {
                 Spacer()
                 // Escape denies. Approving a device is never the safe

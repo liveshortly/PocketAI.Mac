@@ -15,6 +15,10 @@ struct DevicesView: View {
     /// When the shown code stops working: the core's offers live 300 s (C14).
     @State private var qrExpiresAt: Date?
     @State private var qrError: String?
+    /// NET-23: the typed-code fallback beside the QR, made only when the
+    /// user opens "Enter code manually".
+    @State private var showManualCode = false
+    @State private var manualCode: ManualPairingCode?
     @State private var confirmRevoke: PairedDevice?
     @State private var confirmForgetPeer: Peer?
 
@@ -143,9 +147,9 @@ struct DevicesView: View {
 
     /// C14's countdown: time left on the code, then a plain "expired" with the
     /// New code button right beside it. Works once either way.
-    private var expiryLine: some View {
+    private func expiryLine(_ expiresAt: Date?) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let left = max(0, Int((qrExpiresAt ?? context.date).timeIntervalSince(context.date)))
+            let left = max(0, Int((expiresAt ?? context.date).timeIntervalSince(context.date)))
             VStack(alignment: .leading, spacing: PocketSpacing.s4) {
                 Text(left > 0
                      ? "Expires in \(left / 60):\(String(format: "%02d", left % 60)) · works once"
@@ -174,20 +178,78 @@ struct DevicesView: View {
                     Text("On your iPhone, open PocketAI › Mac tab › Scan pairing code.")
                         .font(.pocket(.footnote))
                         .foregroundStyle(PocketColor.textSecondary)
-                    expiryLine
+                    expiryLine(qrExpiresAt)
                     HStack(spacing: PocketSpacing.s8) {
                         Button("New code") { makeOffer() }
                             .buttonStyle(.hud)
                             .help("Use this if the code expired or was already scanned.")
-                        Button("Done") { qrString = nil }
+                        Button("Done") {
+                            qrString = nil
+                            showManualCode = false
+                            manualCode = nil
+                        }
                             .buttonStyle(.hud)
                             .keyboardShortcut(.cancelAction)
                     }
                 }
             }
+            DisclosureGroup("Enter code manually", isExpanded: $showManualCode) {
+                manualCodePanel
+            }
+            .font(.pocket(.footnote))
+            .onChange(of: showManualCode) { _, open in
+                if open, manualCode == nil { makeManualCode() }
+            }
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+    }
+
+    /// NET-23: for a phone that can't scan. The code can't carry this Mac's
+    /// certificate the way the QR does, so the Allow sheet then asks the
+    /// user to compare a 6-digit number on both screens.
+    @ViewBuilder private var manualCodePanel: some View {
+        if let manualCode {
+            let address = manualCode.addrs.first.map { "\($0):\(manualCode.port)" } ?? "port \(manualCode.port)"
+            let code = "\(manualCode.code.prefix(4))-\(manualCode.code.suffix(4))"
+            VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                Text("On your iPhone, open PocketAI › Mac tab › Scan pairing code › Enter code manually, and type:")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: PocketSpacing.s24) {
+                    VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                        HUDLabel("Address")
+                        Text(address)
+                            .font(.pocket(.mono))
+                            .textSelection(.enabled)
+                    }
+                    VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                        HUDLabel("Code")
+                        Text(code)
+                            .font(.pocket(.title))
+                            .monospaced()
+                            .textSelection(.enabled)
+                            .accessibilityLabel("Pairing code \(manualCode.code.map(String.init).joined(separator: " "))")
+                    }
+                }
+                expiryLine(Date(timeIntervalSince1970: TimeInterval(manualCode.expiresAtMs) / 1000))
+                Button("New code") { makeManualCode() }
+                    .buttonStyle(.hud)
+                    .help("Use this if the code expired, was used, or had too many wrong tries.")
+            }
+            .padding(.top, PocketSpacing.s8)
+        }
+    }
+
+    private func makeManualCode() {
+        do {
+            manualCode = try app.core.pairingManualCode()
+        } catch {
+            manualCode = nil
+            showManualCode = false
+            qrError = "Couldn't create a pairing code: \(error.localizedDescription)"
+        }
     }
 
     private func deviceRow(_ device: PairedDevice) -> some View {
@@ -331,6 +393,7 @@ struct DevicesView: View {
         do {
             qrString = try app.core.pairingOfferQrString()
             qrExpiresAt = Date().addingTimeInterval(300)
+            if showManualCode { makeManualCode() }
         } catch {
             qrString = nil
             qrError = "Couldn't create a pairing code: \(error.localizedDescription)"
