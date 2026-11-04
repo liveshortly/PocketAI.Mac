@@ -18,6 +18,9 @@ struct ServerView: View {
     @State private var pendingAccess: AppModel.ServerAccess?
     /// Generating replaces the key, so a second one waits for a yes.
     @State private var confirmRegenerate = false
+    /// MAC-23: today's totals and the last 200 requests, on the 2 s poll.
+    @State private var stats: ServerStats?
+    @State private var requestLog: [RequestLogEntry] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,8 +40,10 @@ struct ServerView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: PocketSpacing.s16) {
                     statusCard
+                    statTiles
                     accessCard
                     endpointCard
+                    requestLogCard
                 }
                 .padding(PocketSpacing.s16)
                 .frame(maxWidth: 820, alignment: .leading)
@@ -48,6 +53,7 @@ struct ServerView: View {
         .background(PocketColor.bgCanvas)
         .task {
             apiKey = app.core.hasLocalApiKey() ? "••••••••••••••••" : nil
+            refreshRequests()
             startRefreshing()
         }
         .onDisappear { refreshTask?.cancel() }
@@ -198,6 +204,96 @@ struct ServerView: View {
         .hudPanel()
     }
 
+    // MARK: - Request stats and log (MAC-23, §7.6)
+
+    private var statTiles: some View {
+        HStack(spacing: PocketSpacing.s12) {
+            StatTile(label: "Requests today", value: (stats?.requestsToday ?? 0).formatted())
+                .hudPanel()
+            StatTile(label: "Tokens out", value: (stats?.tokensOutToday ?? 0).formatted())
+                .hudPanel()
+            StatTile(
+                label: "Avg tok/s",
+                value: (stats?.avgTokensPerSec ?? 0) > 0
+                    ? (stats?.avgTokensPerSec ?? 0).formatted(.number.precision(.fractionLength(1)))
+                    : "—")
+                .hudPanel()
+        }
+    }
+
+    private var requestLogCard: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            HUDLabel("Requests · \(requestLog.count)")
+            if requestLog.isEmpty {
+                Text("No requests yet. Calls from other apps and paired devices show up here.")
+                    .font(.pocket(.footnote))
+                    .foregroundStyle(PocketColor.textTertiary)
+                    .padding(PocketSpacing.s12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .hudPanel()
+            } else {
+                VStack(spacing: 0) {
+                    logRow(time: "TIME", client: "CLIENT", endpoint: "ENDPOINT", model: "MODEL",
+                           tokens: "TOKENS", ms: "MS", header: true)
+                    HUDRule()
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(requestLog.enumerated()), id: \.offset) { index, entry in
+                                if index > 0 { HUDRule() }
+                                logRow(entry)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 280)
+                }
+                .hudPanel()
+            }
+        }
+    }
+
+    private func logRow(_ e: RequestLogEntry) -> some View {
+        let time = Date(timeIntervalSince1970: TimeInterval(e.tsMs) / 1000)
+            .formatted(.dateTime.hour().minute().second())
+        let endpoint = e.status == 200 ? e.endpoint : "\(e.endpoint) · \(e.status)"
+        return logRow(time: time, client: e.client, endpoint: endpoint, model: e.model,
+                      tokens: "\(e.promptTokens)/\(e.completionTokens)", ms: "\(e.durationMs)",
+                      failed: e.status != 200)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                "\(time), \(e.client), \(e.endpoint), \(e.model), "
+                + "\(e.promptTokens) tokens in, \(e.completionTokens) out, \(e.durationMs) milliseconds"
+                + (e.status == 200 ? "" : ", failed with status \(e.status)"))
+    }
+
+    private func logRow(time: String, client: String, endpoint: String, model: String,
+                        tokens: String, ms: String, header: Bool = false, failed: Bool = false) -> some View {
+        let font = header ? Font.pocket(.caption) : Font.pocket(.mono)
+        let tint = header ? PocketColor.textTertiary : PocketColor.textPrimary
+        return HStack(spacing: PocketSpacing.s8) {
+            Text(time).frame(width: 72, alignment: .leading)
+            Text(client).frame(width: 96, alignment: .leading)
+            Text(endpoint)
+                .foregroundStyle(failed ? PocketColor.statusBad : tint)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(model).frame(maxWidth: .infinity, alignment: .leading)
+            Text(tokens).frame(width: 72, alignment: .trailing)
+            Text(ms).frame(width: 56, alignment: .trailing)
+        }
+        .font(font)
+        .foregroundStyle(tint)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .monospacedDigit()
+        .padding(.horizontal, PocketSpacing.s8)
+        .padding(.vertical, PocketSpacing.s4)
+        .accessibilityHidden(header)
+    }
+
+    private func refreshRequests() {
+        stats = app.core.serverStats()
+        requestLog = app.core.serverRequestLog(limit: 200)
+    }
+
     // MARK: - Code samples (§7.6)
 
     enum SampleLang: String, CaseIterable, Identifiable {
@@ -325,6 +421,7 @@ struct ServerView: View {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled else { return }
                 app.refreshServerStatus()
+                refreshRequests()
             }
         }
     }
