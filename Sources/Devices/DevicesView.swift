@@ -12,6 +12,8 @@ struct DevicesView: View {
     @State private var lastSynced: [String: Int64] = [:]
     @State private var peers: [Peer] = []
     @State private var qrString: String?
+    /// When the shown code stops working: the core's offers live 300 s (C14).
+    @State private var qrExpiresAt: Date?
     @State private var qrError: String?
     @State private var confirmRevoke: PairedDevice?
     @State private var confirmForgetPeer: Peer?
@@ -139,6 +141,26 @@ struct DevicesView: View {
         .hudPanel()
     }
 
+    /// C14's countdown: time left on the code, then a plain "expired" with the
+    /// New code button right beside it. Works once either way.
+    private var expiryLine: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let left = max(0, Int((qrExpiresAt ?? context.date).timeIntervalSince(context.date)))
+            VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                Text(left > 0
+                     ? "Expires in \(left / 60):\(String(format: "%02d", left % 60)) · works once"
+                     : "This code expired. Make a new one.")
+                    .font(.pocket(.caption))
+                    .monospacedDigit()
+                    .foregroundStyle(left > 0 ? PocketColor.textTertiary : PocketColor.statusBad)
+                ProgressView(value: Double(left), total: 300)
+                    .tint(left > 60 ? PocketColor.accent : PocketColor.statusBad)
+                    .frame(maxWidth: 160)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
     private func qrCard(_ qr: String) -> some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HUDLabel("Scan on the iPhone")
@@ -152,9 +174,7 @@ struct DevicesView: View {
                     Text("On your iPhone, open PocketAI › Mac tab › Scan pairing code.")
                         .font(.pocket(.footnote))
                         .foregroundStyle(PocketColor.textSecondary)
-                    Text("This code expires in a few minutes and works once.")
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.textTertiary)
+                    expiryLine
                     HStack(spacing: PocketSpacing.s8) {
                         Button("New code") { makeOffer() }
                             .buttonStyle(.hud)
@@ -310,6 +330,7 @@ struct DevicesView: View {
         }
         do {
             qrString = try app.core.pairingOfferQrString()
+            qrExpiresAt = Date().addingTimeInterval(300)
         } catch {
             qrString = nil
             qrError = "Couldn't create a pairing code: \(error.localizedDescription)"
