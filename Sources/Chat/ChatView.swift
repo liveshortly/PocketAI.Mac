@@ -3,6 +3,24 @@ import PocketUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// AGT-13: clears the "Running code…" row when the run's step arrives or the
+/// reply ends. Its own modifier: `ChatView.body`'s chain is at the type-checker's limit.
+private struct RunningCodeTracker: ViewModifier {
+    @Environment(AppModel.self) private var app
+    let chat: ChatModel?
+    let conversationId: String
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: chat?.streamingSteps.last?.kind) { _, kind in
+                if kind == "ran" { app.tools.approvals.finishRun(conversationId: conversationId) }
+            }
+            .onChange(of: chat?.isStreaming ?? false) { _, streaming in
+                if !streaming { app.tools.approvals.finishRun(conversationId: conversationId) }
+            }
+    }
+}
+
 /// One conversation: status strip, transcript, composer. The transcript idiom
 /// matches the iPhone app — user turns as right-aligned cards, assistant turns
 /// as full-width prose with fenced code lifted into `CodeBlock`.
@@ -31,6 +49,7 @@ struct ChatView: View {
                 statusStrip(chat)
                 HUDRule()
                 transcript(chat)
+                toolApprovalArea
                 composer(chat)
             } else {
                 // Same loading treatment as LiveShortly (LSI-13): the animated
@@ -50,6 +69,7 @@ struct ChatView: View {
             dictation.stop()
             scrollActivity.stop()
         }
+        .modifier(RunningCodeTracker(chat: chat, conversationId: conversationId))
         .onChange(of: chat?.tokensPerSecond ?? 0) { _, rate in
             app.activeTokPerSec = rate
         }
@@ -158,8 +178,8 @@ struct ChatView: View {
                     isOn: Binding(get: { chat.toolsEnabled }, set: { chat.toolsEnabled = $0 })
                 )
                 .help(chat.toolsEnabled
-                    ? "Web search on — the model can search the web and read pages"
-                    : "Web search off — the model answers from what it knows")
+                    ? "Tools on — the model can search the web and, if Settings allows, run code you approve"
+                    : "Tools off — the model answers from what it knows")
             }
             modelPicker(chat)
             Menu {
@@ -372,6 +392,31 @@ struct ChatView: View {
     private func scroll(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.18)) {
             proxy.scrollTo("tail", anchor: .bottom)
+        }
+    }
+
+    // MARK: - Tool approval
+
+    /// AGT-13: the "Run this?" card (or "Running code…" with Stop) for this
+    /// chat. The card's buttons are the only way an answer reaches Core.
+    @ViewBuilder
+    private var toolApprovalArea: some View {
+        let approvals = app.tools.approvals
+        if let request = approvals.request(for: conversationId) {
+            RunCodeCard(
+                language: "JavaScript", place: "this Mac", code: request.code,
+                onRun: { code, always in
+                    approvals.answer(request.id, code == request.code ? .run : .runEdited(code: code), alwaysAllow: always)
+                },
+                onDeny: { approvals.answer(request.id, .deny) }
+            )
+            .padding(.horizontal, PocketSpacing.gutterMac)
+            .padding(.vertical, PocketSpacing.s8)
+            .id(request.id)
+        } else if approvals.running.contains(conversationId) {
+            RunningCodeRow { app.core.cancelConversation(id: conversationId) }
+                .padding(.horizontal, PocketSpacing.gutterMac)
+                .padding(.vertical, PocketSpacing.s8)
         }
     }
 

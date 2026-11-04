@@ -24,6 +24,8 @@ public final class AppModel {
     /// The offline switch, owned once. Three screens used to keep their own
     /// copy of `core.isOffline()` and they drifted apart.
     public private(set) var offlineMode: OfflineMode!
+    /// AGT-13: the code sandbox and its "Run this?" cards (Settings → Tools).
+    public private(set) var tools: ToolsRuntime!
     public let hooks: PlatformHooks
     /// LiveShortly integration (opt-in; connected from Settings → LiveShortly).
     public let liveShortly = LSAccountModel()
@@ -243,6 +245,7 @@ public final class AppModel {
         }
 
         offlineMode = OfflineMode(core: core)
+        tools = ToolsRuntime(core: core)
 
         // Re-activate a saved license so Pro survives a relaunch. Offline or
         // transient failure is non-fatal — it retries next launch.

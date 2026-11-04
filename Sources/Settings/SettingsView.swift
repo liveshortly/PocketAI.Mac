@@ -22,6 +22,9 @@ struct SettingsView: View {
             VoiceSettings()
                 .tabItem { Label("Voice", systemImage: "waveform") }
                 .tag("voice")
+            ToolsSettingsPane()
+                .tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                .tag("tools")
             LiveShortlySettings()
                 .tabItem { Label { Text("LiveShortly") } icon: { Image.lsLogo } }
                 .tag("liveshortly")
@@ -246,6 +249,60 @@ struct VoiceSettings: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(PocketColor.bgCanvas)
+    }
+}
+
+/// AGT-13: Settings → Tools. Master switch for code tools (off by default)
+/// and one switch per tool; later stages add `ToolsSettings.Tool` cases and
+/// they list here by themselves.
+struct ToolsSettingsPane: View {
+    @AppStorage(ToolsSettings.allowToolsKey) private var allowTools = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Allow tools", isOn: $allowTools)
+                    .accessibilityHint("Lets the model run code on this Mac after you approve it")
+                Text("Off, the model can never run code. Even on, the Tools button must be on in a chat, and you approve every run.")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            } header: {
+                HUDLabel("Master switch")
+            }
+            Section {
+                ForEach(ToolsSettings.Tool.allCases, id: \.rawValue) { tool in
+                    ToolSwitchRow(tool: tool, masterOn: allowTools)
+                }
+            } header: {
+                HUDLabel("Tools")
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(PocketColor.bgCanvas)
+    }
+}
+
+private struct ToolSwitchRow: View {
+    let tool: ToolsSettings.Tool
+    let masterOn: Bool
+    @AppStorage private var isOn: Bool
+
+    init(tool: ToolsSettings.Tool, masterOn: Bool) {
+        self.tool = tool
+        self.masterOn = masterOn
+        _isOn = AppStorage(wrappedValue: true, tool.defaultsKey)
+    }
+
+    var body: some View {
+        let blocked = tool.runsCode && !masterOn
+        VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+            Toggle(tool.title(device: "Mac"), isOn: $isOn)
+            Text(blocked ? "Turn on Allow tools first." : tool.detail)
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
+        }
+        .disabled(blocked)
     }
 }
 

@@ -298,8 +298,9 @@ struct StreamingRow: View {
     }
 }
 
-/// AGT-12: "Searched: …" / "Read: …" rows for the web tools a reply used,
-/// each expandable to its results or page URL. Nothing when no tools ran.
+/// AGT-12/13: "Searched" / "Read" / "Ran code" rows for the tools a reply
+/// used, each expandable to its results, page URL or code and output.
+/// Nothing when no tools ran.
 struct ToolStepsView: View {
     let steps: [ToolStep]
 
@@ -321,6 +322,16 @@ private struct ToolStepRow: View {
     @State private var expanded = false
 
     var body: some View {
+        if step.kind == "ran" {
+            let ran = RanCodeDetail(step: step)
+            RanCodeRow(language: "JavaScript", code: ran.code, output: ran.output, error: ran.error,
+                       durationMs: ran.durationMs, truncated: ran.truncated, denied: ran.denied)
+        } else {
+            searchOrReadRow
+        }
+    }
+
+    private var searchOrReadRow: some View {
         DisclosureGroup(isExpanded: $expanded) {
             Text(step.detail)
                 .font(.pocket(.caption))
