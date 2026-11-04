@@ -534,6 +534,8 @@ private struct LSChip: View {
 private struct LSFoldersCard: View {
     @Environment(AppModel.self) private var app
     let daemon: LSDaemonController
+    /// UI-88: removing a folder restarts the daemon, which ends live agents.
+    @State private var pendingRemove: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
@@ -557,13 +559,31 @@ private struct LSFoldersCard: View {
             }
             ForEach(daemon.dirs, id: \.self) { dir in
                 LSFolderRow(dir: dir, home: daemon.realHome) {
-                    let wasRunning = daemon.isRunning
-                    daemon.remove(dir)
-                    if wasRunning, !daemon.dirs.isEmpty { app.toast("Restarted to apply") }
+                    if daemon.isRunning, app.liveShortly.feed.sessions.contains(where: \.isLive) {
+                        pendingRemove = dir
+                    } else {
+                        remove(dir)
+                    }
                 }
             }
         }
         .lsCard()
+        .confirmationDialog(
+            "Remove this folder? Agents running now will stop while the daemon restarts.",
+            isPresented: Binding(
+                get: { pendingRemove != nil }, set: { if !$0 { pendingRemove = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Remove folder", role: .destructive) {
+                if let dir = pendingRemove { remove(dir) }
+            }
+        }
+    }
+
+    private func remove(_ dir: String) {
+        let wasRunning = daemon.isRunning
+        daemon.remove(dir)
+        if wasRunning, !daemon.dirs.isEmpty { app.toast("Restarted to apply") }
     }
 }
 
@@ -572,6 +592,7 @@ private struct LSFolderRow: View {
     let home: String
     let onRemove: () -> Void
     @State private var hovering = false
+    @FocusState private var removeFocused: Bool
     @State private var repos: Int?
 
     var body: some View {
@@ -592,7 +613,9 @@ private struct LSFolderRow: View {
             Button(action: onRemove) { Image(systemName: "minus.circle") }
                 .buttonStyle(.plain)
                 .foregroundStyle(PocketColor.textTertiary)
-                .opacity(hovering ? 1 : 0)
+                // Shown on keyboard focus too, not only under the pointer.
+                .opacity(hovering || removeFocused ? 1 : 0)
+                .focused($removeFocused)
                 .accessibilityLabel("Remove \(dir)")
                 .help("Remove")
         }

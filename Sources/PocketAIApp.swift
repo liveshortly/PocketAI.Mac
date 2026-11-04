@@ -64,9 +64,10 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Chat") { app.newChat() }
                 .keyboardShortcut("n", modifiers: .command)
+                .disabled(!app.hasOnboarded)
             Button("New LiveShortly Session…") { app.post(.newLiveSession) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(!app.liveShortly.isConnected)
+                .disabled(!app.hasOnboarded || !app.liveShortly.isConnected)
         }
         CommandGroup(after: .toolbar) {
             // The palette is a sheet on the shell, so the shell has to be the
@@ -76,6 +77,7 @@ struct AppCommands: Commands {
                 app.showCommandPalette = true
             }
             .keyboardShortcut("k", modifiers: .command)
+            .disabled(!app.hasOnboarded)
             // Re-fetch whatever this window is showing. Paired devices and new
             // sessions can land after a screen has loaded.
             Button("Refresh") { app.post(.refresh) }
@@ -106,10 +108,15 @@ struct AppCommands: Commands {
             // UI-139: named as the sidebar names them, and every sidebar
             // tool is reachable (Images and Privacy were missing).
             Button("Models") { app.reveal(.models) }
+                .disabled(!app.hasOnboarded)
             Button("Images") { app.reveal(.images) }
+                .disabled(!app.hasOnboarded)
             Button("Devices") { app.reveal(.devices) }
+                .disabled(!app.hasOnboarded)
             Button("Local Server") { app.reveal(.server) }
+                .disabled(!app.hasOnboarded)
             Button("Privacy") { app.reveal(.privacy) }
+                .disabled(!app.hasOnboarded)
         }
     }
 }
@@ -121,8 +128,28 @@ struct MenuBarContent: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        QuickAskPanel()
-            .environment(app)
-            .frame(width: 420)
+        Group {
+            if app.hasOnboarded {
+                QuickAskPanel()
+                    .environment(app)
+            } else {
+                // UI-47: asking before onboarding made chats the user could
+                // not see once the window came up.
+                VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                    Text("Finish setting up PocketAI")
+                        .font(.pocket(.headline))
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Pick a model in the PocketAI window to start asking from here.")
+                        .font(.pocket(.footnote))
+                        .foregroundStyle(PocketColor.textSecondary)
+                    Button("Open PocketAI") { app.focusShell() }
+                        .buttonStyle(.hudProminent)
+                }
+                .padding(PocketSpacing.s12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(PocketColor.bgSurface)
+            }
+        }
+        .frame(width: 420)
     }
 }

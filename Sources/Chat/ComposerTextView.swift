@@ -28,6 +28,11 @@ struct ComposerTextView: NSViewRepresentable {
     /// Up-arrow in an empty box: the text to recall (the last message sent),
     /// the way a terminal or Slack does. Nil leaves the caret move alone.
     var onRecall: () -> String? = { nil }
+    /// UI-67: focus in/out, so the composer can draw its focus ring.
+    var onFocusChange: (Bool) -> Void = { _ in }
+    /// UI-67: image files from the pasteboard. Return true when taken; false
+    /// lets the normal paste run.
+    var onPasteImages: ([URL]) -> Bool = { _ in false }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -40,6 +45,8 @@ struct ComposerTextView: NSViewRepresentable {
         scrollView.borderType = .noBorder
 
         let textView = ComposerNSTextView()
+        textView.onFocusChange = { context.coordinator.parent.onFocusChange($0) }
+        textView.onPasteImages = { context.coordinator.parent.onPasteImages($0) }
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.allowsUndo = true
@@ -163,6 +170,45 @@ struct ComposerTextView: NSViewRepresentable {
 final class ComposerNSTextView: NSTextView {
     var placeholder: String = ""
     var placeholderColor: NSColor = .placeholderTextColor
+    var onFocusChange: (Bool) -> Void = { _ in }
+    var onPasteImages: ([URL]) -> Bool = { _ in false }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onFocusChange(true) }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { onFocusChange(false) }
+        return ok
+    }
+
+    /// `isRichText = false` makes AppKit ignore image data on paste. Take
+    /// images (files copied in Finder, or raw image data) as attachments;
+    /// anything with plain text still pastes as text.
+    override func paste(_ sender: Any?) {
+        let board = NSPasteboard.general
+        if board.string(forType: .string) == nil {
+            let files = (board.readObjects(
+                forClasses: [NSURL.self],
+                options: [.urlReadingContentsConformToTypes: ["public.image"]]) as? [URL]) ?? []
+            if !files.isEmpty, onPasteImages(files) { return }
+            if let image = NSImage(pasteboard: board), let url = Self.writeTemp(image),
+               onPasteImages([url]) { return }
+        }
+        super.paste(sender)
+    }
+
+    private static func writeTemp(_ image: NSImage) -> URL? {
+        guard let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+        else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Pasted image \(UUID().uuidString.prefix(8)).png")
+        return (try? png.write(to: url)) == nil ? nil : url
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

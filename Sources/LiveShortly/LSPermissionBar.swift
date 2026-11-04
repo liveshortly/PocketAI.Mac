@@ -89,11 +89,26 @@ struct LSProbeDetailView: View {
     let onDecide: (String) async -> Bool
     @Environment(\.dismiss) private var dismiss
 
+    private var kind: String? { probe.payload["kind"]?.stringValue }
+
+    /// UI-87: ⌘⏎ Allow / ⌘⌫ Deny, here and nowhere else — never on the inline
+    /// bar or a menu, where a stray Return from the composer could approve a
+    /// tool call. Only for a permission request: an input request may grow a
+    /// text field, where ⌘⌫ means "delete line".
+    static func shortcut(for verdict: String, kind: String?) -> KeyboardShortcut? {
+        guard kind == "permission" else { return nil }
+        switch verdict {
+        case "allow": return KeyboardShortcut(.return, modifiers: .command)
+        case "deny": return KeyboardShortcut(.delete, modifiers: .command)
+        default: return nil
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(
-                    probe.payload["kind"]?.stringValue == "permission"
+                    kind == "permission"
                         ? "Permission request" : "Input request"
                 )
                 .font(.pocket(.headline))
@@ -131,11 +146,15 @@ struct LSProbeDetailView: View {
                     dismiss()
                 }
                 .buttonStyle(.hudDestructive)
+                .keyboardShortcut(Self.shortcut(for: "deny", kind: kind))
+                .help(kind == "permission" ? "Deny (⌘⌫)" : "Deny")
                 Button("Allow") {
                     Task { _ = await onDecide("allow") }
                     dismiss()
                 }
                 .buttonStyle(.hudProminent)
+                .keyboardShortcut(Self.shortcut(for: "allow", kind: kind))
+                .help(kind == "permission" ? "Allow (⌘⏎)" : "Allow")
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(PocketSpacing.s12)

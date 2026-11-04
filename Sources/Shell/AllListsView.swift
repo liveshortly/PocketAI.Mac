@@ -244,6 +244,7 @@ struct AllSessionsView: View {
     @State private var query = ""
     @State private var loading = true
     @State private var errorText: String?
+    @State private var actions = SessionActionState()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -271,32 +272,19 @@ struct AllSessionsView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(filtered, id: \.id) { session in
+                        // UI-86: the sidebar's row and menu — unread count,
+                        // "Starting…", shared-by line, copy link / end / delete.
                         Button {
                             app.selection = .session(session.id)
                         } label: {
-                            HStack(spacing: PocketSpacing.s12) {
-                                LSSessionMark(isLive: session.isLive, size: 22)
-                                    .accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(session.title.isEmpty
-                                        ? "Untitled session" : session.title)
-                                        .font(.pocket(.body))
-                                    Text(subtitle(session))
-                                        .font(.pocket(.caption))
-                                        .foregroundStyle(PocketColor.textTertiary)
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                                if session.isLive { HUDLiveBadge() }
-                            }
-                            .padding(.horizontal, PocketSpacing.s12)
-                            .padding(.vertical, PocketSpacing.s8)
-                            .contentShape(Rectangle())
+                            SessionRow(session: session)
+                                .padding(.horizontal, PocketSpacing.s12)
+                                .padding(.vertical, PocketSpacing.s8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(
-                            "Open \(session.title.isEmpty ? "Untitled session" : session.title)"
-                            + ", \(session.isLive ? "live" : "ended"), \(subtitle(session))")
+                        .sessionContextMenu(session, state: actions)
                         HUDRule()
                     }
                     if loading {
@@ -313,7 +301,7 @@ struct AllSessionsView: View {
                             .foregroundStyle(PocketColor.textTertiary)
                             .padding(PocketSpacing.s16)
                     }
-                    if let errorText {
+                    if let errorText = errorText ?? actions.error {
                         Text(errorText)
                             .font(.pocket(.footnote))
                             .foregroundStyle(PocketColor.statusBad)
@@ -325,6 +313,7 @@ struct AllSessionsView: View {
             }
         }
         .background(PocketColor.bgCanvas)
+        .sessionActionDialogs(actions) { Task { await reload() } }
         .task { await reload() }
         // The shared feed polls (LSI-17); re-fetch the long list when a
         // session appears, goes away or changes state — not on every event.
@@ -349,19 +338,6 @@ struct AllSessionsView: View {
                 || $0.ownerHandle.lowercased().contains(search)
                 || $0.id.lowercased().contains(search)
         }
-    }
-
-    private func subtitle(_ session: LSSession) -> String {
-        if let last = session.lastEvent, !last.snippet.isEmpty {
-            return (last.type == "response" ? "◆ " : "› ") + last.snippet
-        }
-        var bits: [String] = []
-        if let framework = session.framework, !framework.isEmpty { bits.append(framework) }
-        bits.append("\(session.eventCount) events")
-        if !session.isLive, let ended = session.endedAt {
-            bits.append("ended \(ended.formatted(.relative(presentation: .named)))")
-        }
-        return bits.joined(separator: " · ")
     }
 
     private func reload() async {

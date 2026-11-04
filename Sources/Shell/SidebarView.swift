@@ -15,12 +15,10 @@ struct SidebarView: View {
     @State private var renaming: ConversationSummary?
     @State private var confirmDelete: ConversationSummary?
     @State private var newProject = false
-    @State private var pendingEndSession: LSSession?
-    @State private var pendingDeleteSession: LSSession?
-    /// Why the last session action didn't take. Ending and deleting both
-    /// dropped their error, and delete removed the row even when the server
-    /// had refused — so the list told a story the server disagreed with.
-    @State private var sessionActionError: String?
+    @State private var renamingProject: Project?
+    @State private var confirmDeleteProject: Project?
+    /// End / Delete state and dialogs, shared with All sessions (UI-86).
+    @State private var sessionActions = SessionActionState()
     /// The sidebar holds keyboard focus for ↑/↓ (UI-79).
     @FocusState private var listFocused: Bool
 
@@ -110,49 +108,31 @@ struct SidebarView: View {
                 }
             }
         }
-        .confirmationDialog(
-            "End “\(pendingEndSession?.title ?? "session")”? The agent stops where it is.",
-            isPresented: Binding(
-                get: { pendingEndSession != nil },
-                set: { if !$0 { pendingEndSession = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("End session", role: .destructive) {
-                guard let target = pendingEndSession, let client = app.liveShortly.client
-                else { return }
-                Task {
-                    do {
-                        try await client.stop(target.id)
-                        sessionActionError = nil
-                    } catch {
-                        sessionActionError =
-                            "Couldn't end that session: \(error.localizedDescription)"
-                    }
-                    await feed.reload()
+        .sessionActionDialogs(sessionActions)
+        .sheet(item: $renamingProject) { project in
+            RenameSheet(title: project.name) { newName in
+                do { try app.core.renameProject(id: project.id, name: newName) } catch {
+                    app.toast("Couldn't rename the project: \(error.localizedDescription)")
                 }
+                reloadProjects()
             }
         }
         .confirmationDialog(
-            "Delete “\(pendingDeleteSession?.title ?? "session")”? This cannot be undone.",
+            "Delete “\(confirmDeleteProject?.name ?? "project")”? Its documents are removed; its chats are kept.",
             isPresented: Binding(
-                get: { pendingDeleteSession != nil },
-                set: { if !$0 { pendingDeleteSession = nil } }),
+                get: { confirmDeleteProject != nil },
+                set: { if !$0 { confirmDeleteProject = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Delete session", role: .destructive) {
-                guard let target = pendingDeleteSession, let client = app.liveShortly.client
-                else { return }
-                Task {
-                    do {
-                        try await client.deleteSession(target.id)
-                        sessionActionError = nil
-                        if app.selection == .session(target.id) { app.selection = nil }
-                        feed.remove(target.id)
-                    } catch {
-                        sessionActionError =
-                            "Couldn't delete that session: \(error.localizedDescription)"
-                    }
+            Button("Delete project", role: .destructive) {
+                guard let target = confirmDeleteProject else { return }
+                do {
+                    try app.core.deleteProject(id: target.id)
+                    if app.selection == .project(target.id) { app.selection = nil }
+                } catch {
+                    app.toast("Couldn't delete that project: \(error.localizedDescription)")
                 }
+                reloadProjects()
             }
         }
         .confirmationDialog(
@@ -222,6 +202,19 @@ struct SidebarView: View {
             ForEach(projects, id: \.id) { project in
                 Label(project.name, systemImage: "folder")
                     .sidebarRow(.project(project.id))
+                    // UI-88: chats and sessions had a menu; projects did not.
+                    .contextMenu {
+                        Button("Open") { app.selection = .project(project.id) }
+                        Button("New chat here") {
+                            app.newChat(projectId: project.id)
+                            reloadConversations()
+                        }
+                        Divider()
+                        Button("Rename…") { renamingProject = project }
+                        Button("Delete project…", role: .destructive) {
+                            confirmDeleteProject = project
+                        }
+                    }
             }
             Button {
                 newProject = true
@@ -249,25 +242,7 @@ struct SidebarView: View {
                 ForEach(visibleSessions, id: \.id) { session in
                     SessionRow(session: session)
                         .sidebarRow(.session(session.id))
-                        .contextMenu {
-                            Button("Open") { app.selection = .session(session.id) }
-                            if let link = app.liveShortly.client?.sessionLink(session.id) {
-                                Button("Copy link") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(
-                                        link.absoluteString, forType: .string)
-                                }
-                            }
-                            Divider()
-                            if session.isLive {
-                                Button("End session", role: .destructive) {
-                                    pendingEndSession = session
-                                }
-                            }
-                            Button("Delete session", role: .destructive) {
-                                pendingDeleteSession = session
-                            }
-                        }
+                        .sessionContextMenu(session, state: sessionActions)
                 }
                 if sessions.count > Self.recentLimit {
                     Label(
@@ -291,7 +266,7 @@ struct SidebarView: View {
                         .foregroundStyle(PocketColor.textTertiary)
                         .lineLimit(2)
                 }
-                if let sessionActionError {
+                if let sessionActionError = sessionActions.error {
                     Text(sessionActionError)
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.statusBad)
@@ -327,16 +302,7 @@ struct SidebarView: View {
             ForEach(feed.orderedShared, id: \.id) { session in
                 SessionRow(session: session)
                     .sidebarRow(.session(session.id))
-                    .contextMenu {
-                        Button("Open") { app.selection = .session(session.id) }
-                        if let link = app.liveShortly.client?.sessionLink(session.id) {
-                            Button("Copy link") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(
-                                    link.absoluteString, forType: .string)
-                            }
-                        }
-                    }
+                    .sessionContextMenu(session, state: sessionActions)
             }
         } header: {
             HStack {
@@ -377,13 +343,22 @@ struct SidebarView: View {
                     pulsing: app.serverStatus.running)
                 // The dot carries the server state visually and is hidden from
                 // VoiceOver, so this line has to say it.
-                Text(app.currentModelDisplayName)
-                    .font(.pocket(.caption))
-                    .foregroundStyle(PocketColor.textSecondary)
-                    .lineLimit(1)
-                    .accessibilityLabel(
-                        "Current model \(app.currentModelDisplayName), local server "
-                        + (app.serverStatus.running ? "running" : "stopped"))
+                // UI-88: the model name opens Models.
+                Button {
+                    app.selection = .models
+                } label: {
+                    Text(app.currentModelDisplayName)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.textSecondary)
+                        .lineLimit(1)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    "Current model \(app.currentModelDisplayName), local server "
+                    + (app.serverStatus.running ? "running" : "stopped"))
+                .accessibilityHint("Opens Models")
+                .help("Open Models")
                 Spacer(minLength: 0)
                 SettingsLink {
                     Image(systemName: "gearshape")
@@ -643,3 +618,4 @@ extension Notification.Name {
 }
 
 extension ConversationSummary: @retroactive Identifiable {}
+extension Project: @retroactive Identifiable {}

@@ -529,9 +529,11 @@ public final class AppModel {
     // MARK: - Navigation helpers
 
     /// Creates a conversation and selects it. Returns nil when the core
-    /// refuses (a degraded core after an open failure).
+    /// refuses (a degraded core after an open failure), or before onboarding
+    /// is done (UI-47: ⌘N and App Intents left chats nobody could see).
     @discardableResult
     public func newChat(projectId: String? = nil, modelId: String? = nil) -> String? {
+        guard hasOnboarded else { return nil }
         let chosen = modelId ?? currentModelId
         let input = NewConversation(title: nil, projectId: projectId, modelId: chosen)
         guard let conversation = try? core.createConversation(input) else { return nil }

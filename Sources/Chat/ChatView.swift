@@ -1,3 +1,5 @@
+import AppKit
+import ImageIO
 import PocketKit
 import PocketUI
 import SwiftUI
@@ -35,6 +37,7 @@ struct ChatView: View {
     @State private var pinnedToBottom = true
     @State private var scrollActivity = ScrollActivity()
     @State private var attachmentRefusal: String?
+    @State private var composerFocused = false
     @AppStorage("app.getpocketai.mac.autoSpeak") private var autoSpeak = false
     /// Bumped to ask the composer for the caret. `@FocusState` was never bound
     /// to anything here — the composer is an `NSTextView` — so it latched true
@@ -271,7 +274,13 @@ struct ChatView: View {
             Divider()
             Button("Browse models…") { app.selection = .models }
         } label: {
-            HUDChip(text: modelName(chat), tint: PocketColor.accent)
+            // UI-66: the system indicator is hidden, so draw the ⌄ ourselves.
+            HStack(spacing: PocketSpacing.s4) {
+                HUDChip(text: modelName(chat), tint: PocketColor.accent)
+                Image(systemName: "chevron.down")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -444,26 +453,10 @@ struct ChatView: View {
                     .hudPanel(PocketColor.statusWarn.opacity(0.10))
                 }
                 if !attachments.isEmpty {
+                    // UI-67: thumbnails, not filenames.
                     HStack(spacing: PocketSpacing.s8) {
                         ForEach(attachments, id: \.self) { url in
-                            HStack(spacing: 4) {
-                                Image(systemName: "paperclip")
-                                    .accessibilityHidden(true)
-                                Text(url.lastPathComponent).lineLimit(1)
-                                    .accessibilityLabel("Attachment \(url.lastPathComponent)")
-                                Button {
-                                    attachments.removeAll { $0 == url }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Remove attachment \(url.lastPathComponent)")
-                            }
-                            .font(.pocket(.caption))
-                            .foregroundStyle(PocketColor.textSecondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .hudPanel(PocketColor.bgSunken)
+                            AttachmentThumb(url: url) { attachments.removeAll { $0 == url } }
                         }
                     }
                 }
@@ -473,12 +466,28 @@ struct ChatView: View {
                         focusRequest: focusRequest,
                         onSubmit: { submit(chat) },
                         onEscape: { escape(chat) },
-                        onRecall: { chat.messages.last(where: \.isUser)?.plainText }
+                        onRecall: { chat.messages.last(where: \.isUser)?.plainText },
+                        onFocusChange: { composerFocused = $0 },
+                        onPasteImages: { urls in
+                            // Same rule as the paperclip: a model that can't
+                            // read images says so instead of dropping the paste.
+                            if attachmentsAllowed(chat) {
+                                attachments.append(contentsOf: urls)
+                            } else {
+                                attachmentRefusal = visionWarning(chat)
+                            }
+                            return true
+                        }
                     )
                     .frame(minHeight: 22)
                     .padding(.horizontal, PocketSpacing.s12)
                     .padding(.vertical, PocketSpacing.s8)
                     .hudPanel(PocketColor.bgCanvas)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: HUD.radius, style: .continuous)
+                            .stroke(PocketColor.lineStrong, lineWidth: HUD.hairline * 2)
+                            .opacity(composerFocused ? 1 : 0)
+                    )
                     if chat.isStreaming {
                         // Same 26 pt circle as Send, so the swap reads as one
                         // control changing state rather than a bare glyph.
@@ -718,5 +727,51 @@ struct ChatEmptyState: View {
             }
         }
         .padding(.top, PocketSpacing.s4)
+    }
+}
+
+/// UI-67: an attachment as a small thumbnail with a remove button.
+struct AttachmentThumb: View {
+    let url: URL
+    let onRemove: () -> Void
+
+    var body: some View {
+        Group {
+            if let image = Self.thumbnail(url) {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: "photo").foregroundStyle(PocketColor.textTertiary)
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: HUD.radius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: HUD.radius, style: .continuous)
+                .stroke(PocketColor.lineHairline, lineWidth: HUD.hairline))
+        .overlay(alignment: .topTrailing) {
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(PocketColor.textPrimary, PocketColor.bgSurface)
+            }
+            .buttonStyle(.plain)
+            .padding(2)
+            .accessibilityLabel("Remove attachment \(url.lastPathComponent)")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Attachment \(url.lastPathComponent)")
+        .help(url.lastPathComponent)
+    }
+
+    /// ImageIO's thumbnail, so a 40 MP photo is not decoded to draw 56 pt.
+    private static func thumbnail(_ url: URL) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 160,
+              ] as CFDictionary)
+        else { return nil }
+        return NSImage(cgImage: cg, size: .zero)
     }
 }
