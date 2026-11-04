@@ -38,15 +38,35 @@ struct SettingsView: View {
 
 /// Opens Settings on the License tab — the fix action wherever a missing
 /// license blocks something (Server, Devices).
+/// COM-08: Dodo checkout for PocketAI Pro. The URL (test vs production host,
+/// product id, thank-you page) lives in pocket-trust next to the licence
+/// server URL, so one switch flips both.
+enum ProCheckout {
+    static let url = URL(string: proCheckoutUrl())!
+}
+
+struct BuyProButton: View {
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button("Buy PocketAI Pro") { openURL(ProCheckout.url) }
+            .buttonStyle(.hud)
+    }
+}
+
+/// Every "needs Pro" prompt: buy, or paste a key you already have.
 struct EnterLicenseButton: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Button("Enter license key…") {
-            UserDefaults.standard.set("license", forKey: SettingsView.tabKey)
-            openSettings()
+        HStack(spacing: PocketSpacing.s8) {
+            BuyProButton()
+            Button("Enter license key…") {
+                UserDefaults.standard.set("license", forKey: SettingsView.tabKey)
+                openSettings()
+            }
+            .buttonStyle(.hud)
         }
-        .buttonStyle(.hud)
     }
 }
 
@@ -287,14 +307,19 @@ struct AboutSettings: View {
     }
 }
 
-/// Pro license (D133 testing phase: a Keygen key from the owner). Verifies
-/// offline; the key is kept in the Keychain and re-activated on launch.
+/// Pro license (COM-05 v2: a key from our licence server, bought through
+/// Dodo or issued by the owner). Verifies offline; the key is kept in the
+/// Keychain and re-activated on launch.
 struct LicenseSettings: View {
     @Environment(AppModel.self) private var app
     @State private var licenseKey = ""
     @State private var result: (ok: Bool, text: String)?
     /// `core` isn't observable, so the plan row re-reads after activating.
     @State private var entitlements: Entitlements?
+    /// COM-08 testing phase: free 90-day test licence from the licence server.
+    @AppStorage("app.getpocketai.licenseEmail") private var email = ""
+    @State private var askingEmail = false
+    @State private var requestingFree = false
 
     var body: some View {
         Form {
@@ -311,6 +336,7 @@ struct LicenseSettings: View {
                     Text("Pro lets paired iPhones and other devices on your network use this Mac's models. Everything on this Mac stays free.")
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
+                    BuyProButton()
                 }
             } header: {
                 HUDLabel("PocketAI Pro")
@@ -321,6 +347,20 @@ struct LicenseSettings: View {
                     .font(.pocket(.mono))
                     .autocorrectionDisabled()
                     .onSubmit { if !trimmedKey.isEmpty { activate() } }
+                HStack(spacing: PocketSpacing.s8) {
+                    Button(requestingFree ? "Getting a free test licence…" : "Get a free test licence…") {
+                        askingEmail = true
+                    }
+                    .buttonStyle(.hud)
+                    .disabled(app.offlineMode.isOn || requestingFree)
+                    .popover(isPresented: $askingEmail, arrowEdge: .bottom) { freeLicenseForm }
+                    if app.offlineMode.isOn {
+                        Text("Turn off Offline mode to get one.")
+                            .font(.pocket(.caption))
+                            .foregroundStyle(PocketColor.textTertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
                 HStack {
                     if let result {
                         Label(result.text, systemImage: result.ok
@@ -338,6 +378,9 @@ struct LicenseSettings: View {
                         .keyboardShortcut(.defaultAction)
                         .disabled(trimmedKey.isEmpty)
                 }
+                Text("After paying, your key is shown on the thank-you page and emailed to you.")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
                 Text("Checked on this Mac, no internet needed. The key is stored in your Keychain.")
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
@@ -349,6 +392,58 @@ struct LicenseSettings: View {
         .scrollContentBackground(.hidden)
         .background(PocketColor.bgCanvas)
         .onAppear { entitlements = app.core.entitlements() }
+    }
+
+    private var freeLicenseForm: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            Text("Free while PocketAI is in testing. Valid for 90 days.")
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
+            TextField("Email", text: $email, prompt: Text("you@example.com"))
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.emailAddress)
+                .autocorrectionDisabled()
+                .onSubmit { requestFreeLicense() }
+            HStack {
+                Spacer(minLength: 0)
+                Button("Cancel") { askingEmail = false }
+                    .buttonStyle(.hud)
+                Button("Get licence") { requestFreeLicense() }
+                    .buttonStyle(.hudProminent)
+                    .disabled(!email.contains("@"))
+            }
+        }
+        .padding(PocketSpacing.s12)
+        .frame(width: 300)
+    }
+
+    /// POST /free off the main actor, then activate the key like a pasted one.
+    private func requestFreeLicense() {
+        guard email.contains("@"), !requestingFree else { return }
+        askingEmail = false
+        requestingFree = true
+        result = nil
+        let core = app.core
+        let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            let outcome = await Task.detached { () -> Result<String, Error> in
+                do { return .success(try core.requestFreeLicense(email: address)) } catch { return .failure(error) }
+            }.value
+            requestingFree = false
+            switch outcome {
+            case .success(let key):
+                licenseKey = key
+                activate()
+                if result?.ok == true, let ms = entitlements?.expiresAtMs {
+                    let date = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
+                    result = (true, "Free test licence until \(date.formatted(date: .abbreviated, time: .omitted)).")
+                }
+            case .failure(PocketError.InvalidInput(let message)), .failure(PocketError.Network(let message)):
+                result = (false, message)
+            case .failure(let error):
+                result = (false, error.localizedDescription)
+            }
+        }
     }
 
     /// Pasted keys often carry a trailing newline.

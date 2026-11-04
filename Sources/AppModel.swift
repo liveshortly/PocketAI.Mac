@@ -256,8 +256,8 @@ public final class AppModel {
                     error.localizedDescription)
             }
         }
-        // Testing phase (D133): Pro comes from a Keygen test license the
-        // owner hands out (Settings › License). Debug builds and the
+        // Pro comes from a licence key (Settings › License), bought through
+        // Dodo or issued by the owner (COM-05 v2). Debug builds and the
         // -PocketDemoPro launch flag still unlock it for development.
         #if DEBUG
         core.setStoreEntitlement(StoreEntitlement(pro: true, transactionId: "debug-local"))
