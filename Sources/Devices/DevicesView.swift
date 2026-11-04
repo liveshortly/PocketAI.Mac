@@ -8,6 +8,8 @@ import SwiftUI
 struct DevicesView: View {
     @Environment(AppModel.self) private var app
     @State private var devices: [PairedDevice] = []
+    /// Last chat sync per device, read on reload rather than on every render (UI-108).
+    @State private var lastSynced: [String: Int64] = [:]
     @State private var peers: [Peer] = []
     @State private var qrString: String?
     @State private var qrError: String?
@@ -111,7 +113,9 @@ struct DevicesView: View {
     private func forget(removeChats: Bool) {
         guard let device = confirmRevoke else { return }
         if removeChats {
-            _ = try? app.core.removeSyncedChats(peerId: device.id)
+            do { _ = try app.core.removeSyncedChats(peerId: device.id) } catch {
+                app.toast("Couldn't delete \(device.name)'s chats: \(error.localizedDescription)")
+            }
             NotificationCenter.default.post(name: .pocketConversationsChanged, object: nil)
         }
         do { try app.core.revokeDevice(id: device.id) } catch {
@@ -179,7 +183,8 @@ struct DevicesView: View {
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
-            SyncChatsToggle(deviceId: device.id, deviceName: device.name, core: app.core)
+            SyncChatsToggle(deviceId: device.id, deviceName: device.name, core: app.core,
+                            onError: { app.toast($0) })
             linkButton(device)
             Button("Forget…") { confirmRevoke = device }
                 .buttonStyle(.hud)
@@ -216,7 +221,7 @@ struct DevicesView: View {
         if let seen = device.lastSeenAt { bits.append("seen \(hudRelative(seen))") }
         if let addr = device.lastAddr { bits.append(addr) }
         // NET-22: the phone drives sync; this Mac only reports when it last did.
-        if let synced = app.core.syncStatus(peerId: device.id).lastSyncedAt {
+        if let synced = lastSynced[device.id] {
             bits.append("chats synced \(hudRelative(synced / 1000))")
         }
         return bits.joined(separator: " · ")
@@ -264,6 +269,9 @@ struct DevicesView: View {
         // A revoked device is not a device any more; listing it only invites
         // confusion about whether it still has access.
         devices = app.core.devices().filter { $0.revokedAt == nil }
+        lastSynced = Dictionary(uniqueKeysWithValues: devices.compactMap { d in
+            app.core.syncStatus(peerId: d.id).lastSyncedAt.map { (d.id, $0) }
+        })
         peers = app.core.peers()
         app.refreshServerStatus()
     }
@@ -351,6 +359,8 @@ struct SyncChatsToggle: View {
     let deviceId: String
     let deviceName: String
     let core: CoreClient
+    /// UI-108: a failed switch used to stay flipped with nothing saved.
+    var onError: ((String) -> Void)? = nil
     @State private var isOn = true
 
     var body: some View {
@@ -362,7 +372,11 @@ struct SyncChatsToggle: View {
             .accessibilityLabel("Sync chats with \(deviceName)")
             .onAppear { isOn = core.syncEnabledForDevice(deviceId: deviceId) }
             .onChange(of: isOn) { _, on in
-                try? core.setSyncEnabledForDevice(deviceId: deviceId, enabled: on)
+                guard on != core.syncEnabledForDevice(deviceId: deviceId) else { return }
+                do { try core.setSyncEnabledForDevice(deviceId: deviceId, enabled: on) } catch {
+                    isOn = !on // show the setting that is actually in effect
+                    onError?("Couldn't change chat sync: \(error.localizedDescription)")
+                }
             }
     }
 }

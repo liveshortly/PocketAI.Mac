@@ -175,7 +175,9 @@ struct ModelSettings: View {
                         .monospacedDigit()
                 }
                 Button("Unload current model from memory") {
-                    try? app.core.unloadModel(id: app.currentModelId)
+                    do { try app.core.unloadModel(id: app.currentModelId) } catch {
+                        app.toast("Couldn't unload the model: \(error.localizedDescription)")
+                    }
                 }
                 .buttonStyle(.hud)
             } header: {
@@ -299,6 +301,11 @@ struct LicenseSettings: View {
             Section {
                 LabeledContent("Plan") {
                     Text(planText).monospacedDigit()
+                }
+                if entitlements?.pro == true, let suffix = app.licenseKeySuffix {
+                    LabeledContent("Key") {
+                        Text("ending \(suffix)").monospaced()
+                    }
                 }
                 if entitlements?.pro != true {
                     Text("Pro lets paired iPhones and other devices on your network use this Mac's models. Everything on this Mac stays free.")

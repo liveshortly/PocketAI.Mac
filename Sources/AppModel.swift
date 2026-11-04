@@ -671,6 +671,16 @@ public final class AppModel {
         refreshServerStatus()
     }
 
+    /// The last four characters of the saved licence key, for "Pro · key
+    /// ending …" (UI-108). Never the key itself.
+    public var licenseKeySuffix: String? {
+        guard let data = hooks.keychainGet(key: Self.licenseKeychainKey),
+              let key = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              key.count >= 4 else { return nil }
+        return String(key.suffix(4))
+    }
+
     public func saveLicenseKey(_ key: String) {
         _ = hooks.keychainSet(key: Self.licenseKeychainKey, value: Data(key.utf8))
         // A fresh license may unlock the LAN listener the user already chose.
