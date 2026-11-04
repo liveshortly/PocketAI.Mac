@@ -256,6 +256,7 @@ struct VoiceSettings: View {
 /// and one switch per tool; later stages add `ToolsSettings.Tool` cases and
 /// they list here by themselves.
 struct ToolsSettingsPane: View {
+    @Environment(AppModel.self) private var app
     @AppStorage(ToolsSettings.allowToolsKey) private var allowTools = false
 
     var body: some View {
@@ -270,11 +271,16 @@ struct ToolsSettingsPane: View {
                 HUDLabel("Master switch")
             }
             Section {
-                ForEach(ToolsSettings.Tool.allCases, id: \.rawValue) { tool in
+                ForEach(ToolsSettings.Tool.allCases.filter { !$0.needsPairedMac }, id: \.rawValue) { tool in
                     ToolSwitchRow(tool: tool, masterOn: allowTools)
                 }
             } header: {
                 HUDLabel("Tools")
+            }
+            Section {
+                RunCodeFromPhoneToggle(core: app.core, onError: { app.toast($0) })
+            } header: {
+                HUDLabel("Paired iPhone")
             }
         }
         .formStyle(.grouped)

@@ -267,6 +267,7 @@ struct DevicesView: View {
             Spacer(minLength: 0)
             SyncChatsToggle(deviceId: device.id, deviceName: device.name, core: app.core,
                             onError: { app.toast($0) })
+            RunCodeFromPhoneToggle(core: app.core, compact: true, onError: { app.toast($0) })
             linkButton(device)
             Button("Forget…") { confirmRevoke = device }
                 .buttonStyle(.hud)
@@ -462,6 +463,41 @@ struct SyncChatsToggle: View {
                     onError?("Couldn't change chat sync: \(error.localizedDescription)")
                 }
             }
+    }
+}
+
+/// AGT-13: "Let my paired iPhone run code on this Mac". One Mac-wide switch
+/// (not per phone), off by default; while off the Mac refuses every run
+/// request. Shown in Settings → Tools and, compactly, beside each phone.
+struct RunCodeFromPhoneToggle: View {
+    let core: CoreClient
+    var compact = false
+    var onError: ((String) -> Void)? = nil
+    @State private var isOn = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+            Toggle(compact ? "Run code" : "Let my paired iPhone run code on this Mac", isOn: $isOn)
+                .toggleStyle(.switch)
+                .controlSize(compact ? .small : .regular)
+                .font(.pocket(compact ? .caption : .body))
+                .help("Lets your paired iPhones run code they send, in a sandbox on this Mac. Applies to all paired iPhones.")
+                .accessibilityLabel("Let my paired iPhone run code on this Mac")
+            if !compact {
+                Text("Off by default. When on, the model on your iPhone can ask to run Python, JavaScript or shell code here, after you approve each run on the iPhone. It runs in a sandbox: no network, no access to your files or folders, a time limit, and a scratch folder that is deleted afterwards. Every run is logged under Server. Turn it off and every run request is refused.")
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
+        }
+        .onAppear { isOn = core.runCodeEnabled() }
+        .onChange(of: isOn) { _, on in
+            guard on != core.runCodeEnabled() else { return }
+            core.setRunCodeEnabled(on)
+            if core.runCodeEnabled() != on {
+                isOn = !on
+                onError?("Couldn't change the run-code setting.")
+            }
+        }
     }
 }
 
