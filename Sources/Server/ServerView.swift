@@ -10,6 +10,8 @@ struct ServerView: View {
     @Environment(AppModel.self) private var app
     @State private var apiKey: String?
     @State private var copied = false
+    @State private var sampleLang = SampleLang.curl
+    @State private var copiedSample: String?
     @State private var refreshTask: Task<Void, Never>?
     /// A switch that would rebind under a connected device, awaiting an
     /// inline "switch anyway?".
@@ -159,8 +161,14 @@ struct ServerView: View {
     private var endpointCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HUDLabel("For other apps")
-            row("Base URL", app.serverStatus.running
-                ? "http://127.0.0.1:\(app.serverStatus.port)/v1" : "—")
+            HStack(alignment: .top) {
+                row("Base URL", app.serverStatus.running ? baseURL : "—")
+                if app.serverStatus.running {
+                    Button(copiedSample == "url" ? "Copied" : "Copy") { copy(baseURL, as: "url") }
+                        .buttonStyle(.hud)
+                        .accessibilityLabel("Copy base URL")
+                }
+            }
             row("Model", app.currentModelId)
             HStack {
                 Text("API key")
@@ -184,9 +192,96 @@ struct ServerView: View {
             Text("Point any OpenAI-compatible client at that URL. Requests never leave this Mac.")
                 .font(.pocket(.caption))
                 .foregroundStyle(PocketColor.textTertiary)
+            if app.serverStatus.running { samples }
         }
         .padding(PocketSpacing.s12)
         .hudPanel()
+    }
+
+    // MARK: - Code samples (§7.6)
+
+    enum SampleLang: String, CaseIterable, Identifiable {
+        case curl, python = "Python", js = "JavaScript"
+        var id: String { rawValue }
+    }
+
+    private var baseURL: String { "http://127.0.0.1:\(app.serverStatus.port)/v1" }
+
+    /// The real key only while it is shown in full (just generated); a masked
+    /// or missing key stays a placeholder, so a sample never leaks it later.
+    private var sampleKey: String {
+        guard let apiKey, !apiKey.hasPrefix("•") else { return "YOUR_API_KEY" }
+        return apiKey
+    }
+
+    private var sampleCode: String {
+        let model = app.currentModelId
+        switch sampleLang {
+        case .curl:
+            return """
+            curl \(baseURL)/chat/completions \\
+              -H "Authorization: Bearer \(sampleKey)" \\
+              -H "Content-Type: application/json" \\
+              -d '{"model": "\(model)", "messages": [{"role": "user", "content": "Hello"}]}'
+            """
+        case .python:
+            return """
+            from openai import OpenAI
+
+            client = OpenAI(base_url="\(baseURL)", api_key="\(sampleKey)")
+            reply = client.chat.completions.create(
+                model="\(model)",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+            print(reply.choices[0].message.content)
+            """
+        case .js:
+            return """
+            import OpenAI from "openai";
+
+            const client = new OpenAI({ baseURL: "\(baseURL)", apiKey: "\(sampleKey)" });
+            const reply = await client.chat.completions.create({
+              model: "\(model)",
+              messages: [{ role: "user", content: "Hello" }],
+            });
+            console.log(reply.choices[0].message.content);
+            """
+        }
+    }
+
+    private var samples: some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+            HStack {
+                Picker("Sample", selection: $sampleLang) {
+                    ForEach(SampleLang.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                Spacer(minLength: PocketSpacing.s8)
+                Button(copiedSample == "code" ? "Copied" : "Copy") { copy(sampleCode, as: "code") }
+                    .buttonStyle(.hud)
+                    .accessibilityLabel("Copy \(sampleLang.rawValue) sample")
+            }
+            ScrollView(.horizontal) {
+                Text(sampleCode)
+                    .font(.pocket(.mono))
+                    .textSelection(.enabled)
+                    .padding(PocketSpacing.s8)
+            }
+            .background(PocketColor.bgSunken, in: RoundedRectangle(cornerRadius: PocketRadius.card, style: .continuous))
+        }
+        .padding(.top, PocketSpacing.s4)
+    }
+
+    private func copy(_ text: String, as tag: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copiedSample = tag
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if copiedSample == tag { copiedSample = nil }
+        }
     }
 
     /// The masked key is bullets; VoiceOver should say what state it is in.
