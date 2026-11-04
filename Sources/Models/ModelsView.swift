@@ -9,6 +9,9 @@ struct ModelsView: View {
     @State private var entries: [CatalogEntry] = []
     @State private var search = ""
     @State private var showInstalledOnly = false
+    /// UI-128 / §7.3: the library opens on what this Mac can run; a search
+    /// still looks at everything.
+    @AppStorage("models.fitsOnly") private var fitsOnly = true
     @State private var formatFilter: FormatFilter = .all
     @State private var hubResults: [CatalogEntry] = []
     @State private var hubError: String?
@@ -221,6 +224,10 @@ struct ModelsView: View {
             .labelsHidden()
             .fixedSize()
             .help("MLX runs through Apple's MLX; GGUF runs through llama.cpp. Both run on this Mac.")
+            Toggle("Fits this Mac", isOn: $fitsOnly)
+                .toggleStyle(.switch)
+                .font(.pocket(.caption))
+                .help("Hide models too big or unsupported for this Mac. Searching always shows everything.")
             Toggle("Installed only", isOn: $showInstalledOnly)
                 .toggleStyle(.switch)
                 .font(.pocket(.caption))
@@ -236,6 +243,12 @@ struct ModelsView: View {
             Text(hudBytes(installedBytes))
                 .font(.pocket(.caption))
                 .monospacedDigit()
+            if let free = Self.freeDiskBytes() {
+                Text("· \(hudBytes(free)) free")
+                    .font(.pocket(.caption))
+                    .monospacedDigit()
+                    .foregroundStyle(PocketColor.textTertiary)
+            }
             Spacer(minLength: 0)
             HUDLabel("\(installed.count) installed · \(entries.count) in catalog")
         }
@@ -247,6 +260,20 @@ struct ModelsView: View {
     // MARK: - Data
 
     private var installed: [CatalogEntry] { entries.filter { $0.state == .installed } }
+
+    private static func fits(_ entry: CatalogEntry) -> Bool {
+        switch entry.fit.verdict {
+        case .runsWell, .runsSlow: return true
+        case .willNotFit, .notSupported: return false
+        }
+    }
+
+    /// Space the system will give a new download (purgeable caches count).
+    private static func freeDiskBytes() -> UInt64? {
+        let values = try? URL(fileURLWithPath: NSHomeDirectory())
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage.map { UInt64(max(0, $0)) }
+    }
 
     private var downloading: [CatalogEntry] {
         entries.filter {
@@ -266,11 +293,12 @@ struct ModelsView: View {
         // the whole catalog for every entry.
         let inFlight = Set(downloading.map(\.manifest.id))
         var list = showInstalledOnly ? installed : entries
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         list = list.filter { entry in
             !inFlight.contains(entry.manifest.id)
                 && formatFilter.accepts(entry.manifest.format)
+                && (!fitsOnly || !query.isEmpty || entry.state == .installed || Self.fits(entry))
         }
-        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return list }
         return list.filter {
             $0.manifest.displayName.lowercased().contains(query)
@@ -815,8 +843,12 @@ struct ModelCard: View {
             .accessibilityLabel("Resume downloading \(name)")
         case .verifying:
             EmptyView()
-        case .available, .failed:
+        case .available:
             downloadButton
+        case .failed:
+            // UI-128: the failure panel already has Retry; a second
+            // Download beside it did the same thing.
+            EmptyView()
         }
     }
 
