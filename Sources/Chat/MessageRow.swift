@@ -24,6 +24,8 @@ struct MessageRow: View {
             AssistantTurn(
                 text: message.plainText,
                 reasoning: message.reasoning,
+                toolSteps: message.toolSteps,
+                sources: message.sources,
                 stats: message.stats,
                 status: message.status,
                 messageId: message.id,
@@ -109,6 +111,8 @@ struct UserTurn: View {
 struct AssistantTurn: View {
     let text: String
     var reasoning: String?
+    var toolSteps: [ToolStep] = []
+    var sources: [String] = []
     var stats: GenerateStats?
     var status: MessageStatus = .done
     var messageId: String = ""
@@ -146,6 +150,7 @@ struct AssistantTurn: View {
                         .allowsHitTesting(showActions)
                 }
             }
+            ToolStepsView(steps: toolSteps)
             if let reasoning, !reasoning.isEmpty {
                 DisclosureGroup(isExpanded: $showReasoning) {
                     Text(reasoning)
@@ -160,6 +165,7 @@ struct AssistantTurn: View {
                 .hudPanel(PocketColor.bgSunken)
             }
             MarkdownText(text)
+            SourcesView(urls: sources)
             if let stats {
                 HUDLabel(
                     "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens · \(stats.ttftMs) ms to first token"
@@ -236,6 +242,7 @@ func copyToPasteboard(_ text: String) {
 struct StreamingRow: View {
     let text: String
     let reasoning: String
+    var steps: [ToolStep] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
@@ -246,6 +253,7 @@ struct StreamingRow: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Assistant, replying")
+            ToolStepsView(steps: steps)
             if text.isEmpty && reasoning.isEmpty {
                 // Model loading/prefilling: the animated PocketAI mark,
                 // centered, as on iPhone's MessageView (UI-28).
@@ -287,6 +295,69 @@ struct StreamingRow: View {
             !$0.trimmingCharacters(in: .whitespaces).isEmpty
         }
         return String(lines.suffix(4).joined(separator: "\n").suffix(400))
+    }
+}
+
+/// AGT-12: "Searched: …" / "Read: …" rows for the web tools a reply used,
+/// each expandable to its results or page URL. Nothing when no tools ran.
+struct ToolStepsView: View {
+    let steps: [ToolStep]
+
+    var body: some View {
+        if !steps.isEmpty {
+            VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                    ToolStepRow(step: step)
+                }
+            }
+            .padding(PocketSpacing.s8)
+            .hudPanel(PocketColor.bgSunken)
+        }
+    }
+}
+
+private struct ToolStepRow: View {
+    let step: ToolStep
+    @State private var expanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            Text(step.detail)
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textSecondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, PocketSpacing.s4)
+        } label: {
+            Label(step.title, systemImage: step.kind == "read" ? "doc.text" : "magnifyingglass")
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textSecondary)
+                .lineLimit(1)
+        }
+    }
+}
+
+extension ToolStep {
+    var title: String { (kind == "read" ? "Read: " : "Searched: ") + label }
+}
+
+/// AGT-12: the pages a reply read, as links under the answer.
+struct SourcesView: View {
+    let urls: [String]
+
+    var body: some View {
+        let links = urls.compactMap { URL(string: $0) }
+        if !links.isEmpty {
+            VStack(alignment: .leading, spacing: PocketSpacing.s4) {
+                HUDLabel("sources")
+                ForEach(links, id: \.self) { url in
+                    Link(url.host() ?? url.absoluteString, destination: url)
+                        .font(.pocket(.caption))
+                        .foregroundStyle(PocketColor.accent)
+                        .help(url.absoluteString)
+                }
+            }
+        }
     }
 }
 

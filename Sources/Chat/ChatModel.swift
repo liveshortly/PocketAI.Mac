@@ -17,6 +17,8 @@ final class ChatModel {
     /// Text accumulated for the reply currently streaming in; empty when idle.
     private(set) var streamingText = ""
     private(set) var streamingReasoning = ""
+    /// AGT-12: web tool steps of the reply streaming in.
+    private(set) var streamingSteps: [ToolStep] = []
     private(set) var isStreaming = false
     private(set) var tokensPerSecond: Int = 0
     private(set) var lastStats: GenerateStats?
@@ -51,6 +53,15 @@ final class ChatModel {
         ).supportsReasoning(modelID: id)
     }
 
+    /// AGT-12: per-chat web tools switch, stored on the conversation in Core.
+    // ponytail: no catalog `tools` flag yet, so every chat model gets it.
+    var toolsEnabled = false {
+        didSet {
+            guard toolsEnabled != oldValue else { return }
+            try? core.setConversationTools(id: conversationId, on: toolsEnabled)
+        }
+    }
+
     init(conversationId: String, core: CoreClient) {
         self.conversationId = conversationId
         self.core = core
@@ -61,6 +72,7 @@ final class ChatModel {
         conversation = core.conversation(id: conversationId)
         messages = core.messages(conversationId: conversationId)
         thinkingEnabled = !UserDefaults.standard.bool(forKey: thinkingOffKey)
+        toolsEnabled = core.conversationTools(id: conversationId)
     }
 
     var title: String {
@@ -187,6 +199,7 @@ final class ChatModel {
         errorText = nil
         streamingText = ""
         streamingReasoning = ""
+        streamingSteps = []
         tokenCount = 0
         tokensPerSecond = 0
         streamStart = Date()
@@ -202,6 +215,8 @@ final class ChatModel {
                     switch event {
                     case .delta(let delta):
                         self.apply(delta)
+                    case .toolStep(let step):
+                        self.streamingSteps.append(step)
                     case .done(let message):
                         self.lastStats = message.stats
                         self.finishStream()
@@ -311,6 +326,7 @@ final class ChatModel {
         isStreaming = false
         streamingText = ""
         streamingReasoning = ""
+        streamingSteps = []
         streamStart = nil
         // Keep the last measured rate visible in the inspector after the turn.
     }

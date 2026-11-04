@@ -152,6 +152,15 @@ struct ChatView: View {
             if chat.modelSupportsReasoning {
                 thinkingToggle(chat)
             }
+            // AGT-12: web tools. Apple's built-in model can't take tools.
+            if chat.conversation?.modelId != AppModel.appleIntelligenceId {
+                ToolsToggleChip(
+                    isOn: Binding(get: { chat.toolsEnabled }, set: { chat.toolsEnabled = $0 })
+                )
+                .help(chat.toolsEnabled
+                    ? "Web search on — the model can search the web and read pages"
+                    : "Web search off — the model answers from what it knows")
+            }
             modelPicker(chat)
             Menu {
                 Button("Rename…") { showRename = true }
@@ -286,7 +295,8 @@ struct ChatView: View {
                     if chat.isStreaming {
                         StreamingRow(
                             text: chat.streamingText,
-                            reasoning: chat.streamingReasoning)
+                            reasoning: chat.streamingReasoning,
+                            steps: chat.streamingSteps)
                         .id("streaming")
                     }
                     if let error = chat.errorText {

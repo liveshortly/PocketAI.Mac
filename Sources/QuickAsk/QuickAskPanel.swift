@@ -159,6 +159,8 @@ struct QuickAskPanel: View {
                         reply += delta.text
                     case .done(let message):
                         reply = message.plainText
+                    case .toolStep:
+                        break
                     }
                 }
             } catch is CancellationError {
