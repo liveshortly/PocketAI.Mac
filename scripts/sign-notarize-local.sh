@@ -57,7 +57,13 @@ spctl --assess --type execute "$APP"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
 DMG="$OUT/PocketAI-$VERSION-$BUILD.dmg"
-hdiutil create -quiet -volname "PocketAI" -srcfolder "$APP" -ov -format UDZO "$DMG"
+# makehybrid + convert never mounts the image: `hdiutil create -srcfolder`
+# mounts it, which macOS refuses to some host apps ("Operation not permitted").
+STAGE="$(mktemp -d)"; ditto "$APP" "$STAGE/PocketAI.app"
+rm -f "$OUT/raw.dmg" "$DMG"
+hdiutil makehybrid -quiet -hfs -hfs-volume-name PocketAI -o "$OUT/raw.dmg" "$STAGE"
+hdiutil convert -quiet "$OUT/raw.dmg" -format UDZO -o "$DMG"
+rm -rf "$STAGE" "$OUT/raw.dmg"
 codesign --force --timestamp --sign "$ID" "$DMG"
 # The DMG is what testers download, so it gets its own ticket too; otherwise
 # Gatekeeper reports it as "Unnotarized Developer ID".
