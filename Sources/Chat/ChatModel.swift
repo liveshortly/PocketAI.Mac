@@ -24,6 +24,7 @@ final class ChatModel {
     private(set) var lastStats: GenerateStats?
     private(set) var errorText: String?
 
+    private static let echoId = "local-echo-user"
     private var streamTask: Task<Void, Never>?
     private var streamStart: Date?
     private var tokenCount = 0
@@ -109,6 +110,14 @@ final class ChatModel {
         let reasoning: ReasoningMode = modelSupportsReasoning
             ? (thinkingEnabled ? .on : .off)
             : .auto
+        // UI-141: instant local echo. The core persists the user row only once
+        // the stream runs (after model load); the .done reload replaces this.
+        messages.removeAll { $0.id == Self.echoId }
+        messages.append(Message(
+            id: Self.echoId, conversationId: conversationId, role: "user",
+            parts: parts, reasoning: nil, stats: nil, modelId: nil,
+            createdAt: Int64(Date().timeIntervalSince1970 * 1000), status: .done,
+            toolSteps: [], sources: []))
         run { [core, conversationId] in
             core.sendMessage(
                 conversationId: conversationId, input: UserInput(parts: parts),
@@ -167,6 +176,7 @@ final class ChatModel {
     /// Drops the trailing assistant reply and re-runs from existing history.
     func regenerate() {
         guard !isStreaming else { return }
+        messages = core.messages(conversationId: conversationId)
         run { [core, conversationId] in core.regenerate(conversationId: conversationId) }
     }
 
@@ -204,9 +214,6 @@ final class ChatModel {
         tokensPerSecond = 0
         streamStart = Date()
         isStreaming = true
-        // The user's own message is persisted by the core; reload so it shows
-        // immediately rather than only when the reply lands.
-        messages = core.messages(conversationId: conversationId)
 
         streamTask = Task { [weak self] in
             do {
@@ -309,10 +316,6 @@ final class ChatModel {
     }
 
     private func apply(_ delta: GenerateDelta) {
-        if messages.isEmpty || messages.last?.role != "user" {
-            // First delta of a turn: make sure the user's message is on screen.
-            messages = core.messages(conversationId: conversationId)
-        }
         streamingText += delta.text
         streamingReasoning += delta.reasoning
         tokenCount += 1

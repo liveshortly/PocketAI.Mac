@@ -21,6 +21,8 @@ final class TestCore: CoreClient, @unchecked Sendable {
     /// Every mutating transfer call made, in order — lets a test prove a
     /// control actually reached the core rather than looking like it did.
     private(set) var calls: [String] = []
+    /// UI-141: delay the send stream so the user row is persisted late.
+    var persistLate = false
 
     struct Refused: LocalizedError {
         let what: String
@@ -121,7 +123,23 @@ final class TestCore: CoreClient, @unchecked Sendable {
     func sendMessage(
         conversationId: String, input: UserInput, reasoning: ReasoningMode
     ) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        base.sendMessage(conversationId: conversationId, input: input, reasoning: reasoning)
+        guard persistLate else {
+            return base.sendMessage(conversationId: conversationId, input: input, reasoning: reasoning)
+        }
+        // Like LiveCore: nothing is persisted until the stream is running.
+        let base = self.base
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await Task.sleep(nanoseconds: 200_000_000)
+                    for try await event in base.sendMessage(
+                        conversationId: conversationId, input: input, reasoning: reasoning
+                    ) { continuation.yield(event) }
+                    continuation.finish()
+                } catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
     func cancelConversation(id: String) {
         calls.append("cancelConversation")
@@ -134,6 +152,8 @@ final class TestCore: CoreClient, @unchecked Sendable {
     func devices() -> [PairedDevice] { base.devices() }
     func revokeDevice(id: String) throws { try base.revokeDevice(id: id) }
     func pairingOffer() throws -> PairingOffer { try base.pairingOffer() }
+    func pairingManualCode() throws -> ManualPairingCode { try base.pairingManualCode() }
+    func requestFreeLicense(email: String) throws -> String { try base.requestFreeLicense(email: email) }
     func pairingIdentity() -> PairingIdentity { base.pairingIdentity() }
     func parsePairingQr(_ qr: String) throws -> PairingOffer { try base.parsePairingQr(qr) }
     func savePeer(_ approved: ApprovedPairing) throws -> Peer { try base.savePeer(approved) }

@@ -120,6 +120,22 @@ final class CriticalPathTests: XCTestCase {
         chat.stop()
     }
 
+    /// UI-141: the user's bubble is on screen the moment send returns, even
+    /// though the core persists it late, and is not duplicated afterwards.
+    func testUserMessageEchoesBeforeCorePersistsIt() async throws {
+        let core = TestCore()
+        core.persistLate = true
+        let chat = try newChat(core)
+
+        XCTAssertTrue(chat.send("hello echo"))
+        XCTAssertEqual(chat.messages.last?.role, "user")
+        XCTAssertEqual(chat.messages.last?.plainText, "hello echo")
+
+        try await waitUntil("the reply to finish") { !chat.isStreaming }
+        XCTAssertEqual(chat.messages.filter { $0.role == "user" }.count, 1)
+        XCTAssertNotEqual(chat.messages.last?.role, "user")
+    }
+
     /// With nothing installed the send is either refused with a reason or
     /// bound to Apple's system model — never a silent no-op. Which of the two
     /// depends on the machine, so both are allowed; silence is not.

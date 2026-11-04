@@ -71,8 +71,7 @@ struct UserTurn: View {
                 }
             }
             if !message.plainText.isEmpty {
-                Text(message.plainText)
-                    .font(.pocket(.body))
+                UserMessageText(message.plainText)
                     .textSelection(.enabled)
                     .padding(.horizontal, PocketSpacing.s12)
                     .padding(.vertical, PocketSpacing.s8)
