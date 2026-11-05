@@ -65,7 +65,7 @@ targets:
       properties:
         CFBundleShortVersionString: "1.0"
         # Bumped every release; the notarized DMG is named after it.
-        CFBundleVersion: "45"
+        CFBundleVersion: "47"
         CFBundleLocalizations: [en, hi, es, fr, de, ja, zh-Hans, pt-BR]
         NSLocalNetworkUsageDescription: "PocketAI lets your paired iPhone use this Mac's models."
         NSBonjourServices:
