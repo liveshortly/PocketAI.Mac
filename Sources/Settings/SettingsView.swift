@@ -436,8 +436,9 @@ struct LicenseSettings: View {
         }
         .onChange(of: app.pendingActivationKey) { adoptPendingKey() }
         .confirmationDialog(
-            confirmingKey.flatMap(ActivateLink.email(inKey:)).map { "Activate licence for \($0)?" }
-                ?? "Activate this licence?",
+            confirmingKey.flatMap(ActivateLink.email(inKey:))
+                .map { String(localized: "Activate licence for \($0)?") }
+                ?? String(localized: "Activate this licence?"),
             isPresented: Binding(get: { confirmingKey != nil }, set: { if !$0 { confirmingKey = nil } }),
             titleVisibility: .visible
         ) {
