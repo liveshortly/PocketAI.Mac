@@ -21,6 +21,7 @@ struct LSShareSheet: View {
     @State private var busy = false
     @State private var errorText: String?
     @State private var copied = false
+    @State private var shareToRemove: LSShare?
 
     private var visibility: String { detail?.visibility ?? "private" }
     private var linkRole: String { detail?.linkRole ?? "viewer" }
@@ -235,7 +236,7 @@ struct LSShareSheet: View {
                             Spacer(minLength: PocketSpacing.s8)
                             HUDChip(text: share.role == "commenter" ? "COMMENT" : "WATCH")
                             Button {
-                                revoke(share)
+                                shareToRemove = share
                             } label: {
                                 Image(systemName: "xmark.circle")
                             }
@@ -253,6 +254,19 @@ struct LSShareSheet: View {
         .padding(PocketSpacing.s12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .hudPanel()
+        .confirmationDialog(
+            "Remove access for \(shareToRemove?.granteeEmail ?? "this person")?",
+            isPresented: Binding(get: { shareToRemove != nil }, set: { if !$0 { shareToRemove = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Remove access", role: .destructive) {
+                if let share = shareToRemove { revoke(share) }
+                shareToRemove = nil
+            }
+            Button("Cancel", role: .cancel) { shareToRemove = nil }
+        } message: {
+            Text("They will no longer be able to open this session.")
+        }
     }
 
     // MARK: - Actions
