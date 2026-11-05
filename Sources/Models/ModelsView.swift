@@ -13,6 +13,8 @@ struct ModelsView: View {
     /// still looks at everything.
     @AppStorage("models.fitsOnly") private var fitsOnly = true
     @State private var formatFilter: FormatFilter = .all
+    /// UI-128: hide models whose licence forbids commercial use.
+    @AppStorage("models.commercialOnly") private var commercialOnly = false
     @State private var hubResults: [CatalogEntry] = []
     @State private var hubError: String?
     @State private var refreshTask: Task<Void, Never>?
@@ -47,10 +49,16 @@ struct ModelsView: View {
                             ModelCard(entry: entry, onDelete: { confirmDelete = $0 })
                         }
                     }
-                    HUDLabel(showInstalledOnly ? "Installed" : "Library")
-                    if showsAppleIntelligence { appleIntelligenceRow }
-                    ForEach(filtered, id: \.manifest.id) { entry in
-                        ModelCard(entry: entry, onDelete: { confirmDelete = $0 })
+                    if showsAppleIntelligence {
+                        HUDLabel(showInstalledOnly ? "Installed" : "Library")
+                        appleIntelligenceRow
+                    }
+                    // UI-128 / §7.3: browse by what the model is for.
+                    ForEach(sections, id: \.title) { section in
+                        HUDLabel(section.title)
+                        ForEach(section.entries, id: \.manifest.id) { entry in
+                            ModelCard(entry: entry, onDelete: { confirmDelete = $0 })
+                        }
                     }
                     if filtered.isEmpty {
                         Text(emptyMessage)
@@ -228,6 +236,10 @@ struct ModelsView: View {
                 .toggleStyle(.switch)
                 .font(.pocket(.caption))
                 .help("Hide models too big or unsupported for this Mac. Searching always shows everything.")
+            Toggle("Commercial use", isOn: $commercialOnly)
+                .toggleStyle(.switch)
+                .font(.pocket(.caption))
+                .help("Hide models whose licence doesn't allow commercial use.")
             Toggle("Installed only", isOn: $showInstalledOnly)
                 .toggleStyle(.switch)
                 .font(.pocket(.caption))
@@ -297,6 +309,7 @@ struct ModelsView: View {
         list = list.filter { entry in
             !inFlight.contains(entry.manifest.id)
                 && formatFilter.accepts(entry.manifest.format)
+                && (!commercialOnly || entry.manifest.license.commercialOk)
                 && (!fitsOnly || !query.isEmpty || entry.state == .installed || Self.fits(entry))
         }
         guard !query.isEmpty else { return list }
@@ -304,6 +317,24 @@ struct ModelsView: View {
             $0.manifest.displayName.lowercased().contains(query)
                 || $0.manifest.family.lowercased().contains(query)
                 || $0.manifest.id.lowercased().contains(query)
+        }
+    }
+
+    /// The filtered library split by purpose, in a fixed order, empty groups dropped.
+    private var sections: [(title: String, entries: [CatalogEntry])] {
+        func kind(_ e: CatalogEntry) -> String {
+            let m = e.manifest.modalities
+            if m.contains(.text) || m.contains(.vision) {
+                return m.contains(.vision) ? "Vision" : "Chat"
+            }
+            if m.contains(.image) { return "Images" }
+            if m.contains(.speechToText) || m.contains(.textToSpeech) { return "Voice" }
+            return "Other"
+        }
+        let list = filtered
+        return ["Chat", "Vision", "Images", "Voice", "Other"].compactMap { title in
+            let group = list.filter { kind($0) == title }
+            return group.isEmpty ? nil : (String(localized: String.LocalizationValue(title)), group)
         }
     }
 
@@ -531,6 +562,7 @@ struct ModelCard: View {
     /// UI-121 / UI-125: a won't-fit download and a cancel each need a yes.
     @State private var confirmUnfit = false
     @State private var confirmCancel = false
+    @State private var showDetail = false
 
     private var isDefault: Bool { app.currentModelId == entry.manifest.id }
     private var name: String { ModelNaming.short(entry.manifest.displayName) }
@@ -579,22 +611,17 @@ struct ModelCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HStack(spacing: PocketSpacing.s8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: PocketSpacing.s8) {
-                        Text(ModelNaming.short(entry.manifest.displayName))
-                            .font(.pocket(.headline))
-                        HUDChip(text: entry.manifest.format.badge)
-                            .help(entry.manifest.format.engineDescription)
-                        if let purposeChip { HUDChip(text: purposeChip) }
-                        if isDefault { HUDChip(text: "DEFAULT", filled: true) }
-                    }
-                    Text(subtitle)
-                        .font(.pocket(.caption))
-                        .foregroundStyle(PocketColor.textTertiary)
+            // UI-128: at the largest text sizes the controls drop under the name.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: PocketSpacing.s8) {
+                    titleBlock
+                    Spacer(minLength: 0)
+                    actions
                 }
-                Spacer(minLength: 0)
-                actions
+                VStack(alignment: .leading, spacing: PocketSpacing.s8) {
+                    titleBlock
+                    actions
+                }
             }
             if case .downloading = entry.state { progress }
             if case .queued = entry.state { progress }
@@ -621,6 +648,7 @@ struct ModelCard: View {
                         }
                     }
                     .buttonStyle(.hud)
+                    .frame(minHeight: 44)
                     .disabled(offline)
                     .help(offline ? "Turn off offline mode to retry." : "")
                     .accessibilityLabel(
@@ -652,6 +680,11 @@ struct ModelCard: View {
                     HUDChip(text: "NON-COMMERCIAL", tint: PocketColor.statusWarn)
                 }
                 Spacer(minLength: 0)
+                Button("Details") { showDetail = true }
+                    .buttonStyle(.plain)
+                    .font(.pocket(.caption))
+                    .foregroundStyle(PocketColor.accent)
+                    .accessibilityLabel("Details for \(name)")
                 if let url = URL(string: entry.manifest.license.url),
                    !entry.manifest.license.url.isEmpty {
                     Link("License", destination: url)
@@ -689,12 +722,29 @@ struct ModelCard: View {
             Text("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes)) is downloaded. "
                 + "Pause instead if you want to pick it up later.")
         }
+        .sheet(isPresented: $showDetail) { ModelDetailView(entry: entry) }
         .task(id: entry.manifest.id) {
             // A cheap local read, not a run: shows the previous result so the
             // user isn't made to re-measure to see a number they already have.
             if entry.state == .installed, benchmark == nil {
                 benchmark = app.core.storedBenchmark(id: entry.manifest.id)
             }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: PocketSpacing.s8) {
+                Text(ModelNaming.short(entry.manifest.displayName))
+                    .font(.pocket(.headline))
+                HUDChip(text: entry.manifest.format.badge)
+                    .help(entry.manifest.format.engineDescription)
+                if let purposeChip { HUDChip(text: purposeChip) }
+                if isDefault { HUDChip(text: "DEFAULT", filled: true) }
+            }
+            Text(subtitle)
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
         }
     }
 
@@ -808,6 +858,7 @@ struct ModelCard: View {
                 if !isDefault && isChatModel {
                     Button("Use") { app.currentModelId = entry.manifest.id }
                         .buttonStyle(.hud)
+                        .frame(minHeight: 44)
                         .accessibilityLabel("Use \(name) for new chats")
                 }
                 Menu {
@@ -832,12 +883,14 @@ struct ModelCard: View {
                 attempt("Pause") { try app.core.pauseDownload(modelId: entry.manifest.id) }
             }
             .buttonStyle(.hud)
+            .frame(minHeight: 44)
             .accessibilityLabel("Pause downloading \(name)")
         case .paused:
             Button("Resume") {
                 attempt("Resume") { try app.core.resumeDownload(modelId: entry.manifest.id) }
             }
             .buttonStyle(.hud)
+            .frame(minHeight: 44)
             .disabled(offline)
             .help(offline ? "Turn off offline mode to resume." : "")
             .accessibilityLabel("Resume downloading \(name)")
@@ -868,6 +921,7 @@ struct ModelCard: View {
         case .willNotFit:
             Button("Download anyway…") { confirmUnfit = true }
                 .buttonStyle(.hud)
+                .frame(minHeight: 44)
                 .disabled(offline)
                 .help(offline ? "Turn off offline mode to download." : entry.fit.reason)
                 .accessibilityLabel("Download \(name) anyway, \(size)")
@@ -875,6 +929,7 @@ struct ModelCard: View {
         case .runsWell, .runsSlow:
             Button("Download") { startDownload() }
                 .buttonStyle(.hudProminent)
+                .frame(minHeight: 44)
                 .disabled(offline)
                 .help(offline ? "Turn off offline mode to download." : "Download \(size)")
                 .accessibilityLabel("Download \(name), \(size)")
@@ -883,16 +938,16 @@ struct ModelCard: View {
 
     private var progress: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ProgressView(value: fraction)
-                .progressViewStyle(.linear)
-                .accessibilityLabel("Download progress")
-                .accessibilityValue("\(Int(fraction * 100)) percent")
             HStack {
+                ProgressRing(fraction: fraction)
+                    .accessibilityLabel("Download progress")
+                    .accessibilityValue("\(Int(fraction * 100)) percent")
                 HUDLabel("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
                 if let detail = rateAndETA { HUDLabel(detail) }
                 Spacer()
                 Button("Cancel…") { confirmCancel = true }
                     .buttonStyle(.plain)
+                    .frame(minHeight: 44)
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.statusBad)
                     .accessibilityLabel("Cancel downloading \(name)")
@@ -922,5 +977,65 @@ struct ModelCard: View {
     private var fraction: Double {
         guard entry.fit.diskBytes > 0 else { return 0 }
         return min(1, Double(entry.bytesDone) / Double(entry.fit.diskBytes))
+    }
+}
+
+/// UI-128 / spec C10: a determinate ring that ends in a check.
+struct ProgressRing: View {
+    let fraction: Double
+    var size: CGFloat = 22
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(PocketColor.lineStrong, lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(PocketColor.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if fraction >= 1 {
+                Image(systemName: "checkmark")
+                    .font(.system(size: size * 0.45, weight: .bold))
+                    .foregroundStyle(PocketColor.statusOk)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement()
+    }
+}
+
+/// UI-128: everything the manifest knows about one model.
+struct ModelDetailView: View {
+    let entry: CatalogEntry
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let m = entry.manifest
+        VStack(alignment: .leading, spacing: PocketSpacing.s12) {
+            Text(ModelNaming.short(m.displayName)).font(.pocket(.headline))
+            Form {
+                LabeledContent("Family", value: m.family)
+                LabeledContent("Format", value: m.format.badge)
+                LabeledContent("Size", value: hudBytes(entry.fit.diskBytes))
+                if m.paramsB > 0 { LabeledContent("Parameters", value: String(format: "%.1fB", m.paramsB)) }
+                if !m.quant.isEmpty { LabeledContent("Quantisation", value: m.quant) }
+                LabeledContent("Context", value: String(localized: "\(m.contextLength) tokens"))
+                LabeledContent("Memory needed", value: hudBytes(m.minRamBytes))
+                LabeledContent("Licence", value: m.license.spdx.isEmpty ? String(localized: "unknown") : m.license.spdx)
+                LabeledContent("Commercial use", value: m.license.commercialOk ? String(localized: "Allowed") : String(localized: "Not allowed"))
+                LabeledContent("Fit on this Mac", value: entry.fit.reason)
+                if !m.tags.isEmpty { LabeledContent("Tags", value: m.tags.joined(separator: ", ")) }
+                if !m.hfRepo.isEmpty { LabeledContent("Source", value: m.hfRepo) }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(.hudProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(PocketSpacing.s16)
+        .frame(width: 480, height: 460)
+        .background(PocketColor.bgSurface)
     }
 }
