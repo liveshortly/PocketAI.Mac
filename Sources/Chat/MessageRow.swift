@@ -16,10 +16,14 @@ struct MessageRow: View {
     var onRetry: (() -> Void)?
     /// Puts a user turn's text back into the composer.
     var onEdit: ((String) -> Void)?
+    /// UI-68: rewrite this turn in place (drops what came after it).
+    var onSaveEdit: ((String) -> Void)?
+    /// UI-68: carry on a stopped reply.
+    var onContinue: (() -> Void)?
 
     var body: some View {
         if message.isUser {
-            UserTurn(message: message, grouped: grouped, onEdit: onEdit)
+            UserTurn(message: message, grouped: grouped, onEdit: onEdit, onSaveEdit: onSaveEdit)
         } else {
             AssistantTurn(
                 text: message.plainText,
@@ -31,7 +35,9 @@ struct MessageRow: View {
                 messageId: message.id,
                 grouped: grouped,
                 isLast: isLast,
-                onRetry: onRetry)
+                thoughtSeconds: ThoughtTimes.seconds(for: message.id),
+                onRetry: onRetry,
+                onContinue: onContinue)
         }
     }
 }
@@ -40,6 +46,9 @@ struct UserTurn: View {
     let message: Message
     var grouped = false
     var onEdit: ((String) -> Void)?
+    var onSaveEdit: ((String) -> Void)?
+    @State private var editing = false
+    @State private var draft = ""
 
     var body: some View {
         VStack(alignment: .trailing, spacing: PocketSpacing.s4) {
@@ -70,7 +79,9 @@ struct UserTurn: View {
                     }
                 }
             }
-            if !message.plainText.isEmpty {
+            if editing {
+                editor
+            } else if !message.plainText.isEmpty {
                 UserMessageText(message.plainText)
                     .textSelection(.enabled)
                     .padding(.horizontal, PocketSpacing.s12)
@@ -87,9 +98,40 @@ struct UserTurn: View {
         .contextMenu {
             if !message.plainText.isEmpty {
                 Button("Copy") { copyToPasteboard(message.plainText) }
+                if onSaveEdit != nil {
+                    Button("Edit…") { draft = message.plainText; editing = true }
+                }
                 if let onEdit {
                     Button("Edit as New Message") { onEdit(message.plainText) }
                 }
+            }
+        }
+    }
+
+    /// UI-68: in-place editor; saving replaces this turn and what followed it.
+    private var editor: some View {
+        VStack(alignment: .trailing, spacing: PocketSpacing.s8) {
+            TextEditor(text: $draft)
+                .font(.pocket(.body))
+                .scrollContentBackground(.hidden)
+                .frame(minWidth: 320, maxWidth: 520, minHeight: 64, maxHeight: 200)
+                .padding(PocketSpacing.s8)
+                .hudPanel(PocketColor.bgCanvas)
+                .accessibilityLabel("Edit your message")
+            Text("Saving replaces the replies after this message.")
+                .font(.pocket(.caption))
+                .foregroundStyle(PocketColor.textTertiary)
+            HStack(spacing: PocketSpacing.s8) {
+                Button("Cancel") { editing = false }
+                    .buttonStyle(.hud)
+                    .keyboardShortcut(.cancelAction)
+                Button("Save & resend") {
+                    editing = false
+                    onSaveEdit?(draft)
+                }
+                .buttonStyle(.hudProminent)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
     }
@@ -117,7 +159,9 @@ struct AssistantTurn: View {
     var messageId: String = ""
     var grouped = false
     var isLast = false
+    var thoughtSeconds: Int?
     var onRetry: (() -> Void)?
+    var onContinue: (() -> Void)?
     @State private var showReasoning = false
     @State private var copied = false
     @State private var hovering = false
@@ -158,12 +202,20 @@ struct AssistantTurn: View {
                         .textSelection(.enabled)
                         .padding(.top, PocketSpacing.s4)
                 } label: {
-                    HUDLabel("reasoning")
+                    // UI-68: "Thought for 4 s" when this Mac timed it.
+                    HUDLabel(thoughtSeconds.map { String(localized: "Thought for \($0) s") }
+                        ?? String(localized: "reasoning"))
                 }
                 .padding(PocketSpacing.s8)
                 .hudPanel(PocketColor.bgSunken)
             }
             MarkdownText(text)
+            if status == .cancelled, isLast, let onContinue {
+                Button("Continue", action: onContinue)
+                    .buttonStyle(.hud)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Continue this reply")
+            }
             SourcesView(urls: sources)
             if let stats {
                 HUDLabel(
@@ -242,6 +294,10 @@ struct StreamingRow: View {
     let text: String
     let reasoning: String
     var steps: [ToolStep] = []
+    /// UI-146: shared live status row (nil keeps the row hidden, e.g. previews).
+    var phase: ChatPhase?
+    var modelName: String?
+    var onStop: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
@@ -253,13 +309,14 @@ struct StreamingRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Assistant, replying")
             ToolStepsView(steps: steps)
+            ReplyStatusLine(phase: phase, modelName: modelName, onStop: onStop)
             if text.isEmpty && reasoning.isEmpty {
                 // Model loading/prefilling: the animated PocketAI mark,
                 // centered, as on iPhone's MessageView (UI-28).
                 VStack(spacing: PocketSpacing.s8) {
                     PocketMarkView(state: .loading, size: 40)
-                        .accessibilityHidden(true) // the label below carries the status
-                    HUDLabel("thinking…")
+                        .accessibilityHidden(true) // the status row above carries the status
+                    if phase == nil { HUDLabel("thinking…") }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, PocketSpacing.s8)

@@ -145,6 +145,9 @@ final class TestCore: CoreClient, @unchecked Sendable {
         calls.append("cancelConversation")
         base.cancelConversation(id: id)
     }
+    func editMessage(conversationId: String, messageId: String, input: UserInput, reasoning: ReasoningMode) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        base.editMessage(conversationId: conversationId, messageId: messageId, input: input, reasoning: reasoning)
+    }
     func regenerate(conversationId: String) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         base.regenerate(conversationId: conversationId)
     }

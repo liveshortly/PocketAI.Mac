@@ -19,6 +19,8 @@ final class ChatModel {
     private(set) var streamingReasoning = ""
     /// AGT-12: web tool steps of the reply streaming in.
     private(set) var streamingSteps: [ToolStep] = []
+    /// UI-146: where the reply in flight is right now (loading, thinking, searching…).
+    private(set) var livePhase: ChatPhase?
     private(set) var isStreaming = false
     private(set) var tokensPerSecond: Int = 0
     private(set) var lastStats: GenerateStats?
@@ -28,6 +30,8 @@ final class ChatModel {
     private var streamTask: Task<Void, Never>?
     private var streamStart: Date?
     private var tokenCount = 0
+    /// UI-68: when the first answer token followed reasoning, for "Thought for N s".
+    private var thoughtEnd: Date?
 
     /// UI-27 / MAC-17: per-chat thinking toggle, same UserDefaults key scheme
     /// as the iPhone app — only "off" is stored, default is on.
@@ -173,6 +177,42 @@ final class ChatModel {
         ).first?.manifest.displayName
     }
 
+    /// UI-68: rewrites a sent message in place. The message and everything
+    /// after it are replaced by the new text's reply (Core deletes, then sends).
+    @discardableResult
+    func edit(_ message: Message, to text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard message.isUser, !isStreaming, !trimmed.isEmpty || !message.imagePaths.isEmpty,
+              rebindModelIfMissing() else { return false }
+        // Keep the message's images; only the words change.
+        var parts: [ContentPart] = message.imagePaths.map { .imageRef(path: $0) }
+        if !trimmed.isEmpty { parts.append(.text(text: trimmed)) }
+        let reasoning: ReasoningMode = modelSupportsReasoning
+            ? (thinkingEnabled ? .on : .off) : .auto
+        if let at = messages.firstIndex(where: { $0.id == message.id }) {
+            messages = Array(messages[..<at])
+        }
+        messages.append(Message(
+            id: Self.echoId, conversationId: conversationId, role: "user",
+            parts: parts, reasoning: nil, stats: nil, modelId: nil,
+            createdAt: Int64(Date().timeIntervalSince1970 * 1000), status: .done,
+            toolSteps: [], sources: []))
+        run { [core, conversationId, id = message.id] in
+            core.editMessage(
+                conversationId: conversationId, messageId: id,
+                input: UserInput(parts: parts), reasoning: reasoning)
+        }
+        return true
+    }
+
+    /// UI-68: Continue for a stopped reply. Asks the model to carry on from
+    /// where it was cut off; the continuation arrives as the next reply.
+    /// ponytail: sends a plain "Continue" turn (what other chat apps do);
+    /// true prefill needs engine support.
+    func continueReply() {
+        send("Continue")
+    }
+
     /// Drops the trailing assistant reply and re-runs from existing history.
     func regenerate() {
         guard !isStreaming else { return }
@@ -210,6 +250,8 @@ final class ChatModel {
         streamingText = ""
         streamingReasoning = ""
         streamingSteps = []
+        livePhase = nil
+        thoughtEnd = nil
         tokenCount = 0
         tokensPerSecond = 0
         streamStart = Date()
@@ -224,7 +266,16 @@ final class ChatModel {
                         self.apply(delta)
                     case .toolStep(let step):
                         self.streamingSteps.append(step)
+                    case .status(let phase):
+                        self.livePhase = phase
+                    case .diagnostic:
+                        break
                     case .done(let message):
+                        if let start = self.streamStart, !self.streamingReasoning.isEmpty {
+                            ThoughtTimes.set(
+                                Int((self.thoughtEnd ?? Date()).timeIntervalSince(start).rounded()),
+                                for: message.id)
+                        }
                         self.lastStats = message.stats
                         self.finishStream()
                         self.messages = self.core.messages(conversationId: self.conversationId)
@@ -316,6 +367,9 @@ final class ChatModel {
     }
 
     private func apply(_ delta: GenerateDelta) {
+        if thoughtEnd == nil, !delta.text.isEmpty, !streamingReasoning.isEmpty {
+            thoughtEnd = Date()
+        }
         streamingText += delta.text
         streamingReasoning += delta.reasoning
         tokenCount += 1
@@ -330,6 +384,7 @@ final class ChatModel {
         streamingText = ""
         streamingReasoning = ""
         streamingSteps = []
+        livePhase = nil
         streamStart = nil
         // Keep the last measured rate visible in the inspector after the turn.
     }
@@ -358,3 +413,21 @@ extension Message {
 }
 
 extension Message: @retroactive Identifiable {}
+
+
+/// UI-68: how long a reply thought, kept per message id on this Mac.
+/// ponytail: UserDefaults, not the store; Core records no reasoning time yet,
+/// so older replies and ones from another device show plain "reasoning".
+enum ThoughtTimes {
+    private static let key = "app.getpocketai.thoughtSeconds"
+
+    static func set(_ seconds: Int, for id: String) {
+        var all = UserDefaults.standard.dictionary(forKey: key) as? [String: Int] ?? [:]
+        all[id] = seconds
+        UserDefaults.standard.set(all, forKey: key)
+    }
+
+    static func seconds(for id: String) -> Int? {
+        (UserDefaults.standard.dictionary(forKey: key) as? [String: Int])?[id]
+    }
+}

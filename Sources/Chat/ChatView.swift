@@ -292,7 +292,9 @@ struct ChatView: View {
     }
 
     private func modelName(_ chat: ChatModel) -> String {
-        app.displayName(forModelId: chat.conversation?.modelId ?? app.currentModelId)
+        let id = chat.conversation?.modelId ?? app.currentModelId
+        // UI-143: a chat with no model reads as a prompt, not an empty chip.
+        return id.isEmpty ? String(localized: "Choose a model") : app.displayName(forModelId: id)
     }
 
     // MARK: - Transcript
@@ -318,14 +320,19 @@ struct ChatView: View {
                             onEdit: { text in
                                 draft = text
                                 focusRequest += 1
-                            })
+                            },
+                            onSaveEdit: { text in chat.edit(message, to: text) },
+                            onContinue: isLast ? { chat.continueReply() } : nil)
                         .id(message.id)
                     }
                     if chat.isStreaming {
                         StreamingRow(
                             text: chat.streamingText,
                             reasoning: chat.streamingReasoning,
-                            steps: chat.streamingSteps)
+                            steps: chat.streamingSteps,
+                            phase: chat.livePhase,
+                            modelName: modelName(chat),
+                            onStop: { chat.stop() })
                         .id("streaming")
                     }
                     if let error = chat.errorText {
