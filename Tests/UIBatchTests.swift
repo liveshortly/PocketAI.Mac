@@ -73,3 +73,12 @@ final class ActivateLinkTests: XCTestCase {
         XCTAssertNil(ActivateLink.email(inKey: "garbage"))
     }
 }
+
+/// COM-06: five devices per licence, this Mac included.
+final class DeviceCapTests: XCTestCase {
+    func testCap() {
+        XCTAssertTrue(DeviceCap.canPair(pairedPhones: 3))
+        XCTAssertFalse(DeviceCap.canPair(pairedPhones: 4))
+        XCTAssertFalse(DeviceCap.canPair(pairedPhones: 2, otherLicensedMacs: 2))
+    }
+}

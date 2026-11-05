@@ -243,6 +243,11 @@ struct DevicesView: View {
     }
 
     private func makeManualCode() {
+        guard DeviceCap.canPair(pairedPhones: devices.count) else {
+            showManualCode = false
+            qrError = String(localized: "One licence covers \(DeviceCap.limit) devices, this Mac included. Remove a device below to pair another.")
+            return
+        }
         do {
             manualCode = try app.core.pairingManualCode()
         } catch {
@@ -380,6 +385,10 @@ struct DevicesView: View {
 
     private func makeOffer() {
         qrError = nil
+        guard DeviceCap.canPair(pairedPhones: devices.count) else {
+            qrError = String(localized: "One licence covers \(DeviceCap.limit) devices, this Mac included. Remove a device below to pair another.")
+            return
+        }
         // A phone reaches this Mac over the LAN: raise Access if it's lower
         // (starts or rebinds the server) - all in this one click.
         if app.serverAccess != .pairedDevices || !app.serverStatus.running {
