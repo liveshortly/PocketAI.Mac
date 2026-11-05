@@ -138,7 +138,7 @@ struct ProjectDetailView: View {
     private var documentsCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
             HStack {
-                HUDLabel("Documents · \(documents.count)")
+                HUDLabel(String(localized: "Documents · \(documents.count)"))
                 Spacer()
                 Button("Add files…") { addDocuments() }
                     .buttonStyle(.hud)
@@ -174,7 +174,7 @@ struct ProjectDetailView: View {
                                     try app.core.deleteDocument(id: doc.id)
                                     importError = nil
                                 } catch {
-                                    importError = "Couldn't remove \(doc.name): "
+                                    importError = String(localized: "Couldn't remove \(doc.name): ")
                                         + error.localizedDescription
                                 }
                                 reload()
@@ -200,7 +200,7 @@ struct ProjectDetailView: View {
 
     private var chatsCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Chats in this project · \(chats.count)")
+            HUDLabel(String(localized: "Chats in this project · \(chats.count)"))
             if chats.isEmpty {
                 Text("No chats yet — start one and it stays scoped to this project.")
                     .font(.pocket(.footnote))
@@ -247,7 +247,7 @@ struct ProjectDetailView: View {
     /// this Mac — the server does not know about projects.
     private var sessionsCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("LiveShortly sessions · \(linkedSessions.count)")
+            HUDLabel(String(localized: "LiveShortly sessions · \(linkedSessions.count)"))
             if !app.liveShortly.isConnected {
                 Text("Connect LiveShortly in Settings to run agent sessions for this project.")
                     .font(.pocket(.footnote))
@@ -346,7 +346,7 @@ struct ProjectDetailView: View {
             // Stays dirty: the text on screen is not what the store holds,
             // and the whole point of these instructions is that the model
             // actually receives them.
-            instructionsNote = "Couldn't save: \(error.localizedDescription)"
+            instructionsNote = String(localized: "Couldn't save: \(error.localizedDescription)")
         }
     }
 
@@ -377,7 +377,7 @@ struct ProjectDetailView: View {
                     }.value
                 } catch {
                     importError =
-                        "Couldn't add \(url.lastPathComponent): \(error.localizedDescription)"
+                        String(localized: "Couldn't add \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
             reload()

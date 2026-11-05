@@ -86,7 +86,7 @@ extension LSDaemonController {
 
         let (gz, resp) = try await URLSession.shared.download(from: URL(string: base + ".gz")!)
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-            throw CLIError("live \(latest) isn't published for this Mac (\(arch)).")
+            throw CLIError(String(localized: "live \(latest) isn't published for this Mac (\(arch))."))
         }
         defer { try? FileManager.default.removeItem(at: gz) }
 

@@ -200,7 +200,7 @@ struct LSShareSheet: View {
 
     private var peopleCard: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-            HUDLabel("Invited people · \(shares.count)")
+            HUDLabel(String(localized: "Invited people · \(shares.count)"))
             HStack(spacing: PocketSpacing.s8) {
                 TextField("name@example.com", text: $inviteEmail)
                     .textFieldStyle(.plain)
@@ -293,7 +293,7 @@ struct LSShareSheet: View {
                 if let linkRole { detail?.linkRole = linkRole }
                 errorText = nil
             } catch {
-                errorText = "Couldn't change access: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't change access: \(error.localizedDescription)")
             }
             busy = false
         }
@@ -314,7 +314,7 @@ struct LSShareSheet: View {
                 }
                 errorText = nil
             } catch {
-                errorText = "Couldn't update the feed: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't update the feed: \(error.localizedDescription)")
             }
             busy = false
         }
@@ -332,7 +332,7 @@ struct LSShareSheet: View {
                 inviteEmail = ""
                 errorText = nil
             } catch {
-                errorText = "Couldn't invite \(email): \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't invite \(email): \(error.localizedDescription)")
             }
             busy = false
         }
@@ -347,7 +347,7 @@ struct LSShareSheet: View {
                 shares.removeAll { $0.id == share.id }
                 errorText = nil
             } catch {
-                errorText = "Couldn't remove access: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't remove access: \(error.localizedDescription)")
             }
             busy = false
         }

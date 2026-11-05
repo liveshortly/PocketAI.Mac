@@ -69,7 +69,7 @@ enum PocketAIIntentRunner {
                 NewConversation(title: title, projectId: nil, modelId: app.currentModelId))
         } catch {
             throw PocketAIIntentError(
-                "PocketAI couldn't start a conversation: \(error.localizedDescription)")
+                String(localized: "PocketAI couldn't start a conversation: \(error.localizedDescription)"))
         }
         try? core.archiveConversation(id: conversation.id, archived: true)
 
@@ -82,7 +82,7 @@ enum PocketAIIntentRunner {
             }
         } catch {
             throw PocketAIIntentError(
-                "PocketAI couldn't generate a response: \(error.localizedDescription)")
+                String(localized: "PocketAI couldn't generate a response: \(error.localizedDescription)"))
         }
         let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {

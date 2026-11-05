@@ -253,7 +253,7 @@ struct DevicesView: View {
         } catch {
             manualCode = nil
             showManualCode = false
-            qrError = "Couldn't create a pairing code: \(error.localizedDescription)"
+            qrError = String(localized: "Couldn't create a pairing code: \(error.localizedDescription)")
         }
     }
 
@@ -292,7 +292,7 @@ struct DevicesView: View {
             reload()
         }
         .buttonStyle(.hud)
-        .accessibilityLabel(off ? "Allow \(device.name) to connect" : "Disconnect \(device.name)")
+        .accessibilityLabel(off ? String(localized: "Allow \(device.name) to connect") : String(localized: "Disconnect \(device.name)"))
     }
 
     private func linkLabel(_ state: DeviceLinkState) -> String {
@@ -306,11 +306,11 @@ struct DevicesView: View {
 
     private func deviceSubtitle(_ device: PairedDevice) -> String {
         var bits = [linkLabel(device.linkState), "\(device.platform)"]
-        if let seen = device.lastSeenAt { bits.append("seen \(hudRelative(seen))") }
+        if let seen = device.lastSeenAt { bits.append(String(localized: "seen \(hudRelative(seen))")) }
         if let addr = device.lastAddr { bits.append(addr) }
         // NET-22: the phone drives sync; this Mac only reports when it last did.
         if let synced = lastSynced[device.id] {
-            bits.append("chats synced \(hudRelative(synced / 1000))")
+            bits.append(String(localized: "chats synced \(hudRelative(synced / 1000))"))
         }
         return bits.joined(separator: " · ")
     }
@@ -406,7 +406,7 @@ struct DevicesView: View {
             if showManualCode { makeManualCode() }
         } catch {
             qrString = nil
-            qrError = "Couldn't create a pairing code: \(error.localizedDescription)"
+            qrError = String(localized: "Couldn't create a pairing code: \(error.localizedDescription)")
         }
     }
 }

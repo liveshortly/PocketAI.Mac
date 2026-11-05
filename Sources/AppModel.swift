@@ -740,7 +740,7 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
         ])
         post(
             title: "Pair this device?",
-            body: "\(request.deviceName) wants to use this Mac's models.",
+            body: String(localized: "\(request.deviceName) wants to use this Mac's models."),
             route: nil,
             // The pairing id as notification identifier, so a decision made
             // anywhere can withdraw exactly this banner.
@@ -757,29 +757,29 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func notifyDownloadFinished(modelName: String) {
-        post(title: "Model ready", body: "\(modelName) finished downloading.", route: .models)
+        post(title: "Model ready", body: String(localized: "\(modelName) finished downloading."), route: .models)
     }
 
     func notifyDownloadFailed(modelName: String, reason: String) {
         post(
             title: "Download failed",
-            body: "\(modelName) couldn't finish: \(reason)",
+            body: String(localized: "\(modelName) couldn't finish: \(reason)"),
             route: .models)
     }
 
     func notifyDeviceConnected(name: String) {
-        post(title: "Device connected", body: "\(name) is now paired with this Mac.", route: .devices)
+        post(title: "Device connected", body: String(localized: "\(name) is now paired with this Mac."), route: .devices)
     }
 
     func notifyDeviceRevoked(name: String) {
-        post(title: "Device revoked", body: "\(name) can no longer reach this Mac.", route: .devices)
+        post(title: "Device revoked", body: String(localized: "\(name) can no longer reach this Mac."), route: .devices)
     }
 
     func notifyLicenseExpiring(days: Int) {
         let when = days <= 0
-            ? "today"
-            : (days == 1 ? "tomorrow" : "in \(days) days")
-        post(title: "Pro licence expiring", body: "Your licence runs out \(when).", route: nil)
+            ? String(localized: "today")
+            : (days == 1 ? String(localized: "tomorrow") : String(localized: "in \(days) days"))
+        post(title: "Pro licence expiring", body: String(localized: "Your licence runs out \(when)."), route: nil)
     }
 
     func notifyLicenseExpired() {

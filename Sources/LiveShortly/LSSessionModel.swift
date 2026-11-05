@@ -64,13 +64,13 @@ final class LSSessionModel {
         guard !names.isEmpty else { return nil }
         switch names.count {
         case 1:
-            return "\(names[0]) is typing…"
+            return String(localized: "\(names[0]) is typing…")
         case 2:
-            return "\(names[0]) and \(names[1]) are typing…"
+            return String(localized: "\(names[0]) and \(names[1]) are typing…")
         case 3:
-            return "\(names[0]), \(names[1]) and \(names[2]) are typing…"
+            return String(localized: "\(names[0]), \(names[1]) and \(names[2]) are typing…")
         default:
-            return "\(names[0]), \(names[1]) and \(names.count - 2) others are typing…"
+            return String(localized: "\(names[0]), \(names[1]) and \(names.count - 2) others are typing…")
         }
     }
 
@@ -178,7 +178,7 @@ final class LSSessionModel {
         case .unreachable(let message):
             reconnecting = false
             streamLost = true
-            errorText = "Stream dropped — \(message)."
+            errorText = String(localized: "Stream dropped — \(message).")
         }
     }
 
@@ -271,7 +271,7 @@ final class LSSessionModel {
             try await client.decide(sessionID, decision: decision)
             return true
         } catch {
-            errorText = "Couldn't send that answer: \(error.localizedDescription)"
+            errorText = String(localized: "Couldn't send that answer: \(error.localizedDescription)")
             return false
         }
     }
@@ -285,7 +285,7 @@ final class LSSessionModel {
                 try await client.setModel(sessionID, model: model)
                 detail?.model = model
             } catch {
-                errorText = "Couldn't switch model: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't switch model: \(error.localizedDescription)")
             }
         }
     }
@@ -296,7 +296,7 @@ final class LSSessionModel {
                 try await client.rename(sessionID, title: title)
                 detail?.title = title
             } catch {
-                errorText = "Couldn't rename this session: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't rename this session: \(error.localizedDescription)")
             }
         }
     }
@@ -310,7 +310,7 @@ final class LSSessionModel {
                 try await client.stop(sessionID)
                 isLive = false
             } catch {
-                errorText = "Couldn't end this session: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't end this session: \(error.localizedDescription)")
             }
         }
     }

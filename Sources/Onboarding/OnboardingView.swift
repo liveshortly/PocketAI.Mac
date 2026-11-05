@@ -179,7 +179,7 @@ struct OnboardingView: View {
             return "Offline mode is on. Turn it off in Settings to download."
         }
         guard entry.state == .available else { return nil }
-        return "Downloads over your connection; about \(hudBytes(entry.fit.diskBytes))."
+        return String(localized: "Downloads over your connection; about \(hudBytes(entry.fit.diskBytes)).")
     }
 
     private func fitKind(_ verdict: FitVerdict) -> FitBadgeKind {
@@ -240,7 +240,7 @@ struct OnboardingView: View {
                         startPolling()
                     } catch {
                         downloadError =
-                            "Couldn't start that download: \(error.localizedDescription)"
+                            String(localized: "Couldn't start that download: \(error.localizedDescription)")
                     }
                 }
                 .buttonStyle(big ? .hudProminent : .hud)
@@ -281,7 +281,7 @@ struct OnboardingView: View {
     }
 
     private func progressText(_ entry: CatalogEntry) -> String {
-        "\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))"
+        String(localized: "\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
     }
 
     /// "Continue" with a model already on disk (a reinstall) must not open a
@@ -337,7 +337,7 @@ struct OnboardingView: View {
                 // A download that died leaves the row offering "Download" again;
                 // without this the screen polls forever saying nothing.
                 if case .failed(let reason) = state {
-                    downloadError = "That download failed: \(reason)"
+                    downloadError = String(localized: "That download failed: \(reason)")
                     downloadId = nil
                     return
                 }

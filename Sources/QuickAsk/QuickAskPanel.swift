@@ -99,7 +99,7 @@ struct QuickAskPanel: View {
             // that's open and connected (it waits on this Mac); a closed one
             // catches up when PocketAI opens on it.
             if let synced = app.lastChatSyncAt {
-                HUDLabel("iPhone synced \(hudRelative(synced / 1000))")
+                HUDLabel(String(localized: "iPhone synced \(hudRelative(synced / 1000))"))
                 Button("Sync now") { app.syncChatsNow() }
                     .buttonStyle(.hud)
                     .help("Your iPhone syncs within a second while PocketAI is open on it, or as soon as it opens.")
@@ -135,7 +135,7 @@ struct QuickAskPanel: View {
                         title: String(text.prefix(48)), projectId: nil,
                         modelId: app.currentModelId))
             } catch {
-                errorText = "Couldn't start a chat: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't start a chat: \(error.localizedDescription)")
                 return
             }
             id = created.id
@@ -165,7 +165,7 @@ struct QuickAskPanel: View {
                 }
             } catch is CancellationError {
             } catch {
-                errorText = "Couldn't answer: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't answer: \(error.localizedDescription)")
             }
             isStreaming = false
             if !Task.isCancelled, errorText == nil {

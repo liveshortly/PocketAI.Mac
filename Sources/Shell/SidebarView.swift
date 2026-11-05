@@ -246,13 +246,13 @@ struct SidebarView: View {
                 }
                 if sessions.count > Self.recentLimit {
                     Label(
-                        "All sessions (\(sessions.count))",
+                        String(localized: "All sessions (\(sessions.count))"),
                         systemImage: "list.bullet")
                         .font(.pocket(.footnote))
                         .sidebarRow(.allSessions, muted: true)
                 }
                 if sessions.isEmpty {
-                    Text(feed.loadError.map { "Couldn't load sessions: \($0)" }
+                    Text(feed.loadError.map { String(localized: "Couldn't load sessions: \($0)") }
                         ?? (feed.loaded ? "No sessions yet" : "Loading…"))
                         .font(.pocket(.footnote))
                         .foregroundStyle(PocketColor.textTertiary)
@@ -309,7 +309,7 @@ struct SidebarView: View {
                 HUDLabel("Shared with me")
                 Spacer()
                 if feed.newSharedCount > 0 {
-                    HUDLabel("\(feed.newSharedCount) new", tint: PocketColor.accent)
+                    HUDLabel(String(localized: "\(feed.newSharedCount) new"), tint: PocketColor.accent)
                 }
             }
         }
@@ -499,7 +499,7 @@ struct SessionRow: View {
     private var rowLabel: String {
         var parts = [session.title.isEmpty ? "Untitled session" : session.title]
         parts.append(session.isStarting ? "starting" : session.isLive ? "live" : "ended")
-        if unread > 0 { parts.append("\(unread) new events") }
+        if unread > 0 { parts.append(String(localized: "\(unread) new events")) }
         parts.append(spokenSubtitle)
         return parts.joined(separator: ", ")
     }
@@ -529,7 +529,7 @@ struct SessionRow: View {
         }
         var bits: [String] = []
         if let framework = session.framework, !framework.isEmpty { bits.append(framework) }
-        bits.append("\(session.eventCount) events")
+        bits.append(String(localized: "\(session.eventCount) events"))
         return bits.joined(separator: " · ")
     }
 }

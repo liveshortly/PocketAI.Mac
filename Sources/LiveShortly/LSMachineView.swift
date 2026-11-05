@@ -207,8 +207,8 @@ private struct LSCLIRow: View {
                         .foregroundStyle(daemon.cliTooOld ? PocketColor.statusBad : PocketColor.textSecondary)
                         .accessibilityHidden(true)
                     Text(daemon.cliTooOld
-                         ? "live \(version) is too old — sessions started from the web or iPhone won't work."
-                         : "live \(version) · \(daemon.cliLatest ?? "") available")
+                         ? String(localized: "live \(version) is too old — sessions started from the web or iPhone won't work.")
+                         : String(localized: "live \(version) · \(daemon.cliLatest ?? "") available"))
                         .font(.pocket(.footnote))
                         .foregroundStyle(daemon.cliTooOld ? PocketColor.statusBad : PocketColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -292,7 +292,7 @@ private struct LSStatusLine: View {
         case .stopped:
             return "This Mac won't accept sessions."
         case .running where daemon.trouble == nil:
-            return "You can start agents on this Mac from \(web) or your iPhone."
+            return String(localized: "You can start agents on this Mac from \(web) or your iPhone.")
         default:
             return nil
         }
@@ -605,7 +605,7 @@ private struct LSFolderRow: View {
                 .truncationMode(.middle)
                 .help(dir)
             if let repos {
-                Text(repos == 1 ? "1 repo" : "\(repos) repos")
+                Text("\(repos) repos")
                     .font(.pocket(.caption))
                     .foregroundStyle(PocketColor.textTertiary)
             }

@@ -284,7 +284,7 @@ struct LSNewSessionView: View {
             }
             errorText = nil
         } catch {
-            errorText = "Couldn't load your machines: \(error.localizedDescription)"
+            errorText = String(localized: "Couldn't load your machines: \(error.localizedDescription)")
         }
         loading = false
     }
@@ -324,7 +324,7 @@ struct LSNewSessionView: View {
                     app.selection = .session(created.id)
                 }
             } catch {
-                errorText = "Couldn't start the session: \(error.localizedDescription)"
+                errorText = String(localized: "Couldn't start the session: \(error.localizedDescription)")
             }
             starting = false
         }
@@ -352,11 +352,11 @@ private struct LSUserLine: View {
     /// This Mac knows its user; elsewhere, read it off the registered home
     /// paths (/Users/<u>/… or /home/<u>/…) — the contract carries no user.
     private var osUser: String {
-        if isThisMac { return "\(NSUserName()) on this Mac" }
+        if isThisMac { return String(localized: "\(NSUserName()) on this Mac") }
         let parts = host.dirs.first?.split(separator: "/") ?? []
         if parts.count > 1, parts[0] == "Users" || parts[0] == "home" {
-            return "\(parts[1]) on \(host.name)"
+            return String(localized: "\(parts[1]) on \(host.name)")
         }
-        return "The daemon's account on \(host.name)"
+        return String(localized: "The daemon's account on \(host.name)")
     }
 }

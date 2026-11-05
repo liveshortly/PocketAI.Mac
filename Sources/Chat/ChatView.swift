@@ -159,15 +159,15 @@ struct ChatView: View {
                 HStack(spacing: PocketSpacing.s4) {
                     PocketMarkView(state: .thinking(tokPerSec: nil), size: 14)
                         .accessibilityHidden(true)
-                    Text(chat.tokensPerSecond > 0 ? "\(chat.tokensPerSecond) tok/s" : "working")
+                    Text(chat.tokensPerSecond > 0 ? String(localized: "\(chat.tokensPerSecond) tok/s") : String(localized: "working"))
                         .font(.pocket(.caption))
                         .foregroundStyle(PocketColor.textTertiary)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
                     chat.tokensPerSecond > 0
-                        ? "Generating, \(chat.tokensPerSecond) tokens per second"
-                        : "Generating")
+                        ? String(localized: "Generating, \(chat.tokensPerSecond) tokens per second")
+                        : String(localized: "Generating"))
             }
             Spacer(minLength: 0)
             // UI-27 / MAC-17: per-chat thinking toggle, only for models that
@@ -569,7 +569,7 @@ struct ChatView: View {
                     }
                     Spacer(minLength: 0)
                     if let stats = chat.lastStats, !chat.isStreaming {
-                        HUDLabel("\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens")
+                        HUDLabel(String(localized: "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens"))
                     }
                 }
             }
@@ -619,7 +619,7 @@ struct ChatView: View {
 
     private func visionWarning(_ chat: ChatModel) -> String {
         if let suggestion = chat.suggestedVisionModel {
-            return "This model can't read images. Switch to \(suggestion) to attach one."
+            return String(localized: "This model can't read images. Switch to \(suggestion) to attach one.")
         }
         return "This model can't read images. Install a vision model to attach one."
     }

@@ -86,7 +86,7 @@ struct ImageGenView: View {
                     .labelsHidden()
                 }
                 VStack(alignment: .leading, spacing: PocketSpacing.s4) {
-                    HUDLabel("Steps · \(steps)")
+                    HUDLabel(String(localized: "Steps · \(steps)"))
                     Slider(
                         value: Binding(
                             get: { Double(steps) }, set: { steps = Int($0) }),
@@ -128,8 +128,8 @@ struct ImageGenView: View {
                     .frame(maxWidth: 640, maxHeight: 640)
                     .accessibilityLabel(
                         image == nil
-                            ? "Preview of the image being generated"
-                            : "Generated image for: \(prompt)")
+                            ? String(localized: "Preview of the image being generated")
+                            : String(localized: "Generated image for: \(prompt)"))
                     .clipShape(RoundedRectangle(cornerRadius: HUD.radius, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: HUD.radius, style: .continuous)
@@ -159,7 +159,7 @@ struct ImageGenView: View {
                         .progressViewStyle(.linear)
                         .frame(width: 240)
                         .accessibilityLabel("Generation progress")
-                        .accessibilityValue(statusText ?? "\(Int(progress * 100)) percent")
+                        .accessibilityValue(statusText ?? String(localized: "\(Int(progress * 100)) percent"))
                     if let statusText { HUDLabel(statusText) }
                 }
             }
@@ -192,8 +192,8 @@ struct ImageGenView: View {
         steps = preset
         maxSteps = ceiling
         stepsHint = ceiling <= 4
-            ? "This model is built for 1–\(ceiling) steps. More is slower, not better."
-            : "This model is tuned for \(preset) steps. Fewer is faster and rougher."
+            ? String(localized: "This model is built for 1–\(ceiling) steps. More is slower, not better.")
+            : String(localized: "This model is tuned for \(preset) steps. Fewer is faster and rougher.")
     }
 
     /// Directory and id of the installed image model. Mirrors the iPhone's
@@ -251,7 +251,7 @@ struct ImageGenView: View {
                 ) { step, total, previewImage in
                     Task { @MainActor in
                         progress = total > 0 ? Double(step) / Double(total) : 0
-                        statusText = "Step \(step) of \(total)"
+                        statusText = String(localized: "Step \(step) of \(total)")
                         if let previewImage {
                             preview = NSImage(
                                 cgImage: previewImage,
@@ -266,7 +266,7 @@ struct ImageGenView: View {
                 statusText = nil
             } catch is CancellationError {
             } catch {
-                errorText = "Generation failed: \(error.localizedDescription)"
+                errorText = String(localized: "Generation failed: \(error.localizedDescription)")
             }
             isGenerating = false
         }
@@ -293,7 +293,7 @@ struct ImageGenView: View {
         do {
             try data.write(to: url)
         } catch {
-            errorText = "Couldn't save: \(error.localizedDescription)"
+            errorText = String(localized: "Couldn't save: \(error.localizedDescription)")
         }
     }
 }

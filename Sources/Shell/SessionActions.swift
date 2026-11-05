@@ -76,7 +76,7 @@ private struct SessionActionDialogs: ViewModifier {
                             try await client.stop(target.id)
                             state.error = nil
                         } catch {
-                            state.error = "Couldn't end that session: \(error.localizedDescription)"
+                            state.error = String(localized: "Couldn't end that session: \(error.localizedDescription)")
                         }
                         await app.liveShortly.feed.reload()
                         onChange()
@@ -101,7 +101,7 @@ private struct SessionActionDialogs: ViewModifier {
                             app.liveShortly.feed.remove(target.id)
                             onChange()
                         } catch {
-                            state.error = "Couldn't delete that session: \(error.localizedDescription)"
+                            state.error = String(localized: "Couldn't delete that session: \(error.localizedDescription)")
                         }
                     }
                 }

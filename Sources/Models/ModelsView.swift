@@ -106,7 +106,7 @@ struct ModelsView: View {
                     try app.core.deleteModel(modelId: target.manifest.id)
                     deleteError = nil
                 } catch {
-                    deleteError = "Couldn't delete \(target.manifest.displayName): "
+                    deleteError = String(localized: "Couldn't delete \(target.manifest.displayName): ")
                         + error.localizedDescription
                 }
                 reload()
@@ -117,7 +117,7 @@ struct ModelsView: View {
     }
 
     private func deleteMessage(_ target: CatalogEntry) -> String {
-        var text = "Frees \(hudBytes(target.fit.diskBytes)) on this Mac. "
+        var text = String(localized: "Frees \(hudBytes(target.fit.diskBytes)) on this Mac. ")
             + "You can download it again later."
         if app.currentModelId == target.manifest.id {
             text += " It's your default model, so new chats will need another one."
@@ -356,9 +356,9 @@ struct ModelsView: View {
             let name = ModelNaming.short(entry.manifest.displayName)
             switch (previous, entry.state) {
             case (.downloading, .installed), (.verifying, .installed), (.queued, .installed):
-                AccessibilityNotification.Announcement("\(name) finished downloading").post()
+                AccessibilityNotification.Announcement(String(localized: "\(name) finished downloading")).post()
             case (.downloading, .failed), (.queued, .failed), (.verifying, .failed):
-                AccessibilityNotification.Announcement("\(name) failed to download").post()
+                AccessibilityNotification.Announcement(String(localized: "\(name) failed to download")).post()
             default:
                 break
             }
@@ -443,7 +443,7 @@ struct ModelsView: View {
         let known = Set(entries.map(\.manifest.id))
         hubResults = found.filter { !known.contains($0.manifest.id) }
         hubError = found.isEmpty && !failures.isEmpty
-            ? "Hugging Face search failed: \(failures[0])" : nil
+            ? String(localized: "Hugging Face search failed: \(failures[0])") : nil
     }
 }
 
@@ -605,7 +605,7 @@ struct ModelCard: View {
             try work()
             actionError = nil
         } catch {
-            actionError = "\(what) failed: \(error.localizedDescription)"
+            actionError = String(localized: "\(what) failed: \(error.localizedDescription)")
         }
     }
 
@@ -759,10 +759,10 @@ struct ModelCard: View {
             }
         } else if let benchmark {
             HStack(spacing: PocketSpacing.s12) {
-                HUDLabel("\(Int(benchmark.tps)) tok/s")
-                HUDLabel("\(benchmark.ttftMs) ms to first token")
+                HUDLabel(String(localized: "\(Int(benchmark.tps)) tok/s"))
+                HUDLabel(String(localized: "\(benchmark.ttftMs) ms to first token"))
                 if benchmark.peakBytes > 0 {
-                    HUDLabel("\(hudBytes(benchmark.peakBytes)) peak")
+                    HUDLabel(String(localized: "\(hudBytes(benchmark.peakBytes)) peak"))
                 }
                 Spacer(minLength: 0)
                 Button("Re-run") { runBenchmark() }
@@ -825,7 +825,7 @@ struct ModelCard: View {
         if entry.manifest.paramsB > 0 {
             bits.append(String(format: "%.1fB", entry.manifest.paramsB))
         }
-        bits.append("\(entry.manifest.contextLength) ctx")
+        bits.append(String(localized: "\(entry.manifest.contextLength) ctx"))
         bits.append(hudBytes(entry.fit.diskBytes))
         return bits.filter { !$0.isEmpty }.joined(separator: " · ")
     }
@@ -842,9 +842,9 @@ struct ModelCard: View {
                 .accessibilityHidden(true) // the badge's label carries the reason
             Spacer(minLength: 0)
             if let measured = entry.fit.measuredTokensPerSec {
-                HUDLabel("\(Int(measured)) tok/s measured")
+                HUDLabel(String(localized: "\(Int(measured)) tok/s measured"))
             } else if let est = entry.fit.estTokensPerSec {
-                HUDLabel("~\(Int(est)) tok/s est.")
+                HUDLabel(String(localized: "~\(Int(est)) tok/s est."))
             }
         }
     }
@@ -931,7 +931,7 @@ struct ModelCard: View {
                 .buttonStyle(.hudProminent)
                 .frame(minHeight: 44)
                 .disabled(offline)
-                .help(offline ? "Turn off offline mode to download." : "Download \(size)")
+                .help(offline ? String(localized: "Turn off offline mode to download.") : String(localized: "Download \(size)"))
                 .accessibilityLabel("Download \(name), \(size)")
         }
     }
@@ -942,7 +942,7 @@ struct ModelCard: View {
                 ProgressRing(fraction: fraction)
                     .accessibilityLabel("Download progress")
                     .accessibilityValue("\(Int(fraction * 100)) percent")
-                HUDLabel("\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))")
+                HUDLabel(String(localized: "\(hudBytes(entry.bytesDone)) of \(hudBytes(entry.fit.diskBytes))"))
                 if let detail = rateAndETA { HUDLabel(detail) }
                 Spacer()
                 Button("Cancel…") { confirmCancel = true }
@@ -969,7 +969,7 @@ struct ModelCard: View {
             let formatter = DateComponentsFormatter()
             formatter.allowedUnits = seconds < 3600 ? [.minute, .second] : [.hour, .minute]
             formatter.unitsStyle = .abbreviated
-            if let left = formatter.string(from: seconds) { parts.append("\(left) left") }
+            if let left = formatter.string(from: seconds) { parts.append(String(localized: "\(left) left")) }
         }
         return parts.joined(separator: " · ")
     }

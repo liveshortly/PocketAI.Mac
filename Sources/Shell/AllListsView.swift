@@ -125,7 +125,7 @@ struct AllChatsView: View {
                         }
                     }
                     if chats.isEmpty {
-                        Text(query.isEmpty ? "No chats yet" : "No chats match “\(query)”")
+                        Text(query.isEmpty ? String(localized: "No chats yet") : String(localized: "No chats match “\(query)”"))
                             .font(.pocket(.footnote))
                             .foregroundStyle(PocketColor.textTertiary)
                             .padding(PocketSpacing.s16)
@@ -295,9 +295,9 @@ struct AllSessionsView: View {
                     } else if filtered.isEmpty {
                         // UI-80: signed out is not "no sessions".
                         Text(app.liveShortly.client == nil
-                            ? "LiveShortly isn't connected on this Mac. Connect it in Settings."
+                            ? String(localized: "LiveShortly isn't connected on this Mac. Connect it in Settings.")
                             : query.isEmpty
-                            ? "No sessions yet" : "No sessions match “\(query)”")
+                            ? String(localized: "No sessions yet") : String(localized: "No sessions match “\(query)”"))
                             .font(.pocket(.footnote))
                             .foregroundStyle(PocketColor.textTertiary)
                             .padding(PocketSpacing.s16)
@@ -351,7 +351,7 @@ struct AllSessionsView: View {
             sessions = try await client.sessions(limit: 200)
             errorText = nil
         } catch {
-            errorText = "Couldn't load sessions: \(error.localizedDescription)"
+            errorText = String(localized: "Couldn't load sessions: \(error.localizedDescription)")
         }
         loading = false
     }

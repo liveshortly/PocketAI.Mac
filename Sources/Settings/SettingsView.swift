@@ -151,8 +151,8 @@ struct GeneralSettings: View {
         } catch {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             loginItemError =
-                "macOS refused to change this: \(error.localizedDescription). "
-                + "A signed build is usually required."
+                String(localized: "macOS refused to change this: \(error.localizedDescription). ")
+                + String(localized: "A signed build is usually required.")
         }
     }
 }
@@ -463,7 +463,7 @@ struct LicenseSettings: View {
         guard let entitlements, entitlements.pro else { return "Free" }
         guard let ms = entitlements.expiresAtMs else { return "Pro" }
         let date = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
-        return "Pro · until \(date.formatted(date: .abbreviated, time: .omitted))"
+        return String(localized: "Pro · until \(date.formatted(date: .abbreviated, time: .omitted))")
     }
 
     private func activate() {
@@ -479,7 +479,7 @@ struct LicenseSettings: View {
                 result = (false, "That key is valid but doesn't include Pro.")
             }
         } catch {
-            result = (false, "That key didn't activate: \(error.localizedDescription)")
+            result = (false, String(localized: "That key didn't activate: \(error.localizedDescription)"))
         }
     }
 }

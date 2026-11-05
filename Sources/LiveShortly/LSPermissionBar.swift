@@ -216,13 +216,13 @@ struct LSProbeDetailView: View {
                     Text("- \(line)").foregroundStyle(PocketColor.statusBad)
                 }
                 if removed.count > cap {
-                    HUDLabel("… \(removed.count - cap) more removed")
+                    HUDLabel(String(localized: "… \(removed.count - cap) more removed"))
                 }
                 ForEach(Array(added.prefix(cap).enumerated()), id: \.offset) { _, line in
                     Text("+ \(line)").foregroundStyle(PocketColor.statusOk)
                 }
                 if added.count > cap {
-                    HUDLabel("… \(added.count - cap) more added")
+                    HUDLabel(String(localized: "… \(added.count - cap) more added"))
                 }
             }
             .font(.pocket(.mono))

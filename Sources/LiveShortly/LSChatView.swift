@@ -198,7 +198,7 @@ struct LSChatView: View {
                     .foregroundStyle(PocketColor.textTertiary)
             }
             if session.watchers > 1 {
-                HUDLabel("\(session.watchers) watching")
+                HUDLabel(String(localized: "\(session.watchers) watching"))
             }
             // Who can see this is worth knowing without opening a dialog.
             if let visibility = session.detail?.visibility, visibility != "private" {
@@ -613,7 +613,7 @@ struct LSWorkRun: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 if !expanded, run.count > Self.collapsedTail {
-                    HUDLabel("… \(run.count - Self.collapsedTail) earlier steps")
+                    HUDLabel(String(localized: "… \(run.count - Self.collapsedTail) earlier steps"))
                 }
                 ForEach(shown) { event in
                     Text(line(event))

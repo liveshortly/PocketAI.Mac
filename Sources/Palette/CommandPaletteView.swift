@@ -63,7 +63,7 @@ struct CommandPaletteView: View {
             HStack {
                 HUDLabel("↑↓ move · ⏎ open · esc close")
                 Spacer()
-                HUDLabel("\(results.count) results")
+                HUDLabel(String(localized: "\(results.count) results"))
             }
             .padding(.horizontal, PocketSpacing.s12)
             .padding(.vertical, PocketSpacing.s8)

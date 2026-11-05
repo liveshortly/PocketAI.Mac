@@ -141,8 +141,7 @@ struct UserTurn: View {
             .formatted(date: .omitted, time: .shortened)
         var parts = ["You", when]
         if !message.imagePaths.isEmpty {
-            parts.append("\(message.imagePaths.count) attached image"
-                + (message.imagePaths.count == 1 ? "" : "s"))
+            parts.append(String(localized: "\(message.imagePaths.count) attached images"))
         }
         if !message.plainText.isEmpty { parts.append(message.plainText) }
         return parts.joined(separator: ", ")
@@ -219,7 +218,7 @@ struct AssistantTurn: View {
             SourcesView(urls: sources)
             if let stats {
                 HUDLabel(
-                    "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens · \(stats.ttftMs) ms to first token"
+                    String(localized: "\(Int(stats.decodeTps)) tok/s · \(stats.completionTokens) tokens · \(stats.ttftMs) ms to first token")
                 )
             }
         }

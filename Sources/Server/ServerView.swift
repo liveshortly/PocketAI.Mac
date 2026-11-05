@@ -92,9 +92,9 @@ struct ServerView: View {
                 ? "Other apps and paired devices can't reach this Mac's models."
                 : "Couldn't start the server. Pick Access again, or relaunch PocketAI if the port is busy."
         }
-        let reach = s.lanEnabled ? "this Mac and your network" : "this Mac only"
-        let devices = s.connectedDevices == 1 ? "1 device" : "\(s.connectedDevices) devices"
-        return "Port \(s.port) · \(reach) · \(devices) connected"
+        let reach = s.lanEnabled ? String(localized: "this Mac and your network") : String(localized: "this Mac only")
+        let devices = String(localized: "\(s.connectedDevices) devices")
+        return String(localized: "Port \(s.port) · \(reach) · \(devices) connected")
     }
 
     private var accessCard: some View {
@@ -139,7 +139,7 @@ struct ServerView: View {
     private func switchAnywayRow(_ access: AppModel.ServerAccess) -> some View {
         let count = app.serverStatus.connectedDevices
         return HStack(spacing: PocketSpacing.s8) {
-            Text("\(count) device\(count == 1 ? " is" : "s are") using this Mac. Switch anyway?")
+            Text("\(count) devices are using this Mac. Switch anyway?")
                 .font(.pocket(.footnote))
                 .foregroundStyle(PocketColor.statusWarn)
             Spacer(minLength: 0)
@@ -383,7 +383,7 @@ struct ServerView: View {
     /// The masked key is bullets; VoiceOver should say what state it is in.
     private var apiKeyAccessibility: String {
         guard let apiKey else { return "API key not generated" }
-        return apiKey.hasPrefix("•") ? "API key set, hidden" : "API key \(apiKey)"
+        return apiKey.hasPrefix("•") ? "API key set, hidden" : String(localized: "API key \(apiKey)")
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -463,7 +463,7 @@ struct PrivacyView: View {
                     .hudPanel()
 
                     VStack(alignment: .leading, spacing: PocketSpacing.s8) {
-                        HUDLabel("Network activity · \(egress.count)")
+                        HUDLabel(String(localized: "Network activity · \(egress.count)"))
                         if egress.isEmpty {
                             emptyNote("Nothing has left this Mac.")
                         } else {
