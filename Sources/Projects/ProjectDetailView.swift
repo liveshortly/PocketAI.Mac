@@ -323,7 +323,10 @@ struct ProjectDetailView: View {
             return
         }
         Task {
-            let all = (try? await client.sessions(limit: 200)) ?? []
+            // UI-98: your own first 100; a failed fetch keeps the rows already
+            // shown. ponytail: no offset on the sessions API yet, so a project
+            // older than the newest 100 sessions is not paged in.
+            guard let all = try? await client.sessions(scope: "mine", limit: 100) else { return }
             linkedSessions = all.filter { ids.contains($0.id) }
                 .sorted { $0.isLive && !$1.isLive }
         }
