@@ -77,3 +77,7 @@ rm -f "$OUT/PocketAI.zip"
 # $OUT is wiped each run; keep every shipped DMG for testers.
 mkdir -p build/releases && cp "$DMG" build/releases/
 echo "DONE -> $(pwd)/build/releases/$(basename "$DMG") (notarized + stapled, shareable)"
+# The site's Download button follows the newest release; skip with NO_PUBLISH=1.
+if [[ -z "${NO_PUBLISH:-}" ]]; then
+  "$(dirname "$0")/publish-mac.sh" "$(pwd)/build/releases/$(basename "$DMG")"
+fi
