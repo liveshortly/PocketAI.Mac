@@ -159,7 +159,7 @@ struct QuickAskPanel: View {
                         reply += delta.text
                     case .done(let message):
                         reply = message.plainText
-                    case .toolStep:
+                    case .toolStep, .status, .diagnostic:
                         break
                     }
                 }
