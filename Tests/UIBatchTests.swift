@@ -52,3 +52,24 @@ final class OnboardingPickTests: XCTestCase {
             "m-2507")
     }
 }
+
+/// COM-10: pocketai://activate deep link parsing.
+final class ActivateLinkTests: XCTestCase {
+    func testValidKey() {
+        XCTAssertEqual(ActivateLink.key(in: URL(string: "pocketai://activate?key=key/abc.def")!), "key/abc.def")
+        XCTAssertEqual(ActivateLink.key(in: URL(string: "pocketai://activate?x=1&key=k1")!), "k1")
+    }
+    func testJunkMissingAndWrongScheme() {
+        XCTAssertNil(ActivateLink.key(in: URL(string: "pocketai://activate")!))
+        XCTAssertNil(ActivateLink.key(in: URL(string: "pocketai://activate?key=")!))
+        XCTAssertNil(ActivateLink.key(in: URL(string: "pocketai://activate?key=%20")!))
+        XCTAssertNil(ActivateLink.key(in: URL(string: "pocketai://session/abc?key=k")!))
+        XCTAssertNil(ActivateLink.key(in: URL(string: "https://activate/?key=k")!))
+        XCTAssertNil(ActivateLink.key(in: URL(string: "junk")!))
+    }
+    func testEmailPeek() {
+        let payload = Data(#"{"user":{"email":"a@b.co"}}"#.utf8).base64EncodedString()
+        XCTAssertEqual(ActivateLink.email(inKey: "key/\(payload).sig"), "a@b.co")
+        XCTAssertNil(ActivateLink.email(inKey: "garbage"))
+    }
+}

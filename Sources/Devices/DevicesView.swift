@@ -387,7 +387,7 @@ struct DevicesView: View {
         }
         guard app.serverStatus.running, app.serverStatus.lanEnabled else {
             qrError = app.serverNeedsLicense
-                ? "Pairing needs PocketAI Pro. Enter a license key, then try again."
+                ? "Pairing needs PocketAI Pro. Use Get licence in Settings, then try again."
                 : "This Mac couldn't open itself to devices on the network, so there is nothing to pair with."
             return
         }

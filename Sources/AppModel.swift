@@ -45,6 +45,8 @@ public final class AppModel {
     /// Paired-devices access was chosen but the core refused the LAN
     /// listener for lack of Pro; the Server page says how to fix it.
     public private(set) var serverNeedsLicense = false
+    /// COM-10: key from a pocketai://activate link, waiting for the Licence tab to confirm it.
+    public var pendingActivationKey: String?
     public private(set) var serverStatus = ServerStatus(
         running: false, lanEnabled: false, port: 0, connectedDevices: 0)
 

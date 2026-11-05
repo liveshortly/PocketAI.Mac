@@ -7,6 +7,7 @@ import SwiftUI
 struct PocketAIApp: App {
     @State private var app = AppModel()
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,13 @@ struct PocketAIApp: App {
                 // LSI-19: liveshortly.com/session/<id> and pocketai://session/<id>
                 // open that session; one this account can't see says so there.
                 .onOpenURL { url in
+                    // COM-10: pocketai://activate?key=… opens Licence with a confirm.
+                    if let key = ActivateLink.key(in: url) {
+                        UserDefaults.standard.set("license", forKey: SettingsView.tabKey)
+                        app.pendingActivationKey = key
+                        openSettings()
+                        return
+                    }
                     if let id = LSSessionLink.sessionID(in: url, server: app.liveShortly.serverURL) {
                         app.selection = .session(id)
                     }
